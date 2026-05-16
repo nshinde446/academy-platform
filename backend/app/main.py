@@ -14,6 +14,7 @@ from app.core.middleware.exception_handler import (
 )
 from app.core.middleware.request_id import RequestIDMiddleware
 from app.modules.auth.api.routes import router as auth_router
+from app.modules.audit.api.routes import router as audit_router
 
 settings = get_settings()
 logger = setup_logging()
@@ -46,6 +47,7 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, general_exception_handler)
 
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
+app.include_router(audit_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/health")

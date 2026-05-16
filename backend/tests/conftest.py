@@ -17,6 +17,7 @@ from app.modules.auth.models.auth_models import (
     UserBranchRole,
     UserRole,
 )
+from app.modules.audit.models.audit_models import AuditLog  # noqa: F401
 from app.modules.auth.services.auth_service import hash_password
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
