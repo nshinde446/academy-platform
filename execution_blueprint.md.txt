@@ -1,0 +1,1304 @@
+# Coaching Institute Academic Intelligence Platform
+
+# Final Production Development Blueprint
+
+## (Execution-Ready, Plugin-Ready, AI-Ready, Claude-Ready)
+
+Validated Against:
+
+* Architecture Blueprint 
+* Final Production Review 
+
+---
+
+# 1. PROJECT OBJECTIVE
+
+The platform is designed as a:
+
+# “Modular Academic Operating System”
+
+The system must:
+
+* manage academic operations
+* manage attendance
+* manage lectures
+* manage tests and evaluations
+* analyze academic performance
+* monitor teacher productivity
+* support multi-branch institutes
+* support future AI systems
+* support future plugins
+* scale without architectural rewrites
+
+---
+
+# 2. CORE DEVELOPMENT PRINCIPLE
+
+# Build Stable Core + Extensible Plugin Layer
+
+The system must NOT be:
+
+* screen-driven
+* tightly coupled
+* dashboard-first
+* feature-first
+
+Everything revolves around:
+
+```text id="s8y8kt"
+Student
+ ↕
+Lecture
+ ↕
+Topic
+ ↕
+Attendance
+ ↕
+Tests
+ ↕
+Performance
+ ↕
+Teacher
+```
+
+This makes the system:
+
+* analytics-ready
+* AI-ready
+* plugin-ready
+* scalable
+
+---
+
+# 3. FINAL TECHNOLOGY STACK
+
+## Backend
+
+* Python FastAPI
+* SQLAlchemy 2.0
+* AsyncPG
+* Alembic
+
+## Frontend
+
+* Next.js
+* Tailwind CSS
+* shadcn/ui
+* React Query
+* Zustand
+
+## Database
+
+* PostgreSQL
+
+## Cache & Queues
+
+* Redis
+
+## Async Jobs
+
+* Celery
+
+## File Storage
+
+* S3-compatible object storage
+
+## DevOps
+
+* Docker
+* Docker Compose
+* Nginx
+* GitHub Actions
+* Kubernetes (future)
+
+## Monitoring
+
+* Prometheus
+* Grafana
+* Flower
+
+## Security
+
+* bandit
+* npm audit
+* OWASP ZAP / Snyk
+
+---
+
+# 4. FINAL SYSTEM ARCHITECTURE
+
+```text id="jlwm40"
+Frontend Layer
+   ├── Admin Portal
+   ├── Teacher Portal
+   ├── Student Portal
+   └── Parent Portal (future)
+
+            ↓
+
+API Gateway Layer
+
+            ↓
+
+Core Backend Platform
+   ├── Auth Engine
+   ├── Academic Core
+   ├── Lecture Engine
+   ├── Attendance Engine
+   ├── Test Engine
+   ├── Analytics Engine
+   ├── Reporting Engine
+   ├── Notification Engine
+   └── Audit Engine
+
+            ↓
+
+Academic Event Bus
+
+            ↓
+
+Plugin Layer
+   ├── AI Question Bank
+   ├── Live Classes
+   ├── DPP Generator
+   ├── AI Tutor
+   ├── WhatsApp Notifications
+   ├── Parent App
+   ├── Fee Management
+   └── Recommendation Engine
+
+            ↓
+
+Data Layer
+   ├── PostgreSQL
+   ├── Redis
+   ├── File Storage
+   └── Analytics Views
+```
+
+---
+
+# 5. DEVELOPMENT GOVERNANCE RULES
+
+## Rule 1
+
+Frontend NEVER owns authentication logic.
+
+---
+
+## Rule 2
+
+Frontend NEVER validates permissions.
+
+Backend ALWAYS validates:
+
+* authentication
+* authorization
+* RBAC
+
+---
+
+## Rule 3
+
+No direct DB access from API routes.
+
+Correct flow:
+
+```text id="jlwm41"
+Route
+ ↓
+Service
+ ↓
+Repository
+ ↓
+Database
+```
+
+---
+
+## Rule 4
+
+Every module must contain:
+
+* api
+* service
+* repository
+* models
+* schemas
+* validators
+* permissions
+* tests
+
+---
+
+## Rule 5
+
+All features MUST generate events.
+
+---
+
+## Rule 6
+
+All DB schema changes require migrations.
+
+---
+
+## Rule 7
+
+No hard deletes.
+
+Use:
+
+```text id="jlwm42"
+is_deleted = true
+```
+
+---
+
+## Rule 8
+
+Plugins NEVER directly access core DB.
+
+Plugins interact ONLY via:
+
+* APIs
+* Events
+
+---
+
+## Rule 9
+
+Claude Code implements predefined standards ONLY.
+
+Claude NEVER invents:
+
+* architecture
+* naming conventions
+* DB patterns
+* auth flow
+
+---
+
+# 6. MONOREPO STRUCTURE
+
+```text id="jlwm43"
+academy-platform/
+│
+├── backend/
+├── frontend/
+├── infra/
+├── docs/
+├── scripts/
+├── docker-compose.yml
+└── README.md
+```
+
+---
+
+# 7. BACKEND STRUCTURE
+
+```text id="jlwm44"
+backend/
+│
+├── app/
+│   ├── core/
+│   │   ├── config/
+│   │   ├── database/
+│   │   ├── security/
+│   │   ├── middleware/
+│   │   ├── logging/
+│   │   └── utils/
+│   │
+│   ├── modules/
+│   │   ├── auth/
+│   │   ├── students/
+│   │   ├── teachers/
+│   │   ├── batches/
+│   │   ├── classrooms/
+│   │   ├── lectures/
+│   │   ├── attendance/
+│   │   ├── tests/
+│   │   ├── analytics/
+│   │   ├── reports/
+│   │   ├── notifications/
+│   │   └── audit/
+│   │
+│   ├── events/
+│   ├── plugins/
+│   ├── jobs/
+│   └── main.py
+│
+├── tests/
+├── migrations/
+└── Dockerfile
+```
+
+---
+
+# 8. MODULE INTERNAL STRUCTURE
+
+```text id="jlwm45"
+module/
+│
+├── api/
+├── services/
+├── repositories/
+├── models/
+├── schemas/
+├── validators/
+├── permissions/
+├── events/
+└── tests/
+```
+
+---
+
+# 9. STAGE-WISE EXECUTION PLAN
+
+# STAGE 0 — DEVELOPMENT GOVERNANCE
+
+Before coding create:
+
+```text id="jlwm46"
+docs/
+ ├── architecture.md
+ ├── coding_rules.md
+ ├── api_conventions.md
+ ├── db_conventions.md
+ ├── testing_rules.md
+ ├── event_definitions.md
+ └── plugin_guidelines.md
+```
+
+---
+
+# STAGE 1 — FOUNDATION
+
+# GOAL
+
+Setup infrastructure ONLY.
+
+---
+
+## Build
+
+* FastAPI setup
+* Next.js setup
+* PostgreSQL setup
+* Redis setup
+* Docker
+* logging
+* middleware
+* pytest
+* frontend API client
+* CI/CD
+* security scanning
+
+---
+
+## DO NOT BUILD
+
+* students
+* attendance
+* dashboards
+* analytics
+
+---
+
+## Backend Foundation Prompt
+
+Setup production-ready FastAPI backend foundation with:
+
+* async SQLAlchemy 2.0
+* PostgreSQL connection
+* Alembic migrations
+* pydantic-settings config management
+* structured logging
+* middleware setup
+* request ID middleware
+* exception handling
+* Docker support
+* pytest async setup
+* modular folder structure
+* environment-based settings
+
+Project structure:
+
+backend/
+├── app/
+│   ├── core/
+│   ├── modules/
+│   ├── events/
+│   ├── plugins/
+│   ├── jobs/
+│   └── main.py
+├── tests/
+├── migrations/
+
+Do NOT create business modules yet.
+
+---
+
+## Frontend Foundation Prompt
+
+Setup production-ready Next.js frontend foundation with:
+
+* Tailwind CSS
+* shadcn/ui
+* Zustand
+* React Query
+* Axios API client
+* route protection middleware
+* layout system
+* auth-ready API layer
+* environment configuration
+
+Project structure:
+
+frontend/
+├── app/
+├── components/
+├── modules/
+├── hooks/
+├── services/
+├── store/
+└── utils/
+
+Do NOT create dashboards.
+Do NOT create business pages.
+
+---
+
+# STAGE 2 — AUTHENTICATION FOUNDATION
+
+# GOAL
+
+Identity + RBAC foundation.
+
+---
+
+## Tables
+
+```text id="jlwm47"
+users
+roles
+permissions
+user_roles
+role_permissions
+user_branch_roles
+```
+
+---
+
+## Features
+
+* JWT auth
+* refresh tokens
+* HTTP-only cookies
+* RBAC middleware
+* branch-level isolation
+
+---
+
+## Auth Flow
+
+```text id="jlwm48"
+Frontend Login
+      ↓
+Backend Validation
+      ↓
+Access Token
+      ↓
+Refresh Token
+      ↓
+HTTP-only Cookie
+```
+
+---
+
+## Frontend MUST NEVER
+
+* validate permissions
+* own auth logic
+* store refresh tokens
+
+---
+
+# STAGE 2.5 — AUDIT ENGINE
+
+# GOAL
+
+Track all changes.
+
+---
+
+## Table
+
+```text id="jlwm49"
+audit_logs
+```
+
+---
+
+## Fields
+
+```text id="jlwm50"
+user_id
+action
+table_name
+record_id
+old_values (JSONB)
+new_values (JSONB)
+timestamp
+ip_address
+```
+
+---
+
+## Indexing
+
+Index:
+
+* table_name
+* record_id
+
+---
+
+## Capture
+
+* create
+* update
+* delete
+* imports
+* attendance overrides
+
+---
+
+# STAGE 3 — CORE ACADEMIC FOUNDATION
+
+# MOST IMPORTANT STAGE
+
+---
+
+# GOAL
+
+Build academic graph foundation.
+
+---
+
+## Academic Hierarchy
+
+```text id="jlwm51"
+Institute
+ └── Branch
+      └── Academic Year
+           └── Course
+                └── Subject
+                     └── Chapter
+                          └── Topic
+                               └── Subtopic
+```
+
+---
+
+## Every Core Table MUST Include
+
+```text id="jlwm52"
+branch_id
+academic_year_id
+created_at
+updated_at
+status
+is_deleted
+```
+
+---
+
+## Student Module
+
+### Tables
+
+```text id="jlwm53"
+student
+student_identity
+student_batch_mapping
+parent
+```
+
+---
+
+## Teacher Module
+
+### Tables
+
+```text id="jlwm54"
+teacher
+teacher_subject_mapping
+teacher_batch_mapping
+```
+
+---
+
+## Batch Module
+
+### Tables
+
+```text id="jlwm55"
+batch
+batch_subject_mapping
+batch_schedule
+```
+
+---
+
+## Classroom Module
+
+### Tables
+
+```text id="jlwm56"
+classroom
+```
+
+### Fields
+
+```text id="jlwm57"
+name
+capacity
+branch_id
+status
+```
+
+---
+
+# STAGE 3.3 — IMPORT ENGINE
+
+# GOAL
+
+Reusable upload framework.
+
+---
+
+## Reusable For
+
+* students
+* marks
+* attendance
+* schedules
+* questions
+
+---
+
+## Upload Flow
+
+```text id="jlwm58"
+Upload
+  ↓
+Validation
+  ↓
+Duplicate Detection
+  ↓
+Preview
+  ↓
+Async Processing
+  ↓
+Audit Logging
+```
+
+---
+
+## Requirements
+
+* background processing
+* validation reports
+* import history
+* retry mechanism
+
+---
+
+# STAGE 4 — LECTURE ENGINE
+
+# SYSTEM CONNECTOR
+
+---
+
+# GOAL
+
+Connect:
+
+* teachers
+* students
+* topics
+* batches
+* classrooms
+* attendance
+
+through lectures.
+
+---
+
+## Tables
+
+```text id="jlwm59"
+lecture
+lecture_topic_mapping
+lecture_attendance_mapping
+```
+
+---
+
+## Lecture Fields
+
+```text id="jlwm60"
+teacher_id
+batch_id
+classroom_id
+subject_id
+topic_id
+scheduled_start
+scheduled_end
+actual_start
+actual_end
+delivery_mode
+status
+```
+
+---
+
+## Schedule Engine
+
+Build:
+
+* teacher schedules
+* classroom schedules
+* batch schedules
+
+---
+
+## Conflict Validators
+
+Prevent:
+
+* teacher overlap
+* classroom overlap
+* batch overlap
+
+---
+
+## Lecture Lifecycle
+
+```text id="jlwm61"
+scheduled
+started
+paused
+completed
+cancelled
+rescheduled
+```
+
+---
+
+## Delivery Modes
+
+```text id="jlwm62"
+offline
+online
+hybrid
+```
+
+Future Live Class plugin fits here.
+
+---
+
+# STAGE 5 — ATTENDANCE ENGINE
+
+---
+
+## Tables
+
+```text id="jlwm63"
+raw_punch_logs
+attendance_records
+attendance_exceptions
+```
+
+---
+
+## raw_punch_logs Fields
+
+```text id="jlwm64"
+device_id
+sync_batch_id
+synced_at
+student_id
+punch_timestamp
+```
+
+---
+
+## Attendance Flow
+
+```text id="jlwm65"
+Biometric Device
+      ↓
+Raw Logs
+      ↓
+Attendance Processor
+      ↓
+Rule Engine
+      ↓
+Lecture Mapping
+      ↓
+Attendance Finalization
+```
+
+---
+
+## Attendance Rules
+
+Support:
+
+* late entry
+* duplicate punches
+* offline sync
+* reprocessing
+* manual overrides
+* partial attendance
+
+---
+
+# STAGE 6 — TEST ENGINE
+
+---
+
+## Tables
+
+```text id="jlwm66"
+questions
+question_topics
+question_metadata
+
+tests
+test_questions
+student_marks
+```
+
+---
+
+## IMPORTANT
+
+Future AI Question Bank plugs here.
+
+---
+
+## Question Metadata
+
+```json id="jlwm67"
+{
+  "difficulty": "",
+  "topic": "",
+  "blooms_taxonomy": "",
+  "concept_tags": []
+}
+```
+
+---
+
+# STAGE 7 — EVENT SYSTEM
+
+# CRITICAL TURNING POINT
+
+---
+
+## Tables
+
+```text id="jlwm68"
+academic_events
+processed_events
+```
+
+---
+
+## Generate Events From
+
+* lectures
+* attendance
+* tests
+* marks
+* topic completion
+
+---
+
+## Event Rules
+
+* idempotency
+* retries
+* deduplication
+
+---
+
+## Event Consumers
+
+* analytics
+* notifications
+* plugins
+
+---
+
+# STAGE 8 — ANALYTICS ENGINE
+
+---
+
+## Flow
+
+```text id="jlwm69"
+Events
+  ↓
+Aggregations
+  ↓
+Metrics
+  ↓
+Analytics Views
+```
+
+---
+
+## Recommended
+
+Use:
+
+* materialized views
+* Celery jobs
+* scheduled aggregations
+
+---
+
+## Refresh Strategy
+
+```text id="jlwm70"
+Refresh materialized views every 15 minutes via Celery jobs
+```
+
+---
+
+## Student Analytics
+
+```text id="jlwm71"
+attendance %
+weak topics
+risk students
+low score subjects
+```
+
+---
+
+## Teacher Analytics
+
+```text id="jlwm72"
+lecture completion
+delay metrics
+coverage metrics
+```
+
+---
+
+## Batch Analytics
+
+```text id="jlwm73"
+batch attendance
+performance trends
+subject weakness
+```
+
+---
+
+# STAGE 8.5 — REPORTING ENGINE
+
+---
+
+# GOAL
+
+Centralized report generation.
+
+---
+
+## Flow
+
+```text id="jlwm74"
+Data Query
+  ↓
+Transformation Layer
+  ↓
+Template Engine
+  ↓
+PDF / Excel Export
+```
+
+---
+
+## Technologies
+
+* Jinja2
+* ReportLab / WeasyPrint
+
+---
+
+## Reports
+
+* report cards
+* attendance reports
+* productivity reports
+* analytics exports
+
+---
+
+# STAGE 9 — NOTIFICATION ENGINE
+
+---
+
+## Flow
+
+```text id="jlwm75"
+Event
+ ↓
+Rule Engine
+ ↓
+Notification
+```
+
+---
+
+## Integrations
+
+* WhatsApp
+* SMS
+* Push Notifications
+* Email
+
+---
+
+# STAGE 10 — PLUGIN SYSTEM
+
+---
+
+# GOAL
+
+Future extensibility.
+
+---
+
+## Tables
+
+```text id="jlwm76"
+plugins
+plugin_config
+plugin_events
+plugin_dependencies
+```
+
+---
+
+## Plugin Rules
+
+Plugins:
+
+* consume APIs
+* consume events
+* NEVER access DB directly
+
+---
+
+## Plugin Config Requirements
+
+```text id="jlwm77"
+plugin_name
+version
+enabled
+dependencies
+configuration
+```
+
+---
+
+## Future Plugins
+
+| Plugin           | Uses               |
+| ---------------- | ------------------ |
+| Live Classes     | lecture APIs       |
+| AI Question Bank | test engine        |
+| Parent App       | analytics          |
+| WhatsApp Engine  | notifications      |
+| AI Tutor         | events + analytics |
+| Fee Management   | student lifecycle  |
+
+---
+
+# STAGE 11 — AI LAYER
+
+ONLY NOW:
+AI becomes meaningful.
+
+Because system now has:
+
+* academic graph
+* events
+* analytics
+* historical patterns
+
+---
+
+# STAGE 12 — OBSERVABILITY & OPERATIONS
+
+---
+
+## Monitoring
+
+Setup:
+
+* Prometheus
+* Grafana
+* Flower
+
+---
+
+## Monitor
+
+* queue lag
+* API latency
+* DB performance
+* failed jobs
+* worker crashes
+
+---
+
+## Alert Rules
+
+```text id="jlwm78"
+Alert if Celery queue length > 100 for 5 minutes
+Alert if API latency > threshold
+Alert on repeated failed jobs
+```
+
+---
+
+## Backups
+
+Setup:
+
+* pg_dump automation
+* S3 backups
+* restore testing
+
+---
+
+## Security Scanning
+
+Add to CI/CD:
+
+* bandit
+* npm audit
+* OWASP ZAP / Snyk
+
+---
+
+# 10. TESTING STRATEGY
+
+---
+
+## Unit Tests
+
+* services
+* validators
+* business rules
+
+---
+
+## Integration Tests
+
+* APIs
+* repositories
+* DB interactions
+
+---
+
+## E2E Tests
+
+* frontend + backend
+
+---
+
+## Tools
+
+| Layer    | Tool       |
+| -------- | ---------- |
+| Backend  | pytest     |
+| API      | httpx      |
+| Frontend | Vitest     |
+| E2E      | Playwright |
+
+---
+
+# 11. CI/CD PIPELINE
+
+```text id="jlwm79"
+Code Push
+   ↓
+Lint
+   ↓
+Security Scan
+   ↓
+Unit Tests
+   ↓
+Integration Tests
+   ↓
+Build
+   ↓
+Deploy
+```
+
+---
+
+# 12. FINAL CLAUDE EXECUTION RULE
+
+NEVER ASK:
+
+```text id="jlwm80"
+Build coaching ERP
+```
+
+ALWAYS ASK:
+
+```text id="jlwm81"
+Build Stage X module using predefined architecture standards
+```
+
+---
+
+# 13. FINAL DEVELOPMENT MINDSET
+
+You are NOT building:
+
+* dashboards
+* screens
+* isolated features
+
+You are building:
+
+```text id="jlwm82"
+Infrastructure
+   ↓
+Identity
+   ↓
+Academic Graph
+   ↓
+Operational Engines
+   ↓
+Events
+   ↓
+Analytics
+   ↓
+Plugins
+   ↓
+AI
+```
+
+This is the final production-grade execution blueprint for the Coaching Institute Academic Intelligence Platform.

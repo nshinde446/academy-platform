@@ -1,0 +1,1202 @@
+# Coaching Institute Academic Intelligence Platform
+
+# Master Development Blueprint Document
+
+## (Phase-Based, Plugin-Ready, AI-Ready Architecture)
+
+Requirement Source: 
+
+---
+
+# 1. PROJECT OBJECTIVE
+
+The platform is being designed as a:
+
+# “Modular Academic Operating System”
+
+The system must:
+
+* manage academic operations
+* analyze student performance
+* monitor teacher productivity
+* track attendance
+* support future AI modules
+* support future plugins
+* scale without major rewrites
+
+The architecture must support future features like:
+
+* AI Question Bank Hosting
+* Live Classes
+* Parent Portal
+* WhatsApp Notifications
+* AI Recommendation Engine
+* DPP Generator
+* Adaptive Learning
+* Mobile Apps
+* Fee Management
+* AI Tutor
+
+WITHOUT changing core architecture.
+
+---
+
+# 2. CORE DEVELOPMENT PRINCIPLE
+
+# Build Stable Core + Extensible Plugin Layer
+
+The system must NOT be developed as:
+
+* isolated modules
+* screen-based logic
+* tightly coupled features
+
+Instead:
+everything revolves around:
+
+```text id="kjigv4"
+Student
+ ↕
+Lecture
+ ↕
+Topic
+ ↕
+Attendance
+ ↕
+Tests
+ ↕
+Performance
+ ↕
+Teacher
+```
+
+This becomes:
+
+* analytics-ready
+* AI-ready
+* plugin-ready
+
+---
+
+# 3. RECOMMENDED TECHNOLOGY STACK
+
+---
+
+# Backend
+
+## Framework
+
+* Python FastAPI
+
+## Why
+
+* async support
+* AI ecosystem compatibility
+* scalable APIs
+* event-driven capability
+
+---
+
+# Frontend
+
+## Framework
+
+* Next.js (React)
+
+## Why
+
+* scalable frontend
+* modular architecture
+* dashboard-friendly
+* SSR support
+
+---
+
+# Database
+
+## Primary Database
+
+* PostgreSQL
+
+## Why
+
+* strong relational support
+* analytics capability
+* JSON support
+* future scalability
+
+---
+
+# Cache Layer
+
+* Redis
+
+Used for:
+
+* sessions
+* caching
+* queues
+* event buffering
+
+---
+
+# Async Task Processing
+
+* Celery + Redis
+
+Used for:
+
+* report generation
+* analytics processing
+* notifications
+* scheduled jobs
+
+---
+
+# File Storage
+
+* S3-Compatible Object Storage
+
+Used for:
+
+* report cards
+* documents
+* exports
+* media files
+
+---
+
+# Deployment
+
+```text id="o1d6gl"
+Docker
+Nginx
+GitHub Actions
+Kubernetes (future)
+```
+
+---
+
+# 4. SYSTEM ARCHITECTURE
+
+# High-Level Architecture
+
+```text id="0dx7wr"
+Frontend Layer
+   ├── Admin Portal
+   ├── Teacher Portal
+   ├── Student Portal
+   └── Parent Portal (future)
+
+            ↓
+
+API Gateway Layer
+
+            ↓
+
+Core Backend Platform
+   ├── Auth Engine
+   ├── Academic Core
+   ├── Lecture Engine
+   ├── Attendance Engine
+   ├── Test Engine
+   ├── Analytics Engine
+   ├── Reporting Engine
+   ├── Notification Engine
+   └── Audit Engine
+
+            ↓
+
+Academic Event Bus
+
+            ↓
+
+Plugin Layer
+   ├── AI Question Bank
+   ├── Live Classes
+   ├── DPP Generator
+   ├── AI Tutor
+   ├── WhatsApp Notifications
+   ├── Parent App
+   ├── Fee System
+   └── Recommendation Engine
+
+            ↓
+
+Data Layer
+   ├── PostgreSQL
+   ├── Redis
+   ├── File Storage
+   └── Analytics Views
+```
+
+---
+
+# 5. DEVELOPMENT GOVERNANCE RULES
+
+These rules are MANDATORY for Claude Code development.
+
+---
+
+# Rule 1
+
+Frontend must NEVER own authentication logic.
+
+---
+
+# Rule 2
+
+Frontend must NEVER validate permissions.
+
+Backend ALWAYS validates:
+
+* authentication
+* authorization
+* RBAC
+
+---
+
+# Rule 3
+
+Claude Code must NEVER directly access DB from API routes.
+
+Correct flow:
+
+```text id="wnjkqk"
+Route
+ ↓
+Service
+ ↓
+Repository
+ ↓
+Database
+```
+
+---
+
+# Rule 4
+
+Every module must contain:
+
+* API layer
+* service layer
+* repository layer
+* schemas
+* validators
+* tests
+
+---
+
+# Rule 5
+
+Every feature must generate events.
+
+---
+
+# Rule 6
+
+Every module must have automated tests.
+
+---
+
+# Rule 7
+
+No hard deletes allowed.
+
+Use:
+
+```text id="dl2vy2"
+is_deleted = true
+```
+
+---
+
+# Rule 8
+
+All DB schema changes require migrations.
+
+---
+
+# Rule 9
+
+Future plugins must use:
+
+* APIs
+* Events
+
+Plugins must NEVER directly manipulate core DB.
+
+---
+
+# 6. BACKEND ARCHITECTURE
+
+# Recommended Structure
+
+```text id="1h9qiv"
+backend/
+│
+├── app/
+│   ├── core/
+│   │   ├── config/
+│   │   ├── database/
+│   │   ├── security/
+│   │   ├── middleware/
+│   │   ├── logging/
+│   │   └── utils/
+│   │
+│   ├── modules/
+│   │   ├── auth/
+│   │   ├── students/
+│   │   ├── teachers/
+│   │   ├── batches/
+│   │   ├── lectures/
+│   │   ├── attendance/
+│   │   ├── tests/
+│   │   ├── analytics/
+│   │   ├── reports/
+│   │   └── notifications/
+│   │
+│   ├── events/
+│   ├── plugins/
+│   ├── jobs/
+│   └── main.py
+│
+├── tests/
+├── migrations/
+└── docker/
+```
+
+---
+
+# 7. MODULE INTERNAL STRUCTURE
+
+Every module must follow same structure.
+
+Example:
+
+```text id="4d6z8z"
+students/
+│
+├── api/
+├── services/
+├── repositories/
+├── models/
+├── schemas/
+├── validators/
+├── permissions/
+├── events/
+└── tests/
+```
+
+---
+
+# 8. AUTHENTICATION ARCHITECTURE
+
+# Standard Production Authentication
+
+---
+
+# Recommended Flow
+
+```text id="abqs5v"
+Frontend Login
+      ↓
+Backend Auth Validation
+      ↓
+JWT Access Token Generated
+      ↓
+Refresh Token Generated
+      ↓
+Stored in HTTP-only secure cookies
+```
+
+---
+
+# Security Rules
+
+Frontend MUST NOT:
+
+* store refresh tokens
+* validate permissions
+* control RBAC
+
+Backend ALWAYS controls:
+
+* auth
+* RBAC
+* access control
+
+---
+
+# Recommended Token Strategy
+
+| Token         | Duration |
+| ------------- | -------- |
+| Access Token  | 15 mins  |
+| Refresh Token | 7 days   |
+
+---
+
+# 9. ROLE-BASED ACCESS CONTROL (RBAC)
+
+# Required Roles
+
+| Role          | Purpose               |
+| ------------- | --------------------- |
+| Super Admin   | Full platform         |
+| Branch Admin  | Branch operations     |
+| Academic Head | Analytics & academics |
+| Teacher       | Lecture & tests       |
+| Student       | Attendance & marks    |
+| Parent        | Student monitoring    |
+
+---
+
+# RBAC Tables
+
+```text id="bnn8g0"
+users
+roles
+permissions
+role_permissions
+user_roles
+```
+
+---
+
+# 10. DATABASE DESIGN STANDARDS
+
+# Naming Convention
+
+Use:
+
+```text id="7ah0du"
+snake_case
+```
+
+Example:
+
+```text id="u9e87m"
+student
+lecture
+attendance_log
+```
+
+---
+
+# Every Table Must Include
+
+```sql id="w7wz2w"
+id UUID PRIMARY KEY
+created_at
+updated_at
+created_by
+updated_by
+status
+is_deleted
+```
+
+---
+
+# 11. CORE ACADEMIC DATA MODEL
+
+# Academic Hierarchy
+
+```text id="ksn0ik"
+Institute
+ └── Branch
+      └── Academic Year
+           └── Course
+                └── Subject
+                     └── Chapter
+                          └── Topic
+                               └── Subtopic
+```
+
+---
+
+# Student Model
+
+```text id="d6v42e"
+Student
+ ├── Parent
+ ├── Batch History
+ ├── Attendance
+ ├── Test Results
+ ├── Analytics
+ └── Activity Timeline
+```
+
+---
+
+# Teacher Model
+
+```text id="s26wqg"
+Teacher
+ ├── Subject Assignments
+ ├── Lecture History
+ ├── Productivity Metrics
+ ├── Timetable
+ └── Analytics
+```
+
+---
+
+# Lecture Model (Most Important)
+
+```text id="x3gqfj"
+Lecture
+ ├── Batch
+ ├── Teacher
+ ├── Subject
+ ├── Topic
+ ├── Planned Time
+ ├── Actual Time
+ ├── Attendance
+ ├── Completion Status
+ ├── Notes
+ └── Events
+```
+
+---
+
+# Test Model
+
+```text id="o0pk2d"
+Test
+ ├── Subject
+ ├── Topic Mapping
+ ├── Questions
+ ├── Marks
+ ├── Difficulty Metadata
+ └── Analytics
+```
+
+---
+
+# 12. ACADEMIC EVENT ARCHITECTURE
+
+This is the HEART of the platform.
+
+Every major action generates an event.
+
+---
+
+# Event Structure
+
+```json id="yp3sj0"
+{
+  "event_id": "",
+  "event_type": "",
+  "student_id": "",
+  "teacher_id": "",
+  "batch_id": "",
+  "subject_id": "",
+  "topic_id": "",
+  "lecture_id": "",
+  "timestamp": "",
+  "metadata": {}
+}
+```
+
+---
+
+# Event Examples
+
+| Event             | Purpose           |
+| ----------------- | ----------------- |
+| LECTURE_STARTED   | Lecture tracking  |
+| LECTURE_COMPLETED | Syllabus tracking |
+| ATTENDANCE_MARKED | Analytics         |
+| TEST_UPLOADED     | Performance       |
+| MARKS_UPDATED     | Correlation       |
+| TOPIC_COMPLETED   | Academic tracking |
+
+---
+
+# 13. ATTENDANCE ENGINE ARCHITECTURE
+
+# Correct Flow
+
+```text id="mqn6yx"
+Biometric Device
+       ↓
+Raw Punch Logs
+       ↓
+Attendance Processor
+       ↓
+Rule Engine
+       ↓
+Lecture Mapping
+       ↓
+Attendance Finalization
+       ↓
+Attendance Events
+```
+
+---
+
+# Attendance States
+
+```text id="65qah6"
+PRESENT
+ABSENT
+LATE
+PARTIAL
+EXCUSED
+MANUAL_OVERRIDE
+```
+
+---
+
+# Attendance Rules Must Support
+
+* duplicate punches
+* late arrivals
+* manual corrections
+* offline devices
+* reprocessing
+* partial lecture attendance
+
+---
+
+# 14. LECTURE ENGINE ARCHITECTURE
+
+# Lecture Lifecycle
+
+```text id="cbm5qx"
+Scheduled
+   ↓
+Started
+   ↓
+Paused
+   ↓
+Resumed
+   ↓
+Completed
+```
+
+Additional states:
+
+* cancelled
+* rescheduled
+* incomplete
+
+---
+
+# Lecture Responsibilities
+
+* scheduling
+* topic assignment
+* teacher assignment
+* attendance linkage
+* syllabus tracking
+
+---
+
+# 15. TEST & QUESTION BANK ARCHITECTURE
+
+Must be designed as:
+
+# future AI-ready assessment system
+
+---
+
+# Question Model
+
+```json id="y7mjlwm"
+{
+  "question_id": "",
+  "subject": "",
+  "topic": "",
+  "difficulty": "",
+  "blooms_taxonomy": "",
+  "concept_tags": []
+}
+```
+
+---
+
+# IMPORTANT
+
+Question Bank should exist as:
+
+# Plugin-Compatible Module
+
+So future features like:
+
+* AI paper generation
+* adaptive testing
+* DPP generation
+
+can easily integrate.
+
+---
+
+# Recommended Structure
+
+```text id="u7g9by"
+Question Engine
+      ↓
+Question Metadata
+      ↓
+Test Builder
+      ↓
+Evaluation Engine
+```
+
+---
+
+# 16. LIVE CLASS FEATURE READINESS
+
+Future live classes must plug in WITHOUT rewriting lecture engine.
+
+---
+
+# Correct Future Design
+
+```text id="y1blvw"
+Lecture
+   ↓
+Delivery Mode
+   ├── Offline
+   ├── Online
+   └── Hybrid
+```
+
+---
+
+# Future Live Class Plugin
+
+Should integrate through:
+
+* lecture APIs
+* event subscriptions
+
+NOT custom logic.
+
+---
+
+# Future Live Class Flow
+
+```text id="6i8lzn"
+Lecture Scheduled
+      ↓
+Live Class Plugin Triggered
+      ↓
+Meeting Link Generated
+      ↓
+Attendance Synced
+      ↓
+Recording Stored
+```
+
+---
+
+# 17. ANALYTICS ENGINE ARCHITECTURE
+
+# Correct Analytics Flow
+
+```text id="7xg6gt"
+Raw Events
+    ↓
+Aggregation Engine
+    ↓
+Metrics Processor
+    ↓
+Analytics Tables
+    ↓
+Dashboard APIs
+```
+
+---
+
+# Student Analytics
+
+```text id="q2qqh6"
+Attendance %
+Weak Topics
+Low Scores
+Missed Lectures
+Risk Analysis
+```
+
+---
+
+# Teacher Analytics
+
+```text id="mjlwm9"
+Lecture Completion
+Delay Metrics
+Topic Coverage
+Performance Correlation
+```
+
+---
+
+# Batch Analytics
+
+```text id="6lgzye"
+Batch Attendance
+Performance Trends
+Subject Weakness
+Top Performers
+```
+
+---
+
+# 18. REPORT ENGINE
+
+# Correct Report Pipeline
+
+```text id="yz6vr0"
+Data Query
+    ↓
+Transformation Layer
+    ↓
+Template Engine
+    ↓
+PDF / Excel Export
+```
+
+---
+
+# Future Reports
+
+* report cards
+* attendance reports
+* teacher productivity
+* analytics exports
+
+---
+
+# 19. NOTIFICATION ENGINE
+
+# Event-Based Notification System
+
+```text id="ow3xq6"
+Academic Event
+      ↓
+Rule Engine
+      ↓
+Notification Trigger
+```
+
+---
+
+# Future Notifications
+
+* low attendance
+* absent alerts
+* low marks
+* parent alerts
+* lecture cancellation
+
+---
+
+# 20. PLUGIN ARCHITECTURE (VERY IMPORTANT)
+
+# Core Principle
+
+Plugins must NEVER directly modify core DB.
+
+Plugins interact via:
+
+* APIs
+* Events
+
+---
+
+# Plugin Structure
+
+```text id="b78ryv"
+Plugin
+ ├── Event Subscriber
+ ├── API Consumer
+ ├── Config Layer
+ └── Optional UI
+```
+
+---
+
+# Future Plugin Examples
+
+| Plugin           | Uses                |
+| ---------------- | ------------------- |
+| AI Question Bank | Test generation     |
+| Live Classes     | Online teaching     |
+| AI Tutor         | Learning assistance |
+| WhatsApp Engine  | Notifications       |
+| Parent App       | Monitoring          |
+| Fee Management   | Operations          |
+| Adaptive Testing | Personalized exams  |
+
+---
+
+# 21. TESTING ARCHITECTURE
+
+# Required Testing Pyramid
+
+---
+
+# Unit Tests
+
+Test:
+
+* services
+* validators
+* business rules
+
+---
+
+# Integration Tests
+
+Test:
+
+* APIs
+* DB
+* repositories
+
+---
+
+# E2E Tests
+
+Test:
+
+* frontend + backend together
+
+---
+
+# Recommended Tools
+
+| Layer       | Tool       |
+| ----------- | ---------- |
+| Backend     | pytest     |
+| API Testing | httpx      |
+| Frontend    | Vitest     |
+| E2E         | Playwright |
+
+---
+
+# 22. DEVELOPMENT FLOW FOR CLAUDE CODE
+
+# Correct Development Sequence
+
+---
+
+# Step 1
+
+Define API contract.
+
+---
+
+# Step 2
+
+Create DB schema.
+
+---
+
+# Step 3
+
+Create migrations.
+
+---
+
+# Step 4
+
+Implement repository layer.
+
+---
+
+# Step 5
+
+Implement service layer.
+
+---
+
+# Step 6
+
+Implement APIs.
+
+---
+
+# Step 7
+
+Write tests.
+
+---
+
+# Step 8
+
+Frontend integration.
+
+---
+
+# Step 9
+
+Run E2E validation.
+
+---
+
+# 23. CI/CD PIPELINE
+
+# Required Pipeline
+
+```text id="9w8tc6"
+Code Push
+   ↓
+Lint
+   ↓
+Unit Tests
+   ↓
+Integration Tests
+   ↓
+Build
+   ↓
+Deploy
+```
+
+---
+
+# Recommended Tools
+
+| Purpose    | Tool           |
+| ---------- | -------------- |
+| CI/CD      | GitHub Actions |
+| Containers | Docker         |
+| Monitoring | Prometheus     |
+| Logs       | Grafana/Loki   |
+
+---
+
+# 24. PHASE-WISE DEVELOPMENT PLAN
+
+# PHASE 0 — PLANNING
+
+Create:
+
+* ERD
+* workflows
+* API contracts
+* RBAC matrix
+* event definitions
+
+---
+
+# PHASE 1 — FOUNDATION
+
+Build:
+
+* auth
+* RBAC
+* DB setup
+* migrations
+* audit system
+
+---
+
+# PHASE 2 — ACADEMIC CORE
+
+Build:
+
+* students
+* teachers
+* batches
+* subjects
+* topics
+
+---
+
+# PHASE 3 — LECTURE ENGINE
+
+Build:
+
+* scheduling
+* lecture lifecycle
+* topic tracking
+
+---
+
+# PHASE 4 — ATTENDANCE ENGINE
+
+Build:
+
+* biometric sync
+* attendance processor
+* rule engine
+
+---
+
+# PHASE 5 — TEST ENGINE
+
+Build:
+
+* tests
+* marks
+* question mapping
+
+---
+
+# PHASE 6 — ANALYTICS
+
+Build:
+
+* aggregations
+* dashboards
+* reports
+
+---
+
+# PHASE 7 — PLUGIN LAYER
+
+Build:
+
+* event subscriptions
+* plugin registry
+* notification system
+
+---
+
+# 25. FINAL ARCHITECTURAL PRINCIPLE
+
+# MOST IMPORTANT RULE
+
+The system must ALWAYS evolve around:
+
+```text id="xghvlf"
+Academic Core
+     ↓
+Events
+     ↓
+Analytics
+     ↓
+Plugins
+     ↓
+AI Intelligence
+```
+
+NOT around:
+
+* dashboards
+* pages
+* isolated modules
+
+---
+
+# FINAL OUTCOME
+
+If developed using this architecture:
+you will achieve:
+
+* clean modular development
+* scalable backend
+* AI-ready ecosystem
+* plugin-ready architecture
+* secure authentication
+* maintainable codebase
+* future live-class integration
+* future question-bank hosting
+* future mobile app support
+* future analytics expansion
+
+WITHOUT major rewrites later.
