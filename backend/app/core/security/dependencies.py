@@ -1,15 +1,13 @@
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from app.modules.auth.permissions.rbac import (
+    get_current_user,
+    require_branch_access,
+    require_permissions,
+    require_roles,
+)
 
-bearer_scheme = HTTPBearer()
-
-
-async def require_auth(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-) -> None:
-    """Placeholder auth dependency. Stage 2 will implement full JWT validation."""
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Token validation not yet implemented",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+__all__ = [
+    "get_current_user",
+    "require_roles",
+    "require_permissions",
+    "require_branch_access",
+]

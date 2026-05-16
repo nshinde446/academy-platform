@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,14 +12,31 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import apiClient from "@/services/api-client";
+import { useAuthStore } from "@/store/auth-store";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const setAuthenticated = useAuthStore((s) => s.setAuthenticated);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // Stage 2 will wire this to the auth API
+    setError("");
+    setLoading(true);
+
+    try {
+      await apiClient.post("/api/v1/auth/login", { email, password });
+      setAuthenticated(true);
+      router.push("/");
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Login failed");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -30,6 +48,9 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {error && (
+              <p className="text-sm text-destructive text-center">{error}</p>
+            )}
             <div className="flex flex-col gap-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -52,8 +73,8 @@ export default function LoginPage() {
                 required
               />
             </div>
-            <Button type="submit" className="w-full">
-              Sign in
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
         </CardContent>

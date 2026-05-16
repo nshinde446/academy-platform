@@ -19,8 +19,13 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     SECRET_KEY: str = "change-me-in-production"
+    ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    COOKIE_SECURE: bool = False
+    COOKIE_SAMESITE: str = "lax"
+    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
 
 @lru_cache

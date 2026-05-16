@@ -11,7 +11,7 @@ export function Header() {
       <div className="flex items-center gap-4">
         {user ? (
           <span className="text-sm text-muted-foreground">
-            {user.name} ({user.role})
+            {user.first_name} {user.last_name} ({user.roles.join(", ")})
           </span>
         ) : (
           <span className="text-sm text-muted-foreground">Not signed in</span>

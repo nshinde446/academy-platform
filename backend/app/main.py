@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config.settings import get_settings
@@ -12,7 +13,7 @@ from app.core.middleware.exception_handler import (
     validation_exception_handler,
 )
 from app.core.middleware.request_id import RequestIDMiddleware
-from app.core.security.dependencies import require_auth
+from app.modules.auth.api.routes import router as auth_router
 
 settings = get_settings()
 logger = setup_logging()
@@ -31,18 +32,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(RequestIDMiddleware)
 
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, general_exception_handler)
 
+app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
+
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "version": "0.1.0"}
-
-
-@app.post("/api/v1/auth/test")
-async def auth_test(_=Depends(require_auth)):
-    return {"message": "authenticated"}

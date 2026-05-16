@@ -14,14 +14,14 @@ async def test_health_includes_request_id_header(client: AsyncClient):
     assert "x-request-id" in response.headers
 
 
-async def test_auth_endpoint_rejects_unauthenticated(client: AsyncClient):
-    response = await client.post("/api/v1/auth/test")
+async def test_auth_me_rejects_unauthenticated(client: AsyncClient):
+    response = await client.get("/api/v1/auth/me")
     assert response.status_code == 401
 
 
-async def test_auth_endpoint_rejects_invalid_token(client: AsyncClient):
-    response = await client.post(
-        "/api/v1/auth/test",
-        headers={"Authorization": "Bearer fake-token"},
+async def test_auth_me_rejects_invalid_cookie(client: AsyncClient):
+    response = await client.get(
+        "/api/v1/auth/me",
+        cookies={"access_token": "fake-token"},
     )
     assert response.status_code == 401
