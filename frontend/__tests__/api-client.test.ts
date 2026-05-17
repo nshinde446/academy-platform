@@ -1,0 +1,100 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import axios from "axios";
+
+vi.mock("axios", async () => {
+  const interceptors = {
+    request: { use: vi.fn() },
+    response: { use: vi.fn() },
+  };
+  const instance = {
+    get: vi.fn(),
+    post: vi.fn(),
+    interceptors,
+  };
+  return {
+    default: {
+      create: vi.fn(() => instance),
+    },
+  };
+});
+
+describe("apiClient", () => {
+  let apiClient: any;
+  let mockInstance: any;
+  let responseInterceptorError: any;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.resetModules();
+
+    const axiosMod = await import("axios");
+    mockInstance = (axiosMod.default.create as any)();
+
+    await import("@/services/api-client");
+
+    const responseUseCalls = mockInstance.interceptors.response.use.mock.calls;
+    if (responseUseCalls.length > 0) {
+      responseInterceptorError = responseUseCalls[0][1];
+    }
+  });
+
+  it("creates axios instance with correct config", async () => {
+    const axiosMod = await import("axios");
+    expect(axiosMod.default.create).toHaveBeenCalledWith({
+      baseURL: "",
+      withCredentials: true,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("registers a response interceptor", () => {
+    expect(mockInstance.interceptors.response.use).toHaveBeenCalled();
+  });
+
+  it("interceptor attempts refresh on 401", async () => {
+    if (!responseInterceptorError) return;
+
+    const originalRequest = { _retry: false, url: "/api/v1/some-endpoint" };
+    const error = { response: { status: 401 }, config: originalRequest };
+
+    mockInstance.post.mockResolvedValueOnce({});
+    mockInstance.mockImplementation?.(() => Promise.resolve({ data: "retried" }));
+
+    try {
+      await responseInterceptorError(error);
+    } catch {
+      // may throw if mock instance isn't callable
+    }
+
+    expect(mockInstance.post).toHaveBeenCalledWith("/api/v1/auth/refresh");
+    expect(originalRequest._retry).toBe(true);
+  });
+
+  it("interceptor redirects to login if refresh fails", async () => {
+    if (!responseInterceptorError) return;
+
+    delete (window as any).location;
+    (window as any).location = { href: "" };
+
+    const originalRequest = { _retry: false };
+    const error = { response: { status: 401 }, config: originalRequest };
+
+    mockInstance.post.mockRejectedValueOnce(new Error("refresh failed"));
+
+    try {
+      await responseInterceptorError(error);
+    } catch {
+      // expected
+    }
+
+    expect(window.location.href).toBe("/login");
+  });
+
+  it("interceptor rejects non-401 errors", async () => {
+    if (!responseInterceptorError) return;
+
+    const error = { response: { status: 500 }, config: {} };
+
+    await expect(responseInterceptorError(error)).rejects.toEqual(error);
+  });
+});
