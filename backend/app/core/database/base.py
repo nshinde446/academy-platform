@@ -27,8 +27,8 @@ class BaseModel(Base):
     created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     updated_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     status: Mapped[str] = mapped_column(
-        String, nullable=False, server_default="active"
+        String, nullable=False, server_default="active", default="active"
     )
     is_deleted: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="false"
+        Boolean, nullable=False, server_default="false", default=False
     )

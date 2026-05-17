@@ -9,12 +9,15 @@ from app.core.database.base import Base, BaseModel
 
 
 class Branch(BaseModel):
-    """Minimal branch table for auth. Extended in Stage 3."""
-
     __tablename__ = "branch"
 
+    institute_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("institutes.id"), nullable=True
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
 
 class User(BaseModel):

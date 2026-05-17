@@ -1,0 +1,78 @@
+import uuid
+
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database.session import get_db
+from app.modules.auth.permissions.rbac import get_current_user, require_roles
+from app.modules.student.schemas.student_schemas import (
+    StudentCreate,
+    StudentResponse,
+    StudentUpdate,
+)
+from app.modules.student.services import student_service
+
+router = APIRouter(prefix="/students", tags=["students"])
+
+
+@router.post("", response_model=StudentResponse)
+async def create_student(
+    body: StudentCreate,
+    request: Request,
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    return await student_service.create_student(
+        session, body, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.get("", response_model=list[StudentResponse])
+async def list_students(
+    branch_id: uuid.UUID = Query(...),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    return await student_service.list_students(session, branch_id, offset, limit)
+
+
+@router.get("/{student_id}", response_model=StudentResponse)
+async def get_student(
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    return await student_service.get_student(session, student_id, branch_id)
+
+
+@router.patch("/{student_id}", response_model=StudentResponse)
+async def update_student(
+    student_id: uuid.UUID,
+    body: StudentUpdate,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    return await student_service.update_student(
+        session, student_id, body, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.delete("/{student_id}", status_code=204)
+async def delete_student(
+    student_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    await student_service.delete_student(
+        session, student_id, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )

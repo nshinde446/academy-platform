@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.core.database.base import Base
 from app.core.database.session import get_db
@@ -17,12 +18,27 @@ from app.modules.auth.models.auth_models import (
     UserBranchRole,
     UserRole,
 )
+from app.modules.academic.models.academic_models import (  # noqa: F401
+    AcademicYear, Chapter, Course, Institute, Subject, Subtopic, Topic,
+)
 from app.modules.audit.models.audit_models import AuditLog  # noqa: F401
+from app.modules.batch.models.batch_models import Batch, BatchSchedule, BatchSubjectMapping  # noqa: F401
+from app.modules.classroom.models.classroom_models import Classroom  # noqa: F401
+from app.modules.student.models.student_models import (  # noqa: F401
+    Parent, Student, StudentBatchMapping, StudentIdentity,
+)
+from app.modules.teacher.models.teacher_models import (  # noqa: F401
+    Teacher, TeacherBatchMapping, TeacherSubjectMapping,
+)
 from app.modules.auth.services.auth_service import hash_password
 
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 
-engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+engine = create_async_engine(
+    TEST_DATABASE_URL,
+    echo=False,
+    connect_args={"check_same_thread": False},
+)
 TestSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
@@ -187,6 +203,43 @@ async def seed_data(db_session: AsyncSession):
     ])
     await db_session.commit()
 
+    academic_year = AcademicYear(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000030"),
+        branch_id=branch_a.id,
+        name="2025-2026",
+        start_year=2025,
+        end_year=2026,
+        status="active",
+        is_deleted=False,
+    )
+    db_session.add(academic_year)
+    await db_session.flush()
+
+    course = Course(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000040"),
+        branch_id=branch_a.id,
+        academic_year_id=academic_year.id,
+        name="JEE Advanced",
+        code="JEE-ADV",
+        status="active",
+        is_deleted=False,
+    )
+    db_session.add(course)
+    await db_session.flush()
+
+    subject = Subject(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000050"),
+        branch_id=branch_a.id,
+        academic_year_id=academic_year.id,
+        course_id=course.id,
+        name="Physics",
+        code="PHY",
+        status="active",
+        is_deleted=False,
+    )
+    db_session.add(subject)
+    await db_session.commit()
+
     return {
         "admin_user": admin_user,
         "teacher_user": teacher_user,
@@ -195,4 +248,7 @@ async def seed_data(db_session: AsyncSession):
         "branch_b": branch_b,
         "admin_role": admin_role,
         "teacher_role": teacher_role,
+        "academic_year": academic_year,
+        "course": course,
+        "subject": subject,
     }
