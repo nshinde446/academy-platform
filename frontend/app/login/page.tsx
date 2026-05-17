@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import apiClient from "@/services/api-client";
 import { useAuthStore } from "@/store/auth-store";
+import { useUserStore } from "@/store/user-store";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -22,6 +23,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const setAuthenticated = useAuthStore((s) => s.setAuthenticated);
+  const fetchUser = useUserStore((s) => s.fetchUser);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -31,9 +33,10 @@ export default function LoginPage() {
     try {
       await apiClient.post("/api/v1/auth/login", { email, password });
       setAuthenticated(true);
-      router.push("/");
+      await fetchUser();
+      router.push("/home");
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Login failed");
+      setError(err.response?.data?.error?.message || "Login failed");
     } finally {
       setLoading(false);
     }

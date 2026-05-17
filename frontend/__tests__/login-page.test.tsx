@@ -18,6 +18,11 @@ vi.mock("@/store/auth-store", () => ({
   useAuthStore: (selector: any) => selector({ setAuthenticated: mockSetAuthenticated }),
 }));
 
+const mockFetchUser = vi.fn().mockResolvedValue(undefined);
+vi.mock("@/store/user-store", () => ({
+  useUserStore: (selector: any) => selector({ fetchUser: mockFetchUser }),
+}));
+
 describe("LoginPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -63,14 +68,15 @@ describe("LoginPage", () => {
         password: "secret123",
       });
       expect(mockSetAuthenticated).toHaveBeenCalledWith(true);
-      expect(mockPush).toHaveBeenCalledWith("/");
+      expect(mockFetchUser).toHaveBeenCalled();
+      expect(mockPush).toHaveBeenCalledWith("/home");
     });
   });
 
   it("shows error message on failed login", async () => {
     const user = userEvent.setup();
     mockPost.mockRejectedValueOnce({
-      response: { data: { detail: "Invalid credentials" } },
+      response: { data: { error: { message: "Invalid credentials" } } },
     });
 
     render(<LoginPage />);
