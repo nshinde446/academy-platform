@@ -4,14 +4,13 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config.settings import get_settings
 from app.modules.attendance.repositories import attendance_repository
 from app.modules.audit.services import audit_service
 from app.modules.lectures.repositories import lecture_repository
 
 VALID_ATTENDANCE_STATUSES = {"PRESENT", "ABSENT", "LATE", "PARTIAL", "EXCUSED", "MANUAL_OVERRIDE"}
 VALID_SOURCES = {"BIOMETRIC", "MANUAL", "IMPORT", "SYSTEM"}
-GRACE_PERIOD_MINUTES = 10
-DUPLICATE_WINDOW_MINUTES = 5
 
 
 async def receive_raw_punches(
@@ -152,16 +151,18 @@ async def process_raw_punches(
 def _detect_duplicates(punches: list) -> list:
     if len(punches) <= 1:
         return []
+    settings = get_settings()
     duplicates = []
     for i in range(1, len(punches)):
         delta = punches[i].punch_timestamp - punches[i - 1].punch_timestamp
-        if delta < timedelta(minutes=DUPLICATE_WINDOW_MINUTES):
+        if delta < timedelta(minutes=settings.ATTENDANCE_DUPLICATE_WINDOW_MINUTES):
             duplicates.append(punches[i])
     return duplicates
 
 
 def _determine_status(punch_time: datetime, scheduled_start: datetime) -> str:
-    grace = timedelta(minutes=GRACE_PERIOD_MINUTES)
+    settings = get_settings()
+    grace = timedelta(minutes=settings.ATTENDANCE_GRACE_PERIOD_MINUTES)
     if punch_time <= scheduled_start + grace:
         return "PRESENT"
     return "LATE"

@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     COOKIE_SAMESITE: str = "lax"
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
 
+    ATTENDANCE_GRACE_PERIOD_MINUTES: int = 10
+    ATTENDANCE_DUPLICATE_WINDOW_MINUTES: int = 5
+
 
 @lru_cache
 def get_settings() -> Settings:
