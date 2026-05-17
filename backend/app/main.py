@@ -21,6 +21,7 @@ from app.modules.classroom.api.routes import router as classroom_router
 from app.modules.attendance.api.routes import router as attendance_router
 from app.modules.analytics.api.routes import router as analytics_router
 from app.modules.events.api.routes import router as events_router
+from app.modules.notifications.api.routes import router as notifications_router
 from app.modules.lectures.api.routes import router as lectures_router
 from app.modules.tests.api.routes import router as questions_router
 from app.modules.tests.api.routes import tests_router
@@ -72,6 +73,7 @@ app.include_router(tests_router, prefix=settings.API_V1_PREFIX)
 app.include_router(marks_router, prefix=settings.API_V1_PREFIX)
 app.include_router(events_router, prefix=settings.API_V1_PREFIX)
 app.include_router(analytics_router, prefix=settings.API_V1_PREFIX)
+app.include_router(notifications_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/health")
