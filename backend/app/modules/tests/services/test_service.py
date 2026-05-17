@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.services import audit_service
 from app.modules.batch.repositories import batch_repository
+from app.modules.events.services import event_service
 from app.modules.tests.repositories import test_repository
 
 VALID_DIFFICULTIES = {"EASY", "MEDIUM", "HARD"}
@@ -332,6 +333,16 @@ async def publish_test(
         ip_address=ip_address,
         branch_id=branch_id,
     )
+
+    await event_service.emit_event(
+        session,
+        event_type="TEST_UPLOADED",
+        test_id=test.id,
+        batch_id=test.batch_id,
+        subject_id=test.subject_id,
+        branch_id=branch_id,
+        metadata={"test_name": test.name, "test_status": "ACTIVE"},
+    )
     return test
 
 
@@ -417,6 +428,15 @@ async def submit_marks(
             )
         results.append(mark)
 
+    await event_service.emit_event(
+        session,
+        event_type="MARKS_UPDATED",
+        test_id=test_id,
+        batch_id=test.batch_id,
+        subject_id=test.subject_id,
+        branch_id=branch_id,
+        metadata={"marks_count": len(results)},
+    )
     return results
 
 

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config.settings import get_settings
 from app.modules.attendance.repositories import attendance_repository
 from app.modules.audit.services import audit_service
+from app.modules.events.services import event_service
 from app.modules.lectures.repositories import lecture_repository
 
 VALID_ATTENDANCE_STATUSES = {"PRESENT", "ABSENT", "LATE", "PARTIAL", "EXCUSED", "MANUAL_OVERRIDE"}
@@ -239,6 +240,15 @@ async def mark_attendance(
             ip_address=ip_address,
             branch_id=branch_id,
         )
+
+    await event_service.emit_event(
+        session,
+        event_type="ATTENDANCE_MARKED",
+        student_id=student_id,
+        lecture_id=lecture_id,
+        branch_id=branch_id,
+        metadata={"attendance_status": attendance_status, "source": source},
+    )
     return record
 
 

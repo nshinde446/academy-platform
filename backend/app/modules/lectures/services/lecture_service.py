@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.services import audit_service
 from app.modules.batch.repositories import batch_repository
+from app.modules.events.services import event_service
 from app.modules.lectures.repositories import lecture_repository
 from app.modules.lectures.schemas.lecture_schemas import (
     AttendanceMark,
@@ -169,6 +170,17 @@ async def start_lecture(
         ip_address=ip_address,
         branch_id=lecture.branch_id,
     )
+
+    await event_service.emit_event(
+        session,
+        event_type="LECTURE_STARTED",
+        lecture_id=lecture.id,
+        teacher_id=lecture.teacher_id,
+        batch_id=lecture.batch_id,
+        subject_id=lecture.subject_id,
+        branch_id=lecture.branch_id,
+        metadata={"actual_start": str(now)},
+    )
     return lecture
 
 
@@ -203,6 +215,17 @@ async def complete_lecture(
         new_values={"lecture_status": "completed", "actual_end": str(now)},
         ip_address=ip_address,
         branch_id=lecture.branch_id,
+    )
+
+    await event_service.emit_event(
+        session,
+        event_type="LECTURE_COMPLETED",
+        lecture_id=lecture.id,
+        teacher_id=lecture.teacher_id,
+        batch_id=lecture.batch_id,
+        subject_id=lecture.subject_id,
+        branch_id=lecture.branch_id,
+        metadata={"actual_end": str(now)},
     )
     return lecture
 
