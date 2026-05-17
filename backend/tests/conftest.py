@@ -48,6 +48,9 @@ from app.modules.analytics.models.analytics_models import (  # noqa: F401
 from app.modules.notifications.models.notification_models import (  # noqa: F401
     NotificationEvent, NotificationQueue, NotificationTemplate,
 )
+from app.modules.reports.models.report_models import (  # noqa: F401
+    ReportJob, ReportTemplate,
+)
 from app.modules.auth.services.auth_service import hash_password
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"

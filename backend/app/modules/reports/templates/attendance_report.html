@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head><title>Attendance Report</title></head>
+<body>
+<h1>{{ report_title }}</h1>
+<table border="1" cellpadding="5" cellspacing="0">
+  <tr>
+    {% for header in headers %}
+    <th>{{ header }}</th>
+    {% endfor %}
+  </tr>
+  {% for row in rows %}
+  <tr>
+    {% for cell in row %}
+    <td>{{ cell }}</td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+  {% if not rows %}
+  <tr><td colspan="{{ headers|length }}">No data available</td></tr>
+  {% endif %}
+</table>
+</body>
+</html>
