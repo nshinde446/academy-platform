@@ -12,6 +12,7 @@ from app.core.middleware.exception_handler import (
     http_exception_handler,
     validation_exception_handler,
 )
+from app.core.middleware.metrics import MetricsMiddleware, get_metrics_text
 from app.core.middleware.request_id import RequestIDMiddleware
 from app.modules.academic.api.routes import router as academic_router
 from app.modules.auth.api.routes import router as auth_router
@@ -57,6 +58,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(MetricsMiddleware)
 
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
@@ -85,3 +87,9 @@ app.include_router(ai_router, prefix=settings.API_V1_PREFIX)
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "version": "0.1.0"}
+
+
+@app.get("/metrics")
+async def metrics():
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(get_metrics_text(), media_type="text/plain")

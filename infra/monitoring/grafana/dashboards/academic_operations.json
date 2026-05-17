@@ -1,0 +1,59 @@
+{
+  "dashboard": {
+    "title": "Academic Operations",
+    "uid": "academic-ops",
+    "tags": ["academy", "academic"],
+    "timezone": "browser",
+    "refresh": "1m",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Lectures Per Day",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "increase(lectures_created_total[24h])",
+            "legendFormat": "Lectures"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Attendance Rate",
+        "type": "gauge",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "attendance_present_total / attendance_total * 100",
+            "legendFormat": "Attendance %"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Test Submissions Per Day",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+        "targets": [
+          {
+            "expr": "increase(test_submissions_total[24h])",
+            "legendFormat": "Submissions"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Student Growth",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+        "targets": [
+          {
+            "expr": "students_active_total",
+            "legendFormat": "Active Students"
+          }
+        ]
+      }
+    ]
+  }
+}

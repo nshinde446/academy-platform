@@ -1,0 +1,59 @@
+{
+  "dashboard": {
+    "title": "Plugin Health",
+    "uid": "plugin-health",
+    "tags": ["academy", "plugins"],
+    "timezone": "browser",
+    "refresh": "1m",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Active Plugins",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "plugins_active_total",
+            "legendFormat": "Active"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Plugin Error Rate",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 16, "x": 8, "y": 0 },
+        "targets": [
+          {
+            "expr": "rate(plugin_event_errors_total[5m])",
+            "legendFormat": "{{ plugin }}"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Event Processing Lag",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+        "targets": [
+          {
+            "expr": "plugin_event_processing_lag_seconds",
+            "legendFormat": "{{ plugin }}"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Plugin Events Processed",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+        "targets": [
+          {
+            "expr": "rate(plugin_events_processed_total[5m])",
+            "legendFormat": "{{ plugin }}"
+          }
+        ]
+      }
+    ]
+  }
+}

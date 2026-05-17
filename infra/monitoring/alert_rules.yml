@@ -1,0 +1,56 @@
+groups:
+  - name: academic_platform
+    rules:
+      - alert: HighQueueLag
+        expr: celery_queue_length > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery queue length is > 100 for 5 minutes"
+          description: "Queue {{ $labels.queue }} has {{ $value }} pending tasks."
+
+      - alert: HighAPILatency
+        expr: api_request_duration_seconds{quantile="0.95"} > 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "95th percentile API latency > 1s"
+          description: "Endpoint {{ $labels.endpoint }} p95 latency is {{ $value }}s."
+
+      - alert: FailedJobs
+        expr: increase(celery_task_failures_total[10m]) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 5 Celery task failures in 10 minutes"
+          description: "Task {{ $labels.task }} has {{ $value }} failures."
+
+      - alert: DBConnectionExhaustion
+        expr: pg_pool_available < 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL connection pool is nearly exhausted"
+          description: "Only {{ $value }} connections available."
+
+      - alert: HighErrorRate
+        expr: rate(api_requests_total{status=~"5.."}[5m]) / rate(api_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API error rate exceeds 5%"
+          description: "{{ $value | humanizePercentage }} of requests are failing."
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis exporter target is unreachable."

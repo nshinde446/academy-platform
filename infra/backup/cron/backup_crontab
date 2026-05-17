@@ -1,0 +1,5 @@
+# Daily full backup at 2:00 AM
+0 2 * * * /opt/academy/infra/backup/backup.sh >> /var/log/academy/backup.log 2>&1
+
+# Weekly restore validation on Sunday at 4:00 AM
+0 4 * * 0 /opt/academy/infra/backup/restore_test.sh >> /var/log/academy/restore_test.log 2>&1

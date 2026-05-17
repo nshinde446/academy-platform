@@ -1,0 +1,59 @@
+{
+  "dashboard": {
+    "title": "AI Usage",
+    "uid": "ai-usage",
+    "tags": ["academy", "ai"],
+    "timezone": "browser",
+    "refresh": "1m",
+    "panels": [
+      {
+        "id": 1,
+        "title": "AI Requests Per Day",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "increase(ai_requests_total[24h])",
+            "legendFormat": "{{ request_type }}"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "AI Avg Response Time",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "rate(ai_request_duration_seconds_sum[5m]) / rate(ai_request_duration_seconds_count[5m])",
+            "legendFormat": "{{ request_type }}"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "AI Error Rate",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 8, "x": 0, "y": 8 },
+        "targets": [
+          {
+            "expr": "sum(rate(ai_requests_total{status=\"FAILED\"}[5m])) / sum(rate(ai_requests_total[5m])) * 100",
+            "legendFormat": "Error %"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "AI Requests by Provider",
+        "type": "piechart",
+        "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+        "targets": [
+          {
+            "expr": "sum by (provider) (ai_requests_total)",
+            "legendFormat": "{{ provider }}"
+          }
+        ]
+      }
+    ]
+  }
+}
