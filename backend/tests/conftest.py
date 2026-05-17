@@ -33,6 +33,9 @@ from app.modules.teacher.models.teacher_models import (  # noqa: F401
 from app.modules.lectures.models.lecture_models import (  # noqa: F401
     Lecture, LectureAttendanceMapping, LectureTopicMapping,
 )
+from app.modules.attendance.models.attendance_models import (  # noqa: F401
+    AttendanceException, AttendanceRecord, RawPunchLog,
+)
 from app.modules.auth.services.auth_service import hash_password
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
