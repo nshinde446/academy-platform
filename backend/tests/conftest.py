@@ -30,6 +30,9 @@ from app.modules.student.models.student_models import (  # noqa: F401
 from app.modules.teacher.models.teacher_models import (  # noqa: F401
     Teacher, TeacherBatchMapping, TeacherSubjectMapping,
 )
+from app.modules.lectures.models.lecture_models import (  # noqa: F401
+    Lecture, LectureAttendanceMapping, LectureTopicMapping,
+)
 from app.modules.auth.services.auth_service import hash_password
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
@@ -238,6 +241,66 @@ async def seed_data(db_session: AsyncSession):
         is_deleted=False,
     )
     db_session.add(subject)
+    await db_session.flush()
+
+    teacher = Teacher(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000060"),
+        user_id=teacher_user.id,
+        branch_id=branch_a.id,
+        first_name="Teacher",
+        last_name="User",
+        status="active",
+        is_deleted=False,
+    )
+    db_session.add(teacher)
+    await db_session.flush()
+
+    batch = Batch(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000070"),
+        branch_id=branch_a.id,
+        academic_year_id=academic_year.id,
+        course_id=course.id,
+        name="Batch A",
+        code="BATCH-A",
+        status="active",
+        is_deleted=False,
+    )
+    batch_b = Batch(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000071"),
+        branch_id=branch_a.id,
+        academic_year_id=academic_year.id,
+        course_id=course.id,
+        name="Batch B",
+        code="BATCH-B",
+        status="active",
+        is_deleted=False,
+    )
+    db_session.add_all([batch, batch_b])
+    await db_session.flush()
+
+    classroom = Classroom(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000080"),
+        branch_id=branch_a.id,
+        name="Room 101",
+        code="R101",
+        capacity=40,
+        status="active",
+        is_deleted=False,
+    )
+    db_session.add(classroom)
+    await db_session.flush()
+
+    student = Student(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000090"),
+        branch_id=branch_a.id,
+        academic_year_id=academic_year.id,
+        first_name="Test",
+        last_name="Student",
+        enrollment_number="STU001",
+        status="active",
+        is_deleted=False,
+    )
+    db_session.add(student)
     await db_session.commit()
 
     return {
@@ -251,4 +314,9 @@ async def seed_data(db_session: AsyncSession):
         "academic_year": academic_year,
         "course": course,
         "subject": subject,
+        "teacher": teacher,
+        "batch": batch,
+        "batch_b": batch_b,
+        "classroom": classroom,
+        "student": student,
     }
