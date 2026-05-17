@@ -54,6 +54,9 @@ from app.modules.reports.models.report_models import (  # noqa: F401
 from app.modules.plugins.models.plugin_models import (  # noqa: F401
     Plugin, PluginConfig, PluginDependency, PluginEvent,
 )
+from app.modules.ai.models.ai_models import (  # noqa: F401
+    AIRequest, AIServiceConfig,
+)
 from app.modules.auth.services.auth_service import hash_password
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
