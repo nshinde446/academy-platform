@@ -20,6 +20,9 @@ from app.modules.batch.api.routes import router as batch_router
 from app.modules.classroom.api.routes import router as classroom_router
 from app.modules.attendance.api.routes import router as attendance_router
 from app.modules.lectures.api.routes import router as lectures_router
+from app.modules.tests.api.routes import router as questions_router
+from app.modules.tests.api.routes import tests_router
+from app.modules.tests.api.routes import marks_router
 from app.modules.student.api.routes import router as student_router
 from app.modules.teacher.api.routes import router as teacher_router
 
@@ -62,6 +65,9 @@ app.include_router(batch_router, prefix=settings.API_V1_PREFIX)
 app.include_router(classroom_router, prefix=settings.API_V1_PREFIX)
 app.include_router(lectures_router, prefix=settings.API_V1_PREFIX)
 app.include_router(attendance_router, prefix=settings.API_V1_PREFIX)
+app.include_router(questions_router, prefix=settings.API_V1_PREFIX)
+app.include_router(tests_router, prefix=settings.API_V1_PREFIX)
+app.include_router(marks_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/health")
