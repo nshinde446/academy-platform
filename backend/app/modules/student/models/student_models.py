@@ -26,6 +26,10 @@ class Student(BaseModel):
     )
     parent_mobile: Mapped[str | None] = mapped_column(String(20), nullable=True)
     rfid_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    district: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    caste: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    username: Mapped[str | None] = mapped_column(String(100), nullable=True)
     course_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("courses.id"), nullable=True
     )

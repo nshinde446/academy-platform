@@ -15,6 +15,10 @@ class StudentCreate(BaseModel):
     enrollment_number: str | None = None
     parent_mobile: str | None = None
     rfid_number: str | None = None
+    gender: str | None = None
+    district: str | None = None
+    caste: str | None = None
+    username: str | None = None
     course_id: uuid.UUID | None = None
 
 
@@ -27,6 +31,10 @@ class StudentUpdate(BaseModel):
     enrollment_number: str | None = None
     parent_mobile: str | None = None
     rfid_number: str | None = None
+    gender: str | None = None
+    district: str | None = None
+    caste: str | None = None
+    username: str | None = None
     course_id: uuid.UUID | None = None
 
 
@@ -42,6 +50,16 @@ class StudentResponse(BaseModel):
     enrollment_number: str | None = None
     parent_mobile: str | None = None
     rfid_number: str | None = None
+    gender: str | None = None
+    district: str | None = None
+    caste: str | None = None
+    username: str | None = None
     course_id: uuid.UUID | None = None
     status: str
     model_config = {"from_attributes": True}
+
+
+class ImportSummary(BaseModel):
+    imported: int
+    skipped: int
+    errors: list[str] = []

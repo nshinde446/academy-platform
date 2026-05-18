@@ -23,6 +23,7 @@ export function StudentTable({ students }: StudentTableProps) {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead className="hidden sm:table-cell">Roll No</TableHead>
+            <TableHead className="hidden xl:table-cell">Gender</TableHead>
             <TableHead className="hidden lg:table-cell">Email</TableHead>
             <TableHead className="hidden md:table-cell">Phone</TableHead>
             <TableHead className="hidden md:table-cell">Parent Mobile</TableHead>
@@ -38,6 +39,9 @@ export function StudentTable({ students }: StudentTableProps) {
               </TableCell>
               <TableCell className="hidden sm:table-cell">
                 {s.enrollment_number ?? "—"}
+              </TableCell>
+              <TableCell className="hidden xl:table-cell">
+                {s.gender ?? "—"}
               </TableCell>
               <TableCell className="hidden lg:table-cell">
                 {s.email ?? "—"}

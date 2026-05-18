@@ -12,6 +12,10 @@ export interface StudentResponse {
   enrollment_number: string | null;
   parent_mobile: string | null;
   rfid_number: string | null;
+  gender: string | null;
+  district: string | null;
+  caste: string | null;
+  username: string | null;
   course_id: string | null;
   status: string;
 }
@@ -27,6 +31,10 @@ export interface StudentCreate {
   enrollment_number?: string | null;
   parent_mobile?: string | null;
   rfid_number?: string | null;
+  gender?: string | null;
+  district?: string | null;
+  caste?: string | null;
+  username?: string | null;
   course_id?: string | null;
 }
 
@@ -39,6 +47,10 @@ export interface StudentUpdate {
   enrollment_number?: string | null;
   parent_mobile?: string | null;
   rfid_number?: string | null;
+  gender?: string | null;
+  district?: string | null;
+  caste?: string | null;
+  username?: string | null;
   course_id?: string | null;
 }
 

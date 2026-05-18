@@ -16,6 +16,10 @@ const MOCK_STUDENTS: StudentResponse[] = [
     enrollment_number: "ROLL-001",
     parent_mobile: "9123456789",
     rfid_number: "RFID-AAA-001",
+    gender: "M",
+    district: "Pune",
+    caste: null,
+    username: null,
     course_id: null,
     status: "active",
   },
@@ -31,17 +35,22 @@ const MOCK_STUDENTS: StudentResponse[] = [
     enrollment_number: null,
     parent_mobile: null,
     rfid_number: null,
+    gender: null,
+    district: null,
+    caste: null,
+    username: null,
     course_id: null,
     status: "inactive",
   },
 ];
 
 describe("StudentTable", () => {
-  it("renders table headers including Roll No, Parent Mobile, RFID", () => {
+  it("renders table headers including Roll No, Gender, Parent Mobile, RFID", () => {
     render(<StudentTable students={[]} />);
 
     expect(screen.getByText("Name")).toBeInTheDocument();
     expect(screen.getByText("Roll No")).toBeInTheDocument();
+    expect(screen.getByText("Gender")).toBeInTheDocument();
     expect(screen.getByText("Email")).toBeInTheDocument();
     expect(screen.getByText("Phone")).toBeInTheDocument();
     expect(screen.getByText("Parent Mobile")).toBeInTheDocument();
@@ -54,11 +63,12 @@ describe("StudentTable", () => {
     expect(screen.queryByText("Enrollment No.")).not.toBeInTheDocument();
   });
 
-  it("renders student rows with all data including parent_mobile and rfid_number", () => {
+  it("renders student rows with all data including gender, parent_mobile and rfid_number", () => {
     render(<StudentTable students={MOCK_STUDENTS} />);
 
     expect(screen.getByText("Rahul Sharma")).toBeInTheDocument();
     expect(screen.getByText("ROLL-001")).toBeInTheDocument();
+    expect(screen.getByText("M")).toBeInTheDocument();
     expect(screen.getByText("rahul@example.com")).toBeInTheDocument();
     expect(screen.getByText("9876543210")).toBeInTheDocument();
     expect(screen.getByText("9123456789")).toBeInTheDocument();
@@ -69,9 +79,9 @@ describe("StudentTable", () => {
   it("renders dashes for null optional fields", () => {
     render(<StudentTable students={MOCK_STUDENTS} />);
 
-    // Priya has 5 null fields (enrollment, email, phone, parent_mobile, rfid)
+    // Priya has 6 null displayed fields (enrollment, gender, email, phone, parent_mobile, rfid)
     const dashes = screen.getAllByText("—");
-    expect(dashes.length).toBeGreaterThanOrEqual(5);
+    expect(dashes.length).toBeGreaterThanOrEqual(6);
   });
 
   it("renders empty state when no students", () => {

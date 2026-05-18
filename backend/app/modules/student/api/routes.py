@@ -1,16 +1,17 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.student.schemas.student_schemas import (
+    ImportSummary,
     StudentCreate,
     StudentResponse,
     StudentUpdate,
 )
-from app.modules.student.services import student_service
+from app.modules.student.services import import_service, student_service
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -60,6 +61,23 @@ async def update_student(
 ):
     return await student_service.update_student(
         session, student_id, body, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.post("/import", response_model=ImportSummary)
+async def import_students(
+    request: Request,
+    file: UploadFile = File(...),
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    return await import_service.import_students(
+        session,
+        file,
+        branch_id,
+        current_user["user_id"],
         request.client.host if request.client else None,
     )
 

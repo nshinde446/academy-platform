@@ -29,6 +29,7 @@ const EMPTY_FORM = {
   enrollment_number: "",
   parent_mobile: "",
   rfid_number: "",
+  gender: "",
 };
 
 export function CreateStudentDialog({
@@ -68,6 +69,7 @@ export function CreateStudentDialog({
         enrollment_number: form.enrollment_number || undefined,
         parent_mobile: form.parent_mobile || undefined,
         rfid_number: form.rfid_number || undefined,
+        gender: form.gender || undefined,
       });
       reset();
       setOpen(false);
@@ -200,6 +202,21 @@ export function CreateStudentDialog({
                 }
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5 sm:max-w-[calc(50%-0.375rem)]">
+            <Label htmlFor="gender">Gender</Label>
+            <select
+              id="gender"
+              value={form.gender}
+              onChange={(e) => setForm({ ...form, gender: e.target.value })}
+              className="flex h-8 w-full rounded-lg border border-input bg-background px-3 text-sm"
+            >
+              <option value="">—</option>
+              <option value="M">Male</option>
+              <option value="F">Female</option>
+              <option value="Other">Other</option>
+            </select>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

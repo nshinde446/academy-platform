@@ -72,9 +72,9 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
       <DialogPopup>
         <DialogTitle>Import Students</DialogTitle>
         <DialogDescription>
-          Upload a CSV or Excel file with student data. Required columns:
-          first_name, last_name. Optional: email, phone, enrollment_number,
-          date_of_birth.
+          Upload a CSV or Excel file. Required column: Name. Optional: Roll No,
+          Email, Phone, Parent Mobile, Gender, District, Caste, Username,
+          RFIDNumber.
         </DialogDescription>
         <div className="mt-4 flex flex-col gap-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
