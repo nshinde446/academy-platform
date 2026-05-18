@@ -9,13 +9,16 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { StudentResponse } from "../_schemas/student";
 
 interface StudentTableProps {
   students: StudentResponse[];
+  onEdit: (student: StudentResponse) => void;
+  onDelete: (student: StudentResponse) => void;
 }
 
-export function StudentTable({ students }: StudentTableProps) {
+export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) {
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
       <Table>
@@ -29,6 +32,7 @@ export function StudentTable({ students }: StudentTableProps) {
             <TableHead className="hidden md:table-cell">Parent Mobile</TableHead>
             <TableHead className="hidden lg:table-cell">RFID</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -61,6 +65,27 @@ export function StudentTable({ students }: StudentTableProps) {
                 >
                   {s.status}
                 </Badge>
+              </TableCell>
+              <TableCell className="text-right">
+                <div className="flex justify-end gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onEdit(s)}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => onDelete(s)}
+                    aria-label={`Delete ${s.first_name} ${s.last_name}`}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}

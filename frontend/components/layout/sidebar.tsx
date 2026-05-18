@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { label: "Students", href: "/students" },
   { label: "Batches", href: "/batches" },
   { label: "Courses", href: "/courses" },
+  { label: "Academic Years", href: "/academic-years" },
 ];
 
 export function Sidebar() {

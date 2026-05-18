@@ -9,6 +9,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type {
   AcademicYearResponse,
   BatchResponse,
@@ -19,6 +20,8 @@ interface BatchTableProps {
   batches: BatchResponse[];
   courses: CourseResponse[];
   academicYears: AcademicYearResponse[];
+  onEdit: (batch: BatchResponse) => void;
+  onDelete: (batch: BatchResponse) => void;
 }
 
 function findName<T extends { id: string; name: string }>(
@@ -28,7 +31,13 @@ function findName<T extends { id: string; name: string }>(
   return list.find((x) => x.id === id)?.name ?? "—";
 }
 
-export function BatchTable({ batches, courses, academicYears }: BatchTableProps) {
+export function BatchTable({
+  batches,
+  courses,
+  academicYears,
+  onEdit,
+  onDelete,
+}: BatchTableProps) {
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
       <Table>
@@ -42,6 +51,7 @@ export function BatchTable({ batches, courses, academicYears }: BatchTableProps)
             </TableHead>
             <TableHead className="hidden xl:table-cell">Capacity</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -70,6 +80,27 @@ export function BatchTable({ batches, courses, academicYears }: BatchTableProps)
                   >
                     {b.status}
                   </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onEdit(b)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => onDelete(b)}
+                      aria-label={`Delete batch ${b.name}`}
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             );

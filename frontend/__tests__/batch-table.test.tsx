@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { BatchTable } from "@/app/(dashboard)/batches/_components/batch-table";
 import type {
   AcademicYearResponse,
@@ -74,9 +75,24 @@ const MOCK_BATCHES: BatchResponse[] = [
   },
 ];
 
+const mockEdit = vi.fn();
+const mockDelete = vi.fn();
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 describe("BatchTable", () => {
   it("renders table headers", () => {
-    render(<BatchTable batches={[]} courses={MOCK_COURSES} academicYears={MOCK_YEARS} />);
+    render(
+      <BatchTable
+        batches={[]}
+        courses={MOCK_COURSES}
+        academicYears={MOCK_YEARS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
+      />
+    );
 
     expect(screen.getByText("Name")).toBeInTheDocument();
     expect(screen.getByText("Course")).toBeInTheDocument();
@@ -92,6 +108,8 @@ describe("BatchTable", () => {
         batches={MOCK_BATCHES}
         courses={MOCK_COURSES}
         academicYears={MOCK_YEARS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
       />
     );
 
@@ -107,6 +125,8 @@ describe("BatchTable", () => {
         batches={MOCK_BATCHES}
         courses={MOCK_COURSES}
         academicYears={MOCK_YEARS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
       />
     );
 
@@ -122,6 +142,8 @@ describe("BatchTable", () => {
         batches={MOCK_BATCHES}
         courses={MOCK_COURSES}
         academicYears={MOCK_YEARS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
       />
     );
 
@@ -135,9 +157,48 @@ describe("BatchTable", () => {
         batches={[]}
         courses={MOCK_COURSES}
         academicYears={MOCK_YEARS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
       />
     );
     const rows = container.querySelectorAll("tbody tr");
     expect(rows).toHaveLength(0);
+  });
+
+  it("invokes onEdit with the row's batch", async () => {
+    const user = userEvent.setup();
+    render(
+      <BatchTable
+        batches={MOCK_BATCHES}
+        courses={MOCK_COURSES}
+        academicYears={MOCK_YEARS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
+      />
+    );
+
+    const editButtons = screen.getAllByRole("button", { name: /^edit$/i });
+    await user.click(editButtons[0]);
+
+    expect(mockEdit).toHaveBeenCalledWith(MOCK_BATCHES[0]);
+  });
+
+  it("invokes onDelete with the row's batch", async () => {
+    const user = userEvent.setup();
+    render(
+      <BatchTable
+        batches={MOCK_BATCHES}
+        courses={MOCK_COURSES}
+        academicYears={MOCK_YEARS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
+      />
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /delete batch neet 2025-2027 a/i })
+    );
+
+    expect(mockDelete).toHaveBeenCalledWith(MOCK_BATCHES[0]);
   });
 });

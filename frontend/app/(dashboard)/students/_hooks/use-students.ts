@@ -3,6 +3,7 @@ import apiClient from "@/services/api-client";
 import type {
   StudentResponse,
   StudentCreate,
+  StudentUpdate,
   AcademicYearResponse,
 } from "../_schemas/student";
 
@@ -55,6 +56,32 @@ export function useCreateStudent(branchId: string | undefined) {
       const res = await apiClient.post<StudentResponse>(
         "/api/v1/students",
         data
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: studentKeys.list(branchId) });
+      }
+    },
+  });
+}
+
+export function useUpdateStudent(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      studentId,
+      data,
+    }: {
+      studentId: string;
+      data: StudentUpdate;
+    }) => {
+      const res = await apiClient.patch<StudentResponse>(
+        `/api/v1/students/${studentId}`,
+        data,
+        { params: { branch_id: branchId } }
       );
       return res.data;
     },

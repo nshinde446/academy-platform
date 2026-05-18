@@ -4,6 +4,7 @@ import type {
   AcademicYearResponse,
   BatchCreate,
   BatchResponse,
+  BatchUpdate,
   CourseResponse,
 } from "../_schemas/batch";
 
@@ -43,6 +44,49 @@ export function useCreateBatch(branchId: string | undefined) {
     mutationFn: async (data: BatchCreate) => {
       const res = await apiClient.post<BatchResponse>("/api/v1/batches", data);
       return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: batchKeys.list(branchId) });
+      }
+    },
+  });
+}
+
+export function useUpdateBatch(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      batchId,
+      data,
+    }: {
+      batchId: string;
+      data: BatchUpdate;
+    }) => {
+      const res = await apiClient.patch<BatchResponse>(
+        `/api/v1/batches/${batchId}`,
+        data,
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: batchKeys.list(branchId) });
+      }
+    },
+  });
+}
+
+export function useDeleteBatch(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (batchId: string) => {
+      await apiClient.delete(`/api/v1/batches/${batchId}`, {
+        params: { branch_id: branchId },
+      });
     },
     onSuccess: () => {
       if (branchId) {

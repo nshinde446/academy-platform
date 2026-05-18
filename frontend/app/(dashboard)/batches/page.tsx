@@ -10,11 +10,18 @@ import {
   useCourses,
   useCreateAcademicYear,
   useCreateBatch,
+  useDeleteBatch,
+  useUpdateBatch,
 } from "./_hooks/use-batches";
-import type { BatchCreate, BatchResponse } from "./_schemas/batch";
+import type {
+  BatchCreate,
+  BatchResponse,
+  BatchUpdate,
+} from "./_schemas/batch";
 import { BatchTable } from "./_components/batch-table";
 import { BatchEmptyState } from "./_components/batch-empty-state";
 import { CreateBatchDialog } from "./_components/create-batch-dialog";
+import { EditBatchDialog } from "./_components/edit-batch-dialog";
 
 function filterBatches(
   batches: BatchResponse[],
@@ -46,11 +53,15 @@ export default function BatchesPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
   const [selectedYearId, setSelectedYearId] = useState<string>("");
+  const [editTarget, setEditTarget] = useState<BatchResponse | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   const batchesQuery = useBatches(branchId);
   const academicYearsQuery = useAcademicYears(branchId);
   const coursesQuery = useCourses(branchId);
   const createMutation = useCreateBatch(branchId);
+  const updateMutation = useUpdateBatch(branchId);
+  const deleteMutation = useDeleteBatch(branchId);
   const createYearMutation = useCreateAcademicYear(branchId);
 
   const academicYears = academicYearsQuery.data ?? [];
@@ -90,6 +101,24 @@ export default function BatchesPage() {
 
   async function handleCreateAcademicYear(startYear: number) {
     return createYearMutation.mutateAsync(startYear);
+  }
+
+  function handleEdit(batch: BatchResponse) {
+    setEditTarget(batch);
+    setEditOpen(true);
+  }
+
+  async function handleUpdate(data: BatchUpdate) {
+    if (!editTarget) return;
+    await updateMutation.mutateAsync({ batchId: editTarget.id, data });
+  }
+
+  async function handleDelete(batch: BatchResponse) {
+    const ok = window.confirm(
+      `Delete batch "${batch.name}"? This cannot be undone.`
+    );
+    if (!ok) return;
+    await deleteMutation.mutateAsync(batch.id);
   }
 
   return (
@@ -154,8 +183,18 @@ export default function BatchesPage() {
           batches={filtered}
           courses={courses}
           academicYears={academicYears}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
         />
       )}
+
+      <EditBatchDialog
+        batch={editTarget}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSubmit={handleUpdate}
+        isPending={updateMutation.isPending}
+      />
     </div>
   );
 }

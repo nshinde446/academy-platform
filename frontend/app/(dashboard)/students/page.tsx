@@ -7,12 +7,19 @@ import { Input } from "@/components/ui/input";
 import {
   useStudents,
   useCreateStudent,
+  useUpdateStudent,
+  useDeleteStudent,
   useAcademicYears,
 } from "./_hooks/use-students";
-import type { StudentCreate, StudentResponse } from "./_schemas/student";
+import type {
+  StudentCreate,
+  StudentResponse,
+  StudentUpdate,
+} from "./_schemas/student";
 import { StudentTable } from "./_components/student-table";
 import { StudentEmptyState } from "./_components/student-empty-state";
 import { CreateStudentDialog } from "./_components/create-student-dialog";
+import { EditStudentDialog } from "./_components/edit-student-dialog";
 import { ImportStudentsDialog } from "./_components/import-students-dialog";
 
 function filterStudents(
@@ -36,20 +43,41 @@ export default function StudentsPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
 
+  const [editTarget, setEditTarget] = useState<StudentResponse | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+
   const studentsQuery = useStudents(branchId);
   const academicYearsQuery = useAcademicYears(branchId);
   const createMutation = useCreateStudent(branchId);
+  const updateMutation = useUpdateStudent(branchId);
+  const deleteMutation = useDeleteStudent(branchId);
 
   const filtered = useMemo(
     () => filterStudents(studentsQuery.data ?? [], debouncedSearch),
     [studentsQuery.data, debouncedSearch]
   );
 
-  async function handleCreate(
-    data: Omit<StudentCreate, "branch_id">
-  ) {
+  async function handleCreate(data: Omit<StudentCreate, "branch_id">) {
     if (!branchId) return;
     await createMutation.mutateAsync({ ...data, branch_id: branchId });
+  }
+
+  function handleEdit(student: StudentResponse) {
+    setEditTarget(student);
+    setEditOpen(true);
+  }
+
+  async function handleUpdate(data: StudentUpdate) {
+    if (!editTarget) return;
+    await updateMutation.mutateAsync({ studentId: editTarget.id, data });
+  }
+
+  async function handleDelete(student: StudentResponse) {
+    const ok = window.confirm(
+      `Delete student "${student.first_name} ${student.last_name}"? This cannot be undone.`
+    );
+    if (!ok) return;
+    await deleteMutation.mutateAsync(student.id);
   }
 
   return (
@@ -95,8 +123,20 @@ export default function StudentsPage() {
       ) : filtered.length === 0 ? (
         <StudentEmptyState hasSearch={!!debouncedSearch} />
       ) : (
-        <StudentTable students={filtered} />
+        <StudentTable
+          students={filtered}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+        />
       )}
+
+      <EditStudentDialog
+        student={editTarget}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSubmit={handleUpdate}
+        isPending={updateMutation.isPending}
+      />
     </div>
   );
 }
