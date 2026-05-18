@@ -33,12 +33,10 @@ class Course(BaseModel):
     branch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=False
     )
-    academic_year_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("academic_years.id"), nullable=False
-    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    duration_years: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class Subject(BaseModel):

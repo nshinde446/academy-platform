@@ -73,15 +73,27 @@ async def get_course(session: AsyncSession, course_id: uuid.UUID) -> Course | No
     return result.scalar_one_or_none()
 
 
-async def list_courses(session: AsyncSession, branch_id: uuid.UUID, academic_year_id: uuid.UUID) -> list[Course]:
+async def list_courses(session: AsyncSession, branch_id: uuid.UUID) -> list[Course]:
     result = await session.execute(
         select(Course).where(
             Course.branch_id == branch_id,
-            Course.academic_year_id == academic_year_id,
             Course.is_deleted == False,
         )
     )
     return list(result.scalars().all())
+
+
+async def get_academic_year_by_start_year(
+    session: AsyncSession, branch_id: uuid.UUID, start_year: int
+) -> AcademicYear | None:
+    result = await session.execute(
+        select(AcademicYear).where(
+            AcademicYear.branch_id == branch_id,
+            AcademicYear.start_year == start_year,
+            AcademicYear.is_deleted == False,
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 async def create_subject(session: AsyncSession, **kwargs) -> Subject:

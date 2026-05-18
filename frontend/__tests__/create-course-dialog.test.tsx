@@ -12,61 +12,30 @@ describe("CreateCourseDialog", () => {
   });
 
   it("renders the trigger button", () => {
-    render(
-      <CreateCourseDialog
-        academicYearId="ay1"
-        onSubmit={mockOnSubmit}
-        isPending={false}
-      />
-    );
+    render(<CreateCourseDialog onSubmit={mockOnSubmit} isPending={false} />);
 
     expect(
       screen.getByRole("button", { name: /create course/i })
     ).toBeInTheDocument();
   });
 
-  it("disables trigger when no academic year is selected", () => {
-    render(
-      <CreateCourseDialog
-        academicYearId={undefined}
-        onSubmit={mockOnSubmit}
-        isPending={false}
-      />
-    );
-
-    expect(
-      screen.getByRole("button", { name: /create course/i })
-    ).toBeDisabled();
-  });
-
   it("shows form fields when dialog opens", async () => {
-    render(
-      <CreateCourseDialog
-        academicYearId="ay1"
-        onSubmit={mockOnSubmit}
-        isPending={false}
-      />
-    );
+    render(<CreateCourseDialog onSubmit={mockOnSubmit} isPending={false} />);
 
     await user.click(screen.getByRole("button", { name: /create course/i }));
 
     await waitFor(() => {
       expect(screen.getByLabelText(/course name/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/course code/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/duration/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/description/i)).toBeInTheDocument();
     });
   });
 
-  it("calls onSubmit with form data", async () => {
+  it("submits with duration_years", async () => {
     mockOnSubmit.mockResolvedValue(undefined);
 
-    render(
-      <CreateCourseDialog
-        academicYearId="ay1"
-        onSubmit={mockOnSubmit}
-        isPending={false}
-      />
-    );
+    render(<CreateCourseDialog onSubmit={mockOnSubmit} isPending={false} />);
 
     await user.click(screen.getByRole("button", { name: /create course/i }));
 
@@ -74,35 +43,27 @@ describe("CreateCourseDialog", () => {
       expect(screen.getByLabelText(/course name/i)).toBeInTheDocument();
     });
 
-    await user.type(screen.getByLabelText(/course name/i), "Physics");
-    await user.type(screen.getByLabelText(/course code/i), "PHY");
-    await user.type(
-      screen.getByLabelText(/description/i),
-      "Mechanics & Waves"
-    );
+    await user.type(screen.getByLabelText(/course name/i), "NEET 2-Year");
+    await user.type(screen.getByLabelText(/course code/i), "NEET-2Y");
+    await user.clear(screen.getByLabelText(/duration/i));
+    await user.type(screen.getByLabelText(/duration/i), "2");
 
     await user.click(screen.getByRole("button", { name: /^create$/i }));
 
     await waitFor(() => {
       expect(mockOnSubmit).toHaveBeenCalledWith({
-        academic_year_id: "ay1",
-        name: "Physics",
-        code: "PHY",
-        description: "Mechanics & Waves",
+        name: "NEET 2-Year",
+        code: "NEET-2Y",
+        description: null,
+        duration_years: 2,
       });
     });
   });
 
-  it("sends null description when blank", async () => {
+  it("defaults duration to 1", async () => {
     mockOnSubmit.mockResolvedValue(undefined);
 
-    render(
-      <CreateCourseDialog
-        academicYearId="ay1"
-        onSubmit={mockOnSubmit}
-        isPending={false}
-      />
-    );
+    render(<CreateCourseDialog onSubmit={mockOnSubmit} isPending={false} />);
 
     await user.click(screen.getByRole("button", { name: /create course/i }));
 
@@ -110,26 +71,20 @@ describe("CreateCourseDialog", () => {
       expect(screen.getByLabelText(/course name/i)).toBeInTheDocument();
     });
 
-    await user.type(screen.getByLabelText(/course name/i), "Math");
-    await user.type(screen.getByLabelText(/course code/i), "MAT");
+    await user.type(screen.getByLabelText(/course name/i), "Class 9");
+    await user.type(screen.getByLabelText(/course code/i), "C9");
 
     await user.click(screen.getByRole("button", { name: /^create$/i }));
 
     await waitFor(() => {
       expect(mockOnSubmit).toHaveBeenCalledWith(
-        expect.objectContaining({ description: null })
+        expect.objectContaining({ duration_years: 1 })
       );
     });
   });
 
   it("disables submit button when isPending", async () => {
-    render(
-      <CreateCourseDialog
-        academicYearId="ay1"
-        onSubmit={mockOnSubmit}
-        isPending={true}
-      />
-    );
+    render(<CreateCourseDialog onSubmit={mockOnSubmit} isPending={true} />);
 
     await user.click(screen.getByRole("button", { name: /create course/i }));
 

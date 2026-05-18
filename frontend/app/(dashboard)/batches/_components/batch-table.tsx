@@ -9,41 +9,71 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import type { BatchResponse } from "../_schemas/batch";
+import type {
+  AcademicYearResponse,
+  BatchResponse,
+  CourseResponse,
+} from "../_schemas/batch";
 
 interface BatchTableProps {
   batches: BatchResponse[];
+  courses: CourseResponse[];
+  academicYears: AcademicYearResponse[];
 }
 
-export function BatchTable({ batches }: BatchTableProps) {
+function findName<T extends { id: string; name: string }>(
+  list: T[],
+  id: string
+): string {
+  return list.find((x) => x.id === id)?.name ?? "—";
+}
+
+export function BatchTable({ batches, courses, academicYears }: BatchTableProps) {
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead>Code</TableHead>
-            <TableHead className="hidden sm:table-cell">Capacity</TableHead>
+            <TableHead className="hidden sm:table-cell">Course</TableHead>
+            <TableHead className="hidden md:table-cell">Duration</TableHead>
+            <TableHead className="hidden lg:table-cell">
+              Academic Years
+            </TableHead>
+            <TableHead className="hidden xl:table-cell">Capacity</TableHead>
             <TableHead>Status</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {batches.map((b) => (
-            <TableRow key={b.id}>
-              <TableCell className="font-medium">{b.name}</TableCell>
-              <TableCell>{b.code}</TableCell>
-              <TableCell className="hidden sm:table-cell">
-                {b.capacity}
-              </TableCell>
-              <TableCell>
-                <Badge
-                  variant={b.status === "active" ? "success" : "secondary"}
-                >
-                  {b.status}
-                </Badge>
-              </TableCell>
-            </TableRow>
-          ))}
+          {batches.map((b) => {
+            const startName = findName(academicYears, b.start_academic_year_id);
+            const endName = findName(academicYears, b.end_academic_year_id);
+            const range =
+              startName === endName ? startName : `${startName} → ${endName}`;
+            return (
+              <TableRow key={b.id}>
+                <TableCell className="font-medium">{b.name}</TableCell>
+                <TableCell className="hidden sm:table-cell">
+                  {findName(courses, b.course_id)}
+                </TableCell>
+                <TableCell className="hidden md:table-cell">
+                  {b.duration_years}{" "}
+                  {b.duration_years === 1 ? "year" : "years"}
+                </TableCell>
+                <TableCell className="hidden lg:table-cell">{range}</TableCell>
+                <TableCell className="hidden xl:table-cell">
+                  {b.capacity}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant={b.status === "active" ? "success" : "secondary"}
+                  >
+                    {b.status}
+                  </Badge>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>

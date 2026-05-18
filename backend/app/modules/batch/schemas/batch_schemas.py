@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class BatchCreate(BaseModel):
     branch_id: uuid.UUID
-    academic_year_id: uuid.UUID
+    start_academic_year_id: uuid.UUID
     course_id: uuid.UUID
     name: str
     code: str
@@ -21,10 +21,12 @@ class BatchUpdate(BaseModel):
 class BatchResponse(BaseModel):
     id: uuid.UUID
     branch_id: uuid.UUID
-    academic_year_id: uuid.UUID
+    start_academic_year_id: uuid.UUID
+    end_academic_year_id: uuid.UUID
     course_id: uuid.UUID
     name: str
     code: str
     capacity: int
+    duration_years: int
     status: str
     model_config = {"from_attributes": True}

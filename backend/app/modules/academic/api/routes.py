@@ -77,11 +77,10 @@ async def create_course(
 @router.get("/courses", response_model=list[CourseResponse])
 async def list_courses(
     branch_id: uuid.UUID = Query(...),
-    academic_year_id: uuid.UUID = Query(...),
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
-    return await academic_repository.list_courses(session, branch_id, academic_year_id)
+    return await academic_repository.list_courses(session, branch_id)
 
 
 @router.post("/subjects", response_model=SubjectResponse)

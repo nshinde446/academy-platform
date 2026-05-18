@@ -1,23 +1,20 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
 import type {
-  BatchResponse,
-  BatchCreate,
-  CourseResponse,
   AcademicYearResponse,
+  BatchCreate,
+  BatchResponse,
+  CourseResponse,
 } from "../_schemas/batch";
 
 export const batchKeys = {
   all: ["batches"] as const,
   list: (branchId: string) => [...batchKeys.all, "list", branchId] as const,
-  detail: (branchId: string, id: string) =>
-    [...batchKeys.all, "detail", branchId, id] as const,
 };
 
 export const courseKeys = {
   all: ["courses"] as const,
-  list: (branchId: string, academicYearId: string) =>
-    [...courseKeys.all, "list", branchId, academicYearId] as const,
+  list: (branchId: string) => [...courseKeys.all, "list", branchId] as const,
 };
 
 export const academicYearKeys = {
@@ -55,20 +52,17 @@ export function useCreateBatch(branchId: string | undefined) {
   });
 }
 
-export function useDeleteBatch(branchId: string | undefined) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (batchId: string) => {
-      await apiClient.delete(`/api/v1/batches/${batchId}`, {
-        params: { branch_id: branchId },
-      });
+export function useCourses(branchId: string | undefined) {
+  return useQuery<CourseResponse[]>({
+    queryKey: courseKeys.list(branchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<CourseResponse[]>(
+        "/api/v1/academic/courses",
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
     },
-    onSuccess: () => {
-      if (branchId) {
-        queryClient.invalidateQueries({ queryKey: batchKeys.list(branchId) });
-      }
-    },
+    enabled: !!branchId,
   });
 }
 
@@ -83,22 +77,5 @@ export function useAcademicYears(branchId: string | undefined) {
       return res.data;
     },
     enabled: !!branchId,
-  });
-}
-
-export function useCourses(
-  branchId: string | undefined,
-  academicYearId: string | undefined
-) {
-  return useQuery<CourseResponse[]>({
-    queryKey: courseKeys.list(branchId!, academicYearId!),
-    queryFn: async () => {
-      const res = await apiClient.get<CourseResponse[]>(
-        "/api/v1/academic/courses",
-        { params: { branch_id: branchId, academic_year_id: academicYearId } }
-      );
-      return res.data;
-    },
-    enabled: !!branchId && !!academicYearId,
   });
 }

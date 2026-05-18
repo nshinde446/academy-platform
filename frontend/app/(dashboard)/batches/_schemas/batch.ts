@@ -3,17 +3,19 @@
 export interface BatchResponse {
   id: string;
   branch_id: string;
-  academic_year_id: string;
+  start_academic_year_id: string;
+  end_academic_year_id: string;
   course_id: string;
   name: string;
   code: string;
   capacity: number;
+  duration_years: number;
   status: string;
 }
 
 export interface BatchCreate {
   branch_id: string;
-  academic_year_id: string;
+  start_academic_year_id: string;
   course_id: string;
   name: string;
   code: string;
@@ -29,10 +31,10 @@ export interface BatchUpdate {
 export interface CourseResponse {
   id: string;
   branch_id: string;
-  academic_year_id: string;
   name: string;
   code: string;
   description: string | null;
+  duration_years: number;
   status: string;
 }
 

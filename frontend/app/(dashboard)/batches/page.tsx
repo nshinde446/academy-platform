@@ -5,10 +5,10 @@ import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
 import {
-  useBatches,
-  useCreateBatch,
   useAcademicYears,
+  useBatches,
   useCourses,
+  useCreateBatch,
 } from "./_hooks/use-batches";
 import type { BatchCreate, BatchResponse } from "./_schemas/batch";
 import { BatchTable } from "./_components/batch-table";
@@ -17,11 +17,22 @@ import { CreateBatchDialog } from "./_components/create-batch-dialog";
 
 function filterBatches(
   batches: BatchResponse[],
-  query: string
+  query: string,
+  yearStartYearLookup: Record<string, number>,
+  filterYearStart: number | null
 ): BatchResponse[] {
-  if (!query) return batches;
+  let list = batches;
+  if (filterYearStart !== null) {
+    list = list.filter((b) => {
+      const start = yearStartYearLookup[b.start_academic_year_id];
+      const end = yearStartYearLookup[b.end_academic_year_id];
+      if (start === undefined || end === undefined) return false;
+      return start <= filterYearStart && filterYearStart <= end;
+    });
+  }
+  if (!query) return list;
   const q = query.toLowerCase();
-  return batches.filter(
+  return list.filter(
     (b) =>
       b.name.toLowerCase().includes(q) || b.code.toLowerCase().includes(q)
   );
@@ -33,16 +44,41 @@ export default function BatchesPage() {
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
+  const [selectedYearId, setSelectedYearId] = useState<string>("");
 
   const batchesQuery = useBatches(branchId);
   const academicYearsQuery = useAcademicYears(branchId);
-  const activeYearId = academicYearsQuery.data?.[0]?.id;
-  const coursesQuery = useCourses(branchId, activeYearId);
+  const coursesQuery = useCourses(branchId);
   const createMutation = useCreateBatch(branchId);
 
+  const academicYears = academicYearsQuery.data ?? [];
+  const courses = coursesQuery.data ?? [];
+
+  const sortedYears = useMemo(
+    () => [...academicYears].sort((a, b) => a.start_year - b.start_year),
+    [academicYears]
+  );
+
+  const yearStartYearLookup = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const y of academicYears) map[y.id] = y.start_year;
+    return map;
+  }, [academicYears]);
+
+  const filterYearStart =
+    selectedYearId && yearStartYearLookup[selectedYearId] !== undefined
+      ? yearStartYearLookup[selectedYearId]
+      : null;
+
   const filtered = useMemo(
-    () => filterBatches(batchesQuery.data ?? [], debouncedSearch),
-    [batchesQuery.data, debouncedSearch]
+    () =>
+      filterBatches(
+        batchesQuery.data ?? [],
+        debouncedSearch,
+        yearStartYearLookup,
+        filterYearStart
+      ),
+    [batchesQuery.data, debouncedSearch, yearStartYearLookup, filterYearStart]
   );
 
   async function handleCreate(data: Omit<BatchCreate, "branch_id">) {
@@ -57,18 +93,19 @@ export default function BatchesPage() {
         <div>
           <h2 className="text-2xl font-semibold">Batches</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage batch groups for courses and schedules
+            Manage batch groups. Multi-year courses span academic years
+            automatically.
           </p>
         </div>
         <CreateBatchDialog
-          academicYears={academicYearsQuery.data ?? []}
-          courses={coursesQuery.data ?? []}
+          academicYears={sortedYears}
+          courses={courses}
           onSubmit={handleCreate}
           isPending={createMutation.isPending}
         />
       </div>
 
-      {/* Search */}
+      {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Input
           placeholder="Search by name or code..."
@@ -76,6 +113,21 @@ export default function BatchesPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="w-full sm:max-w-sm"
         />
+        {sortedYears.length > 0 && (
+          <select
+            value={selectedYearId}
+            onChange={(e) => setSelectedYearId(e.target.value)}
+            className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
+            aria-label="Filter by academic year"
+          >
+            <option value="">All academic years</option>
+            {sortedYears.map((y) => (
+              <option key={y.id} value={y.id}>
+                {y.name}
+              </option>
+            ))}
+          </select>
+        )}
         <span className="text-sm text-muted-foreground">
           {filtered.length} batch{filtered.length !== 1 ? "es" : ""}
         </span>
@@ -89,9 +141,13 @@ export default function BatchesPage() {
           Failed to load batches. Make sure the backend is running.
         </p>
       ) : filtered.length === 0 ? (
-        <BatchEmptyState hasSearch={!!debouncedSearch} />
+        <BatchEmptyState hasSearch={!!debouncedSearch || !!selectedYearId} />
       ) : (
-        <BatchTable batches={filtered} />
+        <BatchTable
+          batches={filtered}
+          courses={courses}
+          academicYears={academicYears}
+        />
       )}
     </div>
   );

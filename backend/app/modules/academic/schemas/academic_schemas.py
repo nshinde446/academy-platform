@@ -41,19 +41,19 @@ class AcademicYearResponse(BaseModel):
 
 class CourseCreate(BaseModel):
     branch_id: uuid.UUID
-    academic_year_id: uuid.UUID
     name: str
     code: str
     description: str | None = None
+    duration_years: int = 1
 
 
 class CourseResponse(BaseModel):
     id: uuid.UUID
     branch_id: uuid.UUID
-    academic_year_id: uuid.UUID
     name: str
     code: str
     description: str | None = None
+    duration_years: int
     status: str
     model_config = {"from_attributes": True}
 

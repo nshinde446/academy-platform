@@ -15,7 +15,6 @@ import {
 import type { CourseCreate } from "../_schemas/course";
 
 interface CreateCourseDialogProps {
-  academicYearId: string | undefined;
   onSubmit: (data: Omit<CourseCreate, "branch_id">) => Promise<void> | void;
   isPending: boolean;
 }
@@ -24,10 +23,10 @@ const EMPTY_FORM = {
   name: "",
   code: "",
   description: "",
+  duration_years: "1",
 };
 
 export function CreateCourseDialog({
-  academicYearId,
   onSubmit,
   isPending,
 }: CreateCourseDialogProps) {
@@ -46,17 +45,18 @@ export function CreateCourseDialog({
       setError("Course name and code are required");
       return;
     }
-    if (!academicYearId) {
-      setError("No academic year selected.");
+    const duration = parseInt(form.duration_years, 10);
+    if (!Number.isFinite(duration) || duration < 1) {
+      setError("Duration must be at least 1 year");
       return;
     }
 
     try {
       await onSubmit({
-        academic_year_id: academicYearId,
         name: form.name,
         code: form.code,
         description: form.description || null,
+        duration_years: duration,
       });
       reset();
       setOpen(false);
@@ -74,16 +74,13 @@ export function CreateCourseDialog({
       }}
     >
       <DialogTrigger
-        render={
-          <Button onClick={() => setOpen(true)} disabled={!academicYearId}>
-            Create Course
-          </Button>
-        }
+        render={<Button onClick={() => setOpen(true)}>Create Course</Button>}
       />
       <DialogPopup>
         <DialogTitle>Create Course</DialogTitle>
         <DialogDescription>
-          Add a new course for the active academic year.
+          Define a course. Multi-year programs (e.g., NEET 2-year) span batches
+          across multiple academic years.
         </DialogDescription>
         <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -109,16 +106,31 @@ export function CreateCourseDialog({
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="course_description">Description</Label>
-            <Input
-              id="course_description"
-              value={form.description}
-              onChange={(e) =>
-                setForm({ ...form, description: e.target.value })
-              }
-              placeholder="Optional"
-            />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="course_duration">Duration (years) *</Label>
+              <Input
+                id="course_duration"
+                type="number"
+                min={1}
+                value={form.duration_years}
+                onChange={(e) =>
+                  setForm({ ...form, duration_years: e.target.value })
+                }
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="course_description">Description</Label>
+              <Input
+                id="course_description"
+                value={form.description}
+                onChange={(e) =>
+                  setForm({ ...form, description: e.target.value })
+                }
+                placeholder="Optional"
+              />
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

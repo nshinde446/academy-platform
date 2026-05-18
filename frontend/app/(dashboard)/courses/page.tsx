@@ -4,11 +4,7 @@ import { useMemo, useState } from "react";
 import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
-import {
-  useAcademicYears,
-  useCourses,
-  useCreateCourse,
-} from "./_hooks/use-courses";
+import { useCourses, useCreateCourse } from "./_hooks/use-courses";
 import type { CourseCreate, CourseResponse } from "./_schemas/course";
 import { CourseTable } from "./_components/course-table";
 import { CourseEmptyState } from "./_components/course-empty-state";
@@ -35,13 +31,8 @@ export default function CoursesPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
 
-  const academicYearsQuery = useAcademicYears(branchId);
-  const academicYears = academicYearsQuery.data ?? [];
-  const [selectedYearId, setSelectedYearId] = useState<string>("");
-  const activeYearId = selectedYearId || academicYears[0]?.id;
-
-  const coursesQuery = useCourses(branchId, activeYearId);
-  const createMutation = useCreateCourse(branchId, activeYearId);
+  const coursesQuery = useCourses(branchId);
+  const createMutation = useCreateCourse(branchId);
 
   const filtered = useMemo(
     () => filterCourses(coursesQuery.data ?? [], debouncedSearch),
@@ -60,11 +51,11 @@ export default function CoursesPage() {
         <div>
           <h2 className="text-2xl font-semibold">Courses</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage courses offered each academic year
+            Master course definitions (NEET, JEE, Class 9, etc.) used across
+            academic years
           </p>
         </div>
         <CreateCourseDialog
-          academicYearId={activeYearId}
           onSubmit={handleCreate}
           isPending={createMutation.isPending}
         />
@@ -78,20 +69,6 @@ export default function CoursesPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="w-full sm:max-w-sm"
         />
-        {academicYears.length > 0 && (
-          <select
-            value={activeYearId ?? ""}
-            onChange={(e) => setSelectedYearId(e.target.value)}
-            className="h-9 rounded-lg border border-input bg-background px-3 text-sm"
-            aria-label="Academic year"
-          >
-            {academicYears.map((y) => (
-              <option key={y.id} value={y.id}>
-                {y.name}
-              </option>
-            ))}
-          </select>
-        )}
         <span className="text-sm text-muted-foreground">
           {filtered.length} course{filtered.length !== 1 ? "s" : ""}
         </span>
@@ -105,10 +82,7 @@ export default function CoursesPage() {
           Failed to load courses. Make sure the backend is running.
         </p>
       ) : filtered.length === 0 ? (
-        <CourseEmptyState
-          hasSearch={!!debouncedSearch}
-          hasAcademicYear={!!activeYearId}
-        />
+        <CourseEmptyState hasSearch={!!debouncedSearch} />
       ) : (
         <CourseTable courses={filtered} />
       )}

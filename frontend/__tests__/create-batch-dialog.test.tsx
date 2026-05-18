@@ -16,25 +16,33 @@ const MOCK_YEARS: AcademicYearResponse[] = [
     end_year: 2026,
     status: "active",
   },
+  {
+    id: "ay2",
+    branch_id: "br1",
+    name: "2026-2027",
+    start_year: 2026,
+    end_year: 2027,
+    status: "active",
+  },
 ];
 
 const MOCK_COURSES: CourseResponse[] = [
   {
     id: "c1",
     branch_id: "br1",
-    academic_year_id: "ay1",
-    name: "Physics",
-    code: "PHY",
+    name: "NEET 2-Year",
+    code: "NEET-2Y",
     description: null,
+    duration_years: 2,
     status: "active",
   },
   {
     id: "c2",
     branch_id: "br1",
-    academic_year_id: "ay1",
-    name: "Chemistry",
-    code: "CHM",
-    description: "Advanced Chemistry",
+    name: "Class 9",
+    code: "C9",
+    description: null,
+    duration_years: 1,
     status: "active",
   },
 ];
@@ -79,10 +87,35 @@ describe("CreateBatchDialog", () => {
       expect(screen.getByLabelText(/batch code/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/capacity/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/course/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/start academic year/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/end academic year/i)).toBeInTheDocument();
     });
   });
 
-  it("calls onSubmit with form data", async () => {
+  it("auto-computes end academic year for a 2-year course", async () => {
+    render(
+      <CreateBatchDialog
+        academicYears={MOCK_YEARS}
+        courses={MOCK_COURSES}
+        onSubmit={mockOnSubmit}
+        isPending={false}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /create batch/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/end academic year/i)).toBeInTheDocument();
+    });
+
+    const endInput = screen.getByLabelText(
+      /end academic year/i
+    ) as HTMLInputElement;
+    // Defaults: course=NEET 2-Year (2 yr), start=2025-2026 → end=2026-2027
+    expect(endInput.value).toBe("2026-2027");
+  });
+
+  it("submits with start_academic_year_id and course_id", async () => {
     mockOnSubmit.mockResolvedValue(undefined);
 
     render(
@@ -100,20 +133,17 @@ describe("CreateBatchDialog", () => {
       expect(screen.getByLabelText(/batch name/i)).toBeInTheDocument();
     });
 
-    await user.type(screen.getByLabelText(/batch name/i), "Physics Morning");
-    await user.type(screen.getByLabelText(/batch code/i), "PHY-M");
-    await user.clear(screen.getByLabelText(/capacity/i));
-    await user.type(screen.getByLabelText(/capacity/i), "25");
+    await user.type(screen.getByLabelText(/batch name/i), "NEET 2025-2027 A");
+    await user.type(screen.getByLabelText(/batch code/i), "NEET-A");
 
     await user.click(screen.getByRole("button", { name: /^create$/i }));
 
     await waitFor(() => {
       expect(mockOnSubmit).toHaveBeenCalledWith(
         expect.objectContaining({
-          name: "Physics Morning",
-          code: "PHY-M",
-          capacity: 25,
-          academic_year_id: "ay1",
+          name: "NEET 2025-2027 A",
+          code: "NEET-A",
+          start_academic_year_id: "ay1",
           course_id: "c1",
         })
       );
@@ -134,34 +164,6 @@ describe("CreateBatchDialog", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /creating/i })).toBeDisabled();
-    });
-  });
-
-  it("shows error when no courses available", async () => {
-    render(
-      <CreateBatchDialog
-        academicYears={MOCK_YEARS}
-        courses={[]}
-        onSubmit={mockOnSubmit}
-        isPending={false}
-      />
-    );
-
-    await user.click(screen.getByRole("button", { name: /create batch/i }));
-
-    await waitFor(() => {
-      expect(screen.getByLabelText(/batch name/i)).toBeInTheDocument();
-    });
-
-    await user.type(screen.getByLabelText(/batch name/i), "Test");
-    await user.type(screen.getByLabelText(/batch code/i), "TST");
-
-    await user.click(screen.getByRole("button", { name: /^create$/i }));
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(/no course available/i)
-      ).toBeInTheDocument();
     });
   });
 });

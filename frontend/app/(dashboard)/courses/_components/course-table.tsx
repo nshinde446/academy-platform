@@ -23,6 +23,7 @@ export function CourseTable({ courses }: CourseTableProps) {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Code</TableHead>
+            <TableHead className="hidden sm:table-cell">Duration</TableHead>
             <TableHead className="hidden md:table-cell">Description</TableHead>
             <TableHead>Status</TableHead>
           </TableRow>
@@ -32,6 +33,9 @@ export function CourseTable({ courses }: CourseTableProps) {
             <TableRow key={c.id}>
               <TableCell className="font-medium">{c.name}</TableCell>
               <TableCell>{c.code}</TableCell>
+              <TableCell className="hidden sm:table-cell">
+                {c.duration_years} {c.duration_years === 1 ? "year" : "years"}
+              </TableCell>
               <TableCell className="hidden md:table-cell text-muted-foreground">
                 {c.description || "—"}
               </TableCell>

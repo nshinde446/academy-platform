@@ -12,7 +12,10 @@ class Batch(BaseModel):
     branch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=False
     )
-    academic_year_id: Mapped[uuid.UUID] = mapped_column(
+    start_academic_year_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("academic_years.id"), nullable=False
+    )
+    end_academic_year_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("academic_years.id"), nullable=False
     )
     course_id: Mapped[uuid.UUID] = mapped_column(
