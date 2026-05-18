@@ -61,6 +61,7 @@ const MOCK_COURSES: CourseResponse[] = [
 
 describe("CreateBatchDialog", () => {
   const mockOnSubmit = vi.fn();
+  const mockOnCreateYear = vi.fn();
   const user = userEvent.setup();
 
   beforeEach(() => {
@@ -74,6 +75,7 @@ describe("CreateBatchDialog", () => {
           academicYears={MOCK_YEARS}
           courses={MOCK_COURSES}
           onSubmit={mockOnSubmit}
+          onCreateAcademicYear={mockOnCreateYear}
           isPending={false}
         />
       )
@@ -91,6 +93,7 @@ describe("CreateBatchDialog", () => {
           academicYears={MOCK_YEARS}
           courses={MOCK_COURSES}
           onSubmit={mockOnSubmit}
+          onCreateAcademicYear={mockOnCreateYear}
           isPending={false}
         />
       )
@@ -115,6 +118,7 @@ describe("CreateBatchDialog", () => {
           academicYears={MOCK_YEARS}
           courses={MOCK_COURSES}
           onSubmit={mockOnSubmit}
+          onCreateAcademicYear={mockOnCreateYear}
           isPending={false}
         />
       )
@@ -142,6 +146,7 @@ describe("CreateBatchDialog", () => {
           academicYears={MOCK_YEARS}
           courses={MOCK_COURSES}
           onSubmit={mockOnSubmit}
+          onCreateAcademicYear={mockOnCreateYear}
           isPending={false}
         />
       )
@@ -170,6 +175,67 @@ describe("CreateBatchDialog", () => {
     });
   });
 
+  it("offers inline 'Create yyyy-yyyy academic year' button when end year is missing, and submit auto-creates it", async () => {
+    mockOnSubmit.mockResolvedValue(undefined);
+    mockOnCreateYear.mockResolvedValue({
+      id: "ay3",
+      branch_id: "br1",
+      name: "2027-2028",
+      start_year: 2027,
+      end_year: 2028,
+      status: "active",
+    });
+
+    // Only ay1 (2025-2026) and ay2 (2026-2027) exist; selecting ay2 + 2-year
+    // course → end year would be 2027, which is missing.
+    render(
+      withQuery(
+        <CreateBatchDialog
+          academicYears={MOCK_YEARS}
+          courses={MOCK_COURSES}
+          onSubmit={mockOnSubmit}
+          onCreateAcademicYear={mockOnCreateYear}
+          isPending={false}
+        />
+      )
+    );
+
+    await user.click(screen.getByRole("button", { name: /create batch/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/start academic year/i)).toBeInTheDocument();
+    });
+
+    // Switch start year to 2026-2027 → end year target = 2027 (missing)
+    await user.selectOptions(
+      screen.getByLabelText(/start academic year/i),
+      "ay2"
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /create 2027-2028 academic year/i })
+      ).toBeInTheDocument();
+    });
+
+    // Fill in name and code, then submit — should auto-create the year
+    await user.type(screen.getByLabelText(/batch name/i), "NEET 2026-2028 A");
+    await user.type(screen.getByLabelText(/batch code/i), "NEET-A-2628");
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(mockOnCreateYear).toHaveBeenCalledWith(2027);
+      expect(mockOnSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "NEET 2026-2028 A",
+          code: "NEET-A-2628",
+          start_academic_year_id: "ay2",
+          course_id: "c1",
+        })
+      );
+    });
+  });
+
   it("disables submit button when isPending", async () => {
     render(
       withQuery(
@@ -177,6 +243,7 @@ describe("CreateBatchDialog", () => {
           academicYears={MOCK_YEARS}
           courses={MOCK_COURSES}
           onSubmit={mockOnSubmit}
+          onCreateAcademicYear={mockOnCreateYear}
           isPending={true}
         />
       )

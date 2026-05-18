@@ -23,6 +23,7 @@ interface CreateBatchDialogProps {
   academicYears: AcademicYearResponse[];
   courses: CourseResponse[];
   onSubmit: (data: Omit<BatchCreate, "branch_id">) => Promise<void> | void;
+  onCreateAcademicYear: (startYear: number) => Promise<AcademicYearResponse>;
   isPending: boolean;
 }
 
@@ -36,6 +37,7 @@ export function CreateBatchDialog({
   academicYears,
   courses,
   onSubmit,
+  onCreateAcademicYear,
   isPending,
 }: CreateBatchDialogProps) {
   const [open, setOpen] = useState(false);
@@ -43,6 +45,7 @@ export function CreateBatchDialog({
   const [selectedCourse, setSelectedCourse] = useState("");
   const [selectedStartYear, setSelectedStartYear] = useState("");
   const [error, setError] = useState("");
+  const [creatingYear, setCreatingYear] = useState(false);
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -67,12 +70,37 @@ export function CreateBatchDialog({
     endYearTarget !== null
       ? sortedYears.find((y) => y.start_year === endYearTarget)
       : undefined;
+  const endYearMissing = endYearTarget !== null && !endYear;
+  const missingYearName =
+    endYearTarget !== null ? `${endYearTarget}-${endYearTarget + 1}` : "";
 
   function reset() {
     setForm(EMPTY_FORM);
     setSelectedCourse("");
     setSelectedStartYear("");
     setError("");
+  }
+
+  async function ensureEndYear(): Promise<void> {
+    if (!endYearMissing || endYearTarget === null) return;
+    setCreatingYear(true);
+    try {
+      await onCreateAcademicYear(endYearTarget);
+    } finally {
+      setCreatingYear(false);
+    }
+  }
+
+  async function handleCreateMissingYear() {
+    setError("");
+    try {
+      await ensureEndYear();
+    } catch (err: any) {
+      setError(
+        err.response?.data?.error?.message ||
+          `Failed to create ${missingYearName} academic year`
+      );
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -89,14 +117,12 @@ export function CreateBatchDialog({
       setError("No academic year available. Create one first.");
       return;
     }
-    if (!endYear) {
-      setError(
-        `Cannot find academic year for end year ${endYearTarget}. Create it first.`
-      );
-      return;
-    }
 
     try {
+      // Auto-create the missing end academic year so the backend can resolve it
+      if (endYearMissing) {
+        await ensureEndYear();
+      }
       await onSubmit({
         start_academic_year_id: startYearId,
         course_id: courseId,
@@ -171,16 +197,24 @@ export function CreateBatchDialog({
                 <Label htmlFor="batch_end_year">End Academic Year</Label>
                 <Input
                   id="batch_end_year"
-                  value={
-                    endYear
-                      ? endYear.name
-                      : endYearTarget !== null
-                      ? `Missing (${endYearTarget})`
-                      : "—"
-                  }
+                  value={endYear ? endYear.name : missingYearName || "—"}
                   readOnly
                   className="bg-muted"
                 />
+                {endYearMissing && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCreateMissingYear}
+                    disabled={creatingYear}
+                    className="self-start"
+                  >
+                    {creatingYear
+                      ? `Creating ${missingYearName}...`
+                      : `+ Create ${missingYearName} academic year`}
+                  </Button>
+                )}
               </div>
             </div>
           )}
@@ -225,7 +259,7 @@ export function CreateBatchDialog({
                 </Button>
               }
             />
-            <Button type="submit" disabled={isPending}>
+            <Button type="submit" disabled={isPending || creatingYear}>
               {isPending ? "Creating..." : "Create"}
             </Button>
           </div>

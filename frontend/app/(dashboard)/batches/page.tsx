@@ -8,6 +8,7 @@ import {
   useAcademicYears,
   useBatches,
   useCourses,
+  useCreateAcademicYear,
   useCreateBatch,
 } from "./_hooks/use-batches";
 import type { BatchCreate, BatchResponse } from "./_schemas/batch";
@@ -50,6 +51,7 @@ export default function BatchesPage() {
   const academicYearsQuery = useAcademicYears(branchId);
   const coursesQuery = useCourses(branchId);
   const createMutation = useCreateBatch(branchId);
+  const createYearMutation = useCreateAcademicYear(branchId);
 
   const academicYears = academicYearsQuery.data ?? [];
   const courses = coursesQuery.data ?? [];
@@ -86,6 +88,10 @@ export default function BatchesPage() {
     await createMutation.mutateAsync({ ...data, branch_id: branchId });
   }
 
+  async function handleCreateAcademicYear(startYear: number) {
+    return createYearMutation.mutateAsync(startYear);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -101,6 +107,7 @@ export default function BatchesPage() {
           academicYears={sortedYears}
           courses={courses}
           onSubmit={handleCreate}
+          onCreateAcademicYear={handleCreateAcademicYear}
           isPending={createMutation.isPending}
         />
       </div>
