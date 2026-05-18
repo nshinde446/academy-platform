@@ -24,6 +24,8 @@ class Student(BaseModel):
     enrollment_number: Mapped[str | None] = mapped_column(
         String(50), nullable=True
     )
+    parent_mobile: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    rfid_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     course_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("courses.id"), nullable=True
     )

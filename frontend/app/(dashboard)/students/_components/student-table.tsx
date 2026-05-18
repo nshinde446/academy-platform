@@ -22,11 +22,11 @@ export function StudentTable({ students }: StudentTableProps) {
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead className="hidden sm:table-cell">
-              Enrollment No.
-            </TableHead>
-            <TableHead className="hidden md:table-cell">Email</TableHead>
-            <TableHead className="hidden lg:table-cell">Phone</TableHead>
+            <TableHead className="hidden sm:table-cell">Roll No</TableHead>
+            <TableHead className="hidden lg:table-cell">Email</TableHead>
+            <TableHead className="hidden md:table-cell">Phone</TableHead>
+            <TableHead className="hidden md:table-cell">Parent Mobile</TableHead>
+            <TableHead className="hidden lg:table-cell">RFID</TableHead>
             <TableHead>Status</TableHead>
           </TableRow>
         </TableHeader>
@@ -39,11 +39,17 @@ export function StudentTable({ students }: StudentTableProps) {
               <TableCell className="hidden sm:table-cell">
                 {s.enrollment_number ?? "—"}
               </TableCell>
-              <TableCell className="hidden md:table-cell">
+              <TableCell className="hidden lg:table-cell">
                 {s.email ?? "—"}
               </TableCell>
-              <TableCell className="hidden lg:table-cell">
+              <TableCell className="hidden md:table-cell">
                 {s.phone ?? "—"}
+              </TableCell>
+              <TableCell className="hidden md:table-cell">
+                {s.parent_mobile ?? "—"}
+              </TableCell>
+              <TableCell className="hidden lg:table-cell font-mono text-xs">
+                {s.rfid_number ?? "—"}
               </TableCell>
               <TableCell>
                 <Badge

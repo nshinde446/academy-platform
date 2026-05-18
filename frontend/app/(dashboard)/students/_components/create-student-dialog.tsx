@@ -27,6 +27,8 @@ const EMPTY_FORM = {
   phone: "",
   date_of_birth: "",
   enrollment_number: "",
+  parent_mobile: "",
+  rfid_number: "",
 };
 
 export function CreateStudentDialog({
@@ -64,6 +66,8 @@ export function CreateStudentDialog({
         phone: form.phone || undefined,
         date_of_birth: form.date_of_birth || undefined,
         enrollment_number: form.enrollment_number || undefined,
+        parent_mobile: form.parent_mobile || undefined,
+        rfid_number: form.rfid_number || undefined,
       });
       reset();
       setOpen(false);
@@ -153,7 +157,7 @@ export function CreateStudentDialog({
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="enrollment_number">Enrollment No.</Label>
+              <Label htmlFor="enrollment_number">Roll No</Label>
               <Input
                 id="enrollment_number"
                 value={form.enrollment_number}
@@ -170,6 +174,29 @@ export function CreateStudentDialog({
                 value={form.date_of_birth}
                 onChange={(e) =>
                   setForm({ ...form, date_of_birth: e.target.value })
+                }
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="parent_mobile">Parent Mobile</Label>
+              <Input
+                id="parent_mobile"
+                value={form.parent_mobile}
+                onChange={(e) =>
+                  setForm({ ...form, parent_mobile: e.target.value })
+                }
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="rfid_number">RFID Number</Label>
+              <Input
+                id="rfid_number"
+                value={form.rfid_number}
+                onChange={(e) =>
+                  setForm({ ...form, rfid_number: e.target.value })
                 }
               />
             </div>

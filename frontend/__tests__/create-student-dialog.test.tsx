@@ -50,7 +50,46 @@ describe("CreateStudentDialog", () => {
       expect(screen.getByLabelText(/first name/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/last name/i)).toBeInTheDocument();
       expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
-      expect(screen.getByLabelText(/phone/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/^phone$/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/roll no/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/parent mobile/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/rfid number/i)).toBeInTheDocument();
+    });
+  });
+
+  it("submits parent_mobile and rfid_number", async () => {
+    mockOnCreate.mockResolvedValue(undefined);
+
+    render(
+      <CreateStudentDialog
+        academicYears={MOCK_YEARS}
+        onSubmit={mockOnCreate}
+        isPending={false}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /create student/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/first name/i)).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText(/first name/i), "Asha");
+    await user.type(screen.getByLabelText(/last name/i), "Kumar");
+    await user.type(screen.getByLabelText(/parent mobile/i), "9988776655");
+    await user.type(screen.getByLabelText(/rfid number/i), "RFID-XYZ-9");
+
+    await user.click(screen.getByRole("button", { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(mockOnCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          first_name: "Asha",
+          last_name: "Kumar",
+          parent_mobile: "9988776655",
+          rfid_number: "RFID-XYZ-9",
+        })
+      );
     });
   });
 

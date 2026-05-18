@@ -13,7 +13,9 @@ const MOCK_STUDENTS: StudentResponse[] = [
     email: "rahul@example.com",
     phone: "9876543210",
     date_of_birth: "2005-03-15",
-    enrollment_number: "ENR-001",
+    enrollment_number: "ROLL-001",
+    parent_mobile: "9123456789",
+    rfid_number: "RFID-AAA-001",
     course_id: null,
     status: "active",
   },
@@ -27,37 +29,49 @@ const MOCK_STUDENTS: StudentResponse[] = [
     phone: null,
     date_of_birth: null,
     enrollment_number: null,
+    parent_mobile: null,
+    rfid_number: null,
     course_id: null,
     status: "inactive",
   },
 ];
 
 describe("StudentTable", () => {
-  it("renders table headers", () => {
+  it("renders table headers including Roll No, Parent Mobile, RFID", () => {
     render(<StudentTable students={[]} />);
 
     expect(screen.getByText("Name")).toBeInTheDocument();
-    expect(screen.getByText("Enrollment No.")).toBeInTheDocument();
+    expect(screen.getByText("Roll No")).toBeInTheDocument();
     expect(screen.getByText("Email")).toBeInTheDocument();
     expect(screen.getByText("Phone")).toBeInTheDocument();
+    expect(screen.getByText("Parent Mobile")).toBeInTheDocument();
+    expect(screen.getByText("RFID")).toBeInTheDocument();
     expect(screen.getByText("Status")).toBeInTheDocument();
   });
 
-  it("renders student rows with data", () => {
+  it("no longer renders the old 'Enrollment No.' header", () => {
+    render(<StudentTable students={[]} />);
+    expect(screen.queryByText("Enrollment No.")).not.toBeInTheDocument();
+  });
+
+  it("renders student rows with all data including parent_mobile and rfid_number", () => {
     render(<StudentTable students={MOCK_STUDENTS} />);
 
     expect(screen.getByText("Rahul Sharma")).toBeInTheDocument();
-    expect(screen.getByText("ENR-001")).toBeInTheDocument();
+    expect(screen.getByText("ROLL-001")).toBeInTheDocument();
     expect(screen.getByText("rahul@example.com")).toBeInTheDocument();
     expect(screen.getByText("9876543210")).toBeInTheDocument();
+    expect(screen.getByText("9123456789")).toBeInTheDocument();
+    expect(screen.getByText("RFID-AAA-001")).toBeInTheDocument();
     expect(screen.getByText("active")).toBeInTheDocument();
   });
 
-  it("renders dashes for null fields", () => {
+  it("renders dashes for null optional fields", () => {
     render(<StudentTable students={MOCK_STUDENTS} />);
 
+    // Priya has 5 null fields (enrollment, email, phone, parent_mobile, rfid)
     const dashes = screen.getAllByText("—");
-    expect(dashes.length).toBeGreaterThanOrEqual(3);
+    expect(dashes.length).toBeGreaterThanOrEqual(5);
   });
 
   it("renders empty state when no students", () => {
@@ -69,9 +83,7 @@ describe("StudentTable", () => {
   it("renders correct status badge variant", () => {
     render(<StudentTable students={MOCK_STUDENTS} />);
 
-    const activeBadge = screen.getByText("active");
-    const inactiveBadge = screen.getByText("inactive");
-    expect(activeBadge).toBeInTheDocument();
-    expect(inactiveBadge).toBeInTheDocument();
+    expect(screen.getByText("active")).toBeInTheDocument();
+    expect(screen.getByText("inactive")).toBeInTheDocument();
   });
 });

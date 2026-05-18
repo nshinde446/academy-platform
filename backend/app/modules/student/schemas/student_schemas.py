@@ -13,6 +13,8 @@ class StudentCreate(BaseModel):
     phone: str | None = None
     date_of_birth: date | None = None
     enrollment_number: str | None = None
+    parent_mobile: str | None = None
+    rfid_number: str | None = None
     course_id: uuid.UUID | None = None
 
 
@@ -23,6 +25,8 @@ class StudentUpdate(BaseModel):
     phone: str | None = None
     date_of_birth: date | None = None
     enrollment_number: str | None = None
+    parent_mobile: str | None = None
+    rfid_number: str | None = None
     course_id: uuid.UUID | None = None
 
 
@@ -36,6 +40,8 @@ class StudentResponse(BaseModel):
     phone: str | None = None
     date_of_birth: date | None = None
     enrollment_number: str | None = None
+    parent_mobile: str | None = None
+    rfid_number: str | None = None
     course_id: uuid.UUID | None = None
     status: str
     model_config = {"from_attributes": True}
