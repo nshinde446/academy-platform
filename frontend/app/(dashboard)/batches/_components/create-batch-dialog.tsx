@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +43,14 @@ export function CreateBatchDialog({
   const [selectedCourse, setSelectedCourse] = useState("");
   const [selectedStartYear, setSelectedStartYear] = useState("");
   const [error, setError] = useState("");
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (open) {
+      queryClient.invalidateQueries({ queryKey: ["academic-years"] });
+      queryClient.invalidateQueries({ queryKey: ["courses"] });
+    }
+  }, [open, queryClient]);
 
   const sortedYears = useMemo(
     () => [...academicYears].sort((a, b) => a.start_year - b.start_year),

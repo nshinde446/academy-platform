@@ -1,11 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import {
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { CreateBatchDialog } from "@/app/(dashboard)/batches/_components/create-batch-dialog";
 import type {
   AcademicYearResponse,
   CourseResponse,
 } from "@/app/(dashboard)/batches/_schemas/batch";
+
+function withQuery(ui: ReactNode) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
+}
 
 const MOCK_YEARS: AcademicYearResponse[] = [
   {
@@ -57,12 +69,14 @@ describe("CreateBatchDialog", () => {
 
   it("renders the trigger button", () => {
     render(
-      <CreateBatchDialog
-        academicYears={MOCK_YEARS}
-        courses={MOCK_COURSES}
-        onSubmit={mockOnSubmit}
-        isPending={false}
-      />
+      withQuery(
+        <CreateBatchDialog
+          academicYears={MOCK_YEARS}
+          courses={MOCK_COURSES}
+          onSubmit={mockOnSubmit}
+          isPending={false}
+        />
+      )
     );
 
     expect(
@@ -72,12 +86,14 @@ describe("CreateBatchDialog", () => {
 
   it("shows form fields when dialog opens", async () => {
     render(
-      <CreateBatchDialog
-        academicYears={MOCK_YEARS}
-        courses={MOCK_COURSES}
-        onSubmit={mockOnSubmit}
-        isPending={false}
-      />
+      withQuery(
+        <CreateBatchDialog
+          academicYears={MOCK_YEARS}
+          courses={MOCK_COURSES}
+          onSubmit={mockOnSubmit}
+          isPending={false}
+        />
+      )
     );
 
     await user.click(screen.getByRole("button", { name: /create batch/i }));
@@ -94,12 +110,14 @@ describe("CreateBatchDialog", () => {
 
   it("auto-computes end academic year for a 2-year course", async () => {
     render(
-      <CreateBatchDialog
-        academicYears={MOCK_YEARS}
-        courses={MOCK_COURSES}
-        onSubmit={mockOnSubmit}
-        isPending={false}
-      />
+      withQuery(
+        <CreateBatchDialog
+          academicYears={MOCK_YEARS}
+          courses={MOCK_COURSES}
+          onSubmit={mockOnSubmit}
+          isPending={false}
+        />
+      )
     );
 
     await user.click(screen.getByRole("button", { name: /create batch/i }));
@@ -119,12 +137,14 @@ describe("CreateBatchDialog", () => {
     mockOnSubmit.mockResolvedValue(undefined);
 
     render(
-      <CreateBatchDialog
-        academicYears={MOCK_YEARS}
-        courses={MOCK_COURSES}
-        onSubmit={mockOnSubmit}
-        isPending={false}
-      />
+      withQuery(
+        <CreateBatchDialog
+          academicYears={MOCK_YEARS}
+          courses={MOCK_COURSES}
+          onSubmit={mockOnSubmit}
+          isPending={false}
+        />
+      )
     );
 
     await user.click(screen.getByRole("button", { name: /create batch/i }));
@@ -152,12 +172,14 @@ describe("CreateBatchDialog", () => {
 
   it("disables submit button when isPending", async () => {
     render(
-      <CreateBatchDialog
-        academicYears={MOCK_YEARS}
-        courses={MOCK_COURSES}
-        onSubmit={mockOnSubmit}
-        isPending={true}
-      />
+      withQuery(
+        <CreateBatchDialog
+          academicYears={MOCK_YEARS}
+          courses={MOCK_COURSES}
+          onSubmit={mockOnSubmit}
+          isPending={true}
+        />
+      )
     );
 
     await user.click(screen.getByRole("button", { name: /create batch/i }));
