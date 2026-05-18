@@ -1,0 +1,46 @@
+// Generated from OpenAPI spec (GET /openapi.json → components.schemas)
+
+export interface BatchResponse {
+  id: string;
+  branch_id: string;
+  academic_year_id: string;
+  course_id: string;
+  name: string;
+  code: string;
+  capacity: number;
+  status: string;
+}
+
+export interface BatchCreate {
+  branch_id: string;
+  academic_year_id: string;
+  course_id: string;
+  name: string;
+  code: string;
+  capacity?: number;
+}
+
+export interface BatchUpdate {
+  name?: string | null;
+  code?: string | null;
+  capacity?: number | null;
+}
+
+export interface CourseResponse {
+  id: string;
+  branch_id: string;
+  academic_year_id: string;
+  name: string;
+  code: string;
+  description: string | null;
+  status: string;
+}
+
+export interface AcademicYearResponse {
+  id: string;
+  branch_id: string;
+  name: string;
+  start_year: number;
+  end_year: number;
+  status: string;
+}

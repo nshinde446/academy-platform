@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const NAV_ITEMS = [
   { label: "Home", href: "/home" },
   { label: "Students", href: "/students" },
+  { label: "Batches", href: "/batches" },
 ];
 
 export function Sidebar() {
