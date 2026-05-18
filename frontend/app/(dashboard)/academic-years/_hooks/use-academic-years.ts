@@ -45,3 +45,23 @@ export function useCreateAcademicYear(branchId: string | undefined) {
     },
   });
 }
+
+export function useDeleteAcademicYear(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (yearId: string) => {
+      await apiClient.delete(
+        `/api/v1/academic/academic-years/${yearId}`,
+        { params: { branch_id: branchId } }
+      );
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({
+          queryKey: academicYearKeys.list(branchId),
+        });
+      }
+    },
+  });
+}

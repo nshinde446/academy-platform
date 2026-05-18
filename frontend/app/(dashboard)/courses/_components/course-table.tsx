@@ -9,13 +9,16 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { CourseResponse } from "../_schemas/course";
 
 interface CourseTableProps {
   courses: CourseResponse[];
+  onEdit: (course: CourseResponse) => void;
+  onDelete: (course: CourseResponse) => void;
 }
 
-export function CourseTable({ courses }: CourseTableProps) {
+export function CourseTable({ courses, onEdit, onDelete }: CourseTableProps) {
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
       <Table>
@@ -26,6 +29,7 @@ export function CourseTable({ courses }: CourseTableProps) {
             <TableHead className="hidden sm:table-cell">Duration</TableHead>
             <TableHead className="hidden md:table-cell">Description</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -45,6 +49,27 @@ export function CourseTable({ courses }: CourseTableProps) {
                 >
                   {c.status}
                 </Badge>
+              </TableCell>
+              <TableCell className="text-right">
+                <div className="flex justify-end gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onEdit(c)}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => onDelete(c)}
+                    aria-label={`Delete course ${c.name}`}
+                  >
+                    Delete
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}

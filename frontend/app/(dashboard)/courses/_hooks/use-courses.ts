@@ -1,6 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
-import type { CourseCreate, CourseResponse } from "../_schemas/course";
+import type {
+  CourseCreate,
+  CourseResponse,
+  CourseUpdate,
+} from "../_schemas/course";
 
 export const courseKeys = {
   all: ["courses"] as const,
@@ -31,6 +35,53 @@ export function useCreateCourse(branchId: string | undefined) {
         data
       );
       return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({
+          queryKey: courseKeys.list(branchId),
+        });
+      }
+    },
+  });
+}
+
+export function useUpdateCourse(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      courseId,
+      data,
+    }: {
+      courseId: string;
+      data: CourseUpdate;
+    }) => {
+      const res = await apiClient.patch<CourseResponse>(
+        `/api/v1/academic/courses/${courseId}`,
+        data,
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({
+          queryKey: courseKeys.list(branchId),
+        });
+      }
+    },
+  });
+}
+
+export function useDeleteCourse(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (courseId: string) => {
+      await apiClient.delete(`/api/v1/academic/courses/${courseId}`, {
+        params: { branch_id: branchId },
+      });
     },
     onSuccess: () => {
       if (branchId) {

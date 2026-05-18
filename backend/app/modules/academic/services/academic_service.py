@@ -26,6 +26,35 @@ async def create_academic_year(session: AsyncSession, data: dict, current_user_i
     return ay
 
 
+async def delete_academic_year(
+    session: AsyncSession,
+    ay_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+):
+    ay = await academic_repository.get_academic_year(session, ay_id)
+    if not ay:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Academic year not found")
+    if ay.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    in_use = await academic_repository.count_active_batches_using_academic_year(session, ay_id)
+    if in_use:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot delete: {in_use} batch(es) reference this academic year.",
+        )
+
+    await academic_repository.soft_delete_academic_year(session, ay)
+    await audit_service.log_action(
+        session, user_id=current_user_id, action="DELETE",
+        table_name="academic_years", record_id=ay.id,
+        old_values={"name": ay.name, "start_year": ay.start_year, "end_year": ay.end_year},
+        ip_address=ip_address, branch_id=branch_id,
+    )
+
+
 async def create_course(session: AsyncSession, data: dict, current_user_id: uuid.UUID, ip_address: str | None = None):
     course = await academic_repository.create_course(session, **data)
     await audit_service.log_action(
@@ -34,6 +63,65 @@ async def create_course(session: AsyncSession, data: dict, current_user_id: uuid
         ip_address=ip_address, branch_id=data.get("branch_id"),
     )
     return course
+
+
+async def update_course(
+    session: AsyncSession,
+    course_id: uuid.UUID,
+    data: dict,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+):
+    course = await academic_repository.get_course(session, course_id)
+    if not course:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+    if course.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    old_values = {
+        "name": course.name,
+        "code": course.code,
+        "description": course.description,
+        "duration_years": course.duration_years,
+    }
+    course = await academic_repository.update_course(session, course, **data)
+    await audit_service.log_action(
+        session, user_id=current_user_id, action="UPDATE",
+        table_name="courses", record_id=course.id,
+        old_values=old_values, new_values=data,
+        ip_address=ip_address, branch_id=branch_id,
+    )
+    return course
+
+
+async def delete_course(
+    session: AsyncSession,
+    course_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+):
+    course = await academic_repository.get_course(session, course_id)
+    if not course:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+    if course.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    in_use = await academic_repository.count_active_batches_using_course(session, course_id)
+    if in_use:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot delete: {in_use} batch(es) use this course.",
+        )
+
+    await academic_repository.soft_delete_course(session, course)
+    await audit_service.log_action(
+        session, user_id=current_user_id, action="DELETE",
+        table_name="courses", record_id=course.id,
+        old_values={"name": course.name, "code": course.code},
+        ip_address=ip_address, branch_id=branch_id,
+    )
 
 
 async def create_subject(session: AsyncSession, data: dict, current_user_id: uuid.UUID, ip_address: str | None = None):

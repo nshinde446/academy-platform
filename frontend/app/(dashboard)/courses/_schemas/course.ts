@@ -17,3 +17,10 @@ export interface CourseCreate {
   description?: string | null;
   duration_years?: number;
 }
+
+export interface CourseUpdate {
+  name?: string;
+  code?: string;
+  description?: string | null;
+  duration_years?: number;
+}

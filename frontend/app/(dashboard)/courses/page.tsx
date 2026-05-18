@@ -4,11 +4,22 @@ import { useMemo, useState } from "react";
 import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
-import { useCourses, useCreateCourse } from "./_hooks/use-courses";
-import type { CourseCreate, CourseResponse } from "./_schemas/course";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  useCourses,
+  useCreateCourse,
+  useDeleteCourse,
+  useUpdateCourse,
+} from "./_hooks/use-courses";
+import type {
+  CourseCreate,
+  CourseResponse,
+  CourseUpdate,
+} from "./_schemas/course";
 import { CourseTable } from "./_components/course-table";
 import { CourseEmptyState } from "./_components/course-empty-state";
 import { CreateCourseDialog } from "./_components/create-course-dialog";
+import { EditCourseDialog } from "./_components/edit-course-dialog";
 
 function filterCourses(
   courses: CourseResponse[],
@@ -31,8 +42,14 @@ export default function CoursesPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
 
+  const [editTarget, setEditTarget] = useState<CourseResponse | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<CourseResponse | null>(null);
+
   const coursesQuery = useCourses(branchId);
   const createMutation = useCreateCourse(branchId);
+  const updateMutation = useUpdateCourse(branchId);
+  const deleteMutation = useDeleteCourse(branchId);
 
   const filtered = useMemo(
     () => filterCourses(coursesQuery.data ?? [], debouncedSearch),
@@ -42,6 +59,25 @@ export default function CoursesPage() {
   async function handleCreate(data: Omit<CourseCreate, "branch_id">) {
     if (!branchId) return;
     await createMutation.mutateAsync({ ...data, branch_id: branchId });
+  }
+
+  function handleEdit(course: CourseResponse) {
+    setEditTarget(course);
+    setEditOpen(true);
+  }
+
+  async function handleUpdate(data: CourseUpdate) {
+    if (!editTarget) return;
+    await updateMutation.mutateAsync({ courseId: editTarget.id, data });
+  }
+
+  function handleDeleteClick(course: CourseResponse) {
+    setDeleteTarget(course);
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) return;
+    await deleteMutation.mutateAsync(deleteTarget.id);
   }
 
   return (
@@ -84,8 +120,34 @@ export default function CoursesPage() {
       ) : filtered.length === 0 ? (
         <CourseEmptyState hasSearch={!!debouncedSearch} />
       ) : (
-        <CourseTable courses={filtered} />
+        <CourseTable
+          courses={filtered}
+          onEdit={handleEdit}
+          onDelete={handleDeleteClick}
+        />
       )}
+
+      <EditCourseDialog
+        course={editTarget}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        onSubmit={handleUpdate}
+        isPending={updateMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="Delete course?"
+        description={
+          deleteTarget
+            ? `Are you sure you want to delete "${deleteTarget.name}"? This cannot be undone. Courses with active batches cannot be deleted.`
+            : ""
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
   );
 }

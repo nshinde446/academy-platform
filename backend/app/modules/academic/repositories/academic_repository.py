@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.academic.models.academic_models import (
@@ -12,6 +12,7 @@ from app.modules.academic.models.academic_models import (
     Subtopic,
     Topic,
 )
+from app.modules.batch.models.batch_models import Batch
 
 
 async def create_institute(session: AsyncSession, **kwargs) -> Institute:
@@ -59,6 +60,26 @@ async def list_academic_years(session: AsyncSession, branch_id: uuid.UUID) -> li
     return list(result.scalars().all())
 
 
+async def soft_delete_academic_year(session: AsyncSession, ay: AcademicYear) -> None:
+    ay.is_deleted = True
+    await session.flush()
+
+
+async def count_active_batches_using_academic_year(
+    session: AsyncSession, ay_id: uuid.UUID
+) -> int:
+    result = await session.execute(
+        select(func.count(Batch.id)).where(
+            Batch.is_deleted == False,
+            or_(
+                Batch.start_academic_year_id == ay_id,
+                Batch.end_academic_year_id == ay_id,
+            ),
+        )
+    )
+    return int(result.scalar_one() or 0)
+
+
 async def create_course(session: AsyncSession, **kwargs) -> Course:
     course = Course(**kwargs)
     session.add(course)
@@ -81,6 +102,31 @@ async def list_courses(session: AsyncSession, branch_id: uuid.UUID) -> list[Cour
         )
     )
     return list(result.scalars().all())
+
+
+async def update_course(session: AsyncSession, course: Course, **kwargs) -> Course:
+    for key, value in kwargs.items():
+        if value is not None:
+            setattr(course, key, value)
+    await session.flush()
+    return course
+
+
+async def soft_delete_course(session: AsyncSession, course: Course) -> None:
+    course.is_deleted = True
+    await session.flush()
+
+
+async def count_active_batches_using_course(
+    session: AsyncSession, course_id: uuid.UUID
+) -> int:
+    result = await session.execute(
+        select(func.count(Batch.id)).where(
+            Batch.is_deleted == False,
+            Batch.course_id == course_id,
+        )
+    )
+    return int(result.scalar_one() or 0)
 
 
 async def get_academic_year_by_start_year(

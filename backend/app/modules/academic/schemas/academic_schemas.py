@@ -47,6 +47,13 @@ class CourseCreate(BaseModel):
     duration_years: int = 1
 
 
+class CourseUpdate(BaseModel):
+    name: str | None = None
+    code: str | None = None
+    description: str | None = None
+    duration_years: int | None = None
+
+
 class CourseResponse(BaseModel):
     id: uuid.UUID
     branch_id: uuid.UUID

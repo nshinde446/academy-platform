@@ -9,7 +9,7 @@ from app.modules.academic.repositories import academic_repository
 from app.modules.academic.schemas.academic_schemas import (
     AcademicYearCreate, AcademicYearResponse,
     ChapterCreate, ChapterResponse,
-    CourseCreate, CourseResponse,
+    CourseCreate, CourseResponse, CourseUpdate,
     InstituteCreate, InstituteResponse,
     SubjectCreate, SubjectResponse,
     SubtopicCreate, SubtopicResponse,
@@ -62,6 +62,20 @@ async def list_academic_years(
     return await academic_repository.list_academic_years(session, branch_id)
 
 
+@router.delete("/academic-years/{ay_id}", status_code=204)
+async def delete_academic_year(
+    ay_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    await academic_service.delete_academic_year(
+        session, ay_id, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
 @router.post("/courses", response_model=CourseResponse)
 async def create_course(
     body: CourseCreate,
@@ -81,6 +95,35 @@ async def list_courses(
     session: AsyncSession = Depends(get_db),
 ):
     return await academic_repository.list_courses(session, branch_id)
+
+
+@router.patch("/courses/{course_id}", response_model=CourseResponse)
+async def update_course(
+    course_id: uuid.UUID,
+    body: CourseUpdate,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    return await academic_service.update_course(
+        session, course_id, body.model_dump(exclude_unset=True), branch_id,
+        current_user["user_id"], request.client.host if request.client else None,
+    )
+
+
+@router.delete("/courses/{course_id}", status_code=204)
+async def delete_course(
+    course_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    await academic_service.delete_course(
+        session, course_id, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
 
 
 @router.post("/subjects", response_model=SubjectResponse)
