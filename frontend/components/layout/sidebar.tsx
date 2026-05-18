@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { label: "Home", href: "/home" },
   { label: "Students", href: "/students" },
   { label: "Batches", href: "/batches" },
+  { label: "Courses", href: "/courses" },
 ];
 
 export function Sidebar() {
