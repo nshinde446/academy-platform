@@ -281,7 +281,7 @@ class TestBatchCRUD:
             "/api/v1/batches",
             json={
                 "branch_id": "00000000-0000-0000-0000-000000000001",
-                "academic_year_id": "00000000-0000-0000-0000-000000000030",
+                "start_academic_year_id": "00000000-0000-0000-0000-000000000030",
                 "course_id": "00000000-0000-0000-0000-000000000040",
                 "name": "Batch A",
                 "code": "BA-01",
@@ -305,7 +305,7 @@ class TestBatchCRUD:
             "/api/v1/batches",
             json={
                 "branch_id": "00000000-0000-0000-0000-000000000001",
-                "academic_year_id": "00000000-0000-0000-0000-000000000030",
+                "start_academic_year_id": "00000000-0000-0000-0000-000000000030",
                 "course_id": "00000000-0000-0000-0000-000000000040",
                 "name": "Batch B",
                 "code": "BB-01",
@@ -332,7 +332,7 @@ class TestBatchCRUD:
             "/api/v1/batches",
             json={
                 "branch_id": "00000000-0000-0000-0000-000000000001",
-                "academic_year_id": "00000000-0000-0000-0000-000000000030",
+                "start_academic_year_id": "00000000-0000-0000-0000-000000000030",
                 "course_id": "00000000-0000-0000-0000-000000000040",
                 "name": "Old Batch",
                 "code": "OB-01",
@@ -362,7 +362,7 @@ class TestBatchCRUD:
             "/api/v1/batches",
             json={
                 "branch_id": "00000000-0000-0000-0000-000000000001",
-                "academic_year_id": "00000000-0000-0000-0000-000000000030",
+                "start_academic_year_id": "00000000-0000-0000-0000-000000000030",
                 "course_id": "00000000-0000-0000-0000-000000000040",
                 "name": "Delete Batch",
                 "code": "DB-01",
@@ -389,7 +389,7 @@ class TestBatchCRUD:
             "/api/v1/batches",
             json={
                 "branch_id": "00000000-0000-0000-0000-000000000001",
-                "academic_year_id": "00000000-0000-0000-0000-000000000030",
+                "start_academic_year_id": "00000000-0000-0000-0000-000000000030",
                 "course_id": "00000000-0000-0000-0000-000000000040",
                 "name": "Iso Batch",
                 "code": "IB-01",
