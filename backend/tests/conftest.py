@@ -245,9 +245,9 @@ async def seed_data(db_session: AsyncSession):
     course = Course(
         id=uuid.UUID("00000000-0000-0000-0000-000000000040"),
         branch_id=branch_a.id,
-        academic_year_id=academic_year.id,
         name="JEE Advanced",
         code="JEE-ADV",
+        duration_years=1,
         status="active",
         is_deleted=False,
     )
@@ -282,7 +282,8 @@ async def seed_data(db_session: AsyncSession):
     batch = Batch(
         id=uuid.UUID("00000000-0000-0000-0000-000000000070"),
         branch_id=branch_a.id,
-        academic_year_id=academic_year.id,
+        start_academic_year_id=academic_year.id,
+        end_academic_year_id=academic_year.id,
         course_id=course.id,
         name="Batch A",
         code="BATCH-A",
@@ -292,7 +293,8 @@ async def seed_data(db_session: AsyncSession):
     batch_b = Batch(
         id=uuid.UUID("00000000-0000-0000-0000-000000000071"),
         branch_id=branch_a.id,
-        academic_year_id=academic_year.id,
+        start_academic_year_id=academic_year.id,
+        end_academic_year_id=academic_year.id,
         course_id=course.id,
         name="Batch B",
         code="BATCH-B",
