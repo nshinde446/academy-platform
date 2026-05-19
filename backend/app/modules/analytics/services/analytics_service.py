@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import case, select, func
+from sqlalchemy import case, or_, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.analytics.repositories import analytics_repository
@@ -256,7 +256,10 @@ async def _refresh_batch_summaries(
     result = await session.execute(
         select(Batch.id).where(
             Batch.branch_id == branch_id,
-            Batch.academic_year_id == academic_year_id,
+            or_(
+                Batch.start_academic_year_id == academic_year_id,
+                Batch.end_academic_year_id == academic_year_id,
+            ),
             Batch.is_deleted == False,
         )
     )

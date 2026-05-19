@@ -234,7 +234,7 @@ async def create_test(
         total_marks=data.get("total_marks", 100.0),
         test_status="DRAFT",
         branch_id=batch.branch_id,
-        academic_year_id=batch.academic_year_id,
+        academic_year_id=batch.start_academic_year_id,
     )
 
     await audit_service.log_action(
