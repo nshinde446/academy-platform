@@ -185,10 +185,21 @@ async def create_topic(
 @router.get("/topics", response_model=list[TopicResponse])
 async def list_topics(
     branch_id: uuid.UUID = Query(...),
-    chapter_id: uuid.UUID = Query(...),
+    chapter_id: uuid.UUID | None = Query(None),
+    subject_id: uuid.UUID | None = Query(None),
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
+    if subject_id is not None:
+        return await academic_repository.list_topics_by_subject(
+            session, branch_id, subject_id
+        )
+    if chapter_id is None:
+        from fastapi import HTTPException, status as http_status
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Either chapter_id or subject_id is required",
+        )
     return await academic_repository.list_topics(session, branch_id, chapter_id)
 
 

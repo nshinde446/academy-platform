@@ -18,7 +18,10 @@ interface ConfirmDialogProps {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
-  onConfirm: () => Promise<void> | void;
+  // When true, render only the confirm button — turns the dialog into a
+  // one-way notice (info/error) instead of a yes/no prompt.
+  hideCancel?: boolean;
+  onConfirm?: () => Promise<void> | void;
 }
 
 export function ConfirmDialog({
@@ -29,6 +32,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   destructive = false,
+  hideCancel = false,
   onConfirm,
 }: ConfirmDialogProps) {
   const [busy, setBusy] = useState(false);
@@ -38,7 +42,7 @@ export function ConfirmDialog({
     setError("");
     setBusy(true);
     try {
-      await onConfirm();
+      if (onConfirm) await onConfirm();
       onOpenChange(false);
     } catch (err: any) {
       setError(
@@ -69,13 +73,15 @@ export function ConfirmDialog({
           </p>
         )}
         <div className="mt-5 flex justify-end gap-2">
-          <DialogClose
-            render={
-              <Button variant="outline" type="button" disabled={busy}>
-                {cancelLabel}
-              </Button>
-            }
-          />
+          {!hideCancel && (
+            <DialogClose
+              render={
+                <Button variant="outline" type="button" disabled={busy}>
+                  {cancelLabel}
+                </Button>
+              }
+            />
+          )}
           <Button
             type="button"
             variant={destructive ? "destructive" : "default"}

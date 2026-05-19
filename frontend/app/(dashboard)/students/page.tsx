@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   useStudents,
   useCreateStudent,
@@ -45,6 +46,9 @@ export default function StudentsPage() {
 
   const [editTarget, setEditTarget] = useState<StudentResponse | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<StudentResponse | null>(
+    null
+  );
 
   const studentsQuery = useStudents(branchId);
   const academicYearsQuery = useAcademicYears(branchId);
@@ -72,12 +76,13 @@ export default function StudentsPage() {
     await updateMutation.mutateAsync({ studentId: editTarget.id, data });
   }
 
-  async function handleDelete(student: StudentResponse) {
-    const ok = window.confirm(
-      `Delete student "${student.first_name} ${student.last_name}"? This cannot be undone.`
-    );
-    if (!ok) return;
-    await deleteMutation.mutateAsync(student.id);
+  function handleDeleteClick(student: StudentResponse) {
+    setDeleteTarget(student);
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) return;
+    await deleteMutation.mutateAsync(deleteTarget.id);
   }
 
   return (
@@ -126,7 +131,7 @@ export default function StudentsPage() {
         <StudentTable
           students={filtered}
           onEdit={handleEdit}
-          onDelete={handleDelete}
+          onDelete={handleDeleteClick}
         />
       )}
 
@@ -136,6 +141,20 @@ export default function StudentsPage() {
         onOpenChange={setEditOpen}
         onSubmit={handleUpdate}
         isPending={updateMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="Delete student?"
+        description={
+          deleteTarget
+            ? `Are you sure you want to delete "${deleteTarget.first_name} ${deleteTarget.last_name}"? This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={handleDeleteConfirm}
       />
     </div>
   );

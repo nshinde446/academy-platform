@@ -217,6 +217,23 @@ async def list_topics(session: AsyncSession, branch_id: uuid.UUID, chapter_id: u
     return list(result.scalars().all())
 
 
+async def list_topics_by_subject(
+    session: AsyncSession, branch_id: uuid.UUID, subject_id: uuid.UUID
+) -> list[Topic]:
+    result = await session.execute(
+        select(Topic)
+        .join(Chapter, Topic.chapter_id == Chapter.id)
+        .where(
+            Topic.branch_id == branch_id,
+            Chapter.subject_id == subject_id,
+            Topic.is_deleted == False,
+            Chapter.is_deleted == False,
+        )
+        .order_by(Chapter.order, Topic.order)
+    )
+    return list(result.scalars().all())
+
+
 async def create_subtopic(session: AsyncSession, **kwargs) -> Subtopic:
     st = Subtopic(**kwargs)
     session.add(st)

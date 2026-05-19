@@ -38,3 +38,23 @@ node_modules/
 
 # Docker
 docker-compose.override.yml
+
+# Excel lock files
+~$*
+
+# Local SQLite databases
+*.db
+
+# Runtime-generated reports
+backend/generated_reports/
+
+# Claude Code session-local settings
+.claude/
+
+# Diagnostic logs
+*.log
+
+# Workspace junk
+Capture.PNG
+gen_syllabus_part1.py
+misc/NEET.pdf

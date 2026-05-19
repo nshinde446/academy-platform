@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   useAcademicYears,
   useBatches,
@@ -55,6 +56,7 @@ export default function BatchesPage() {
   const [selectedYearId, setSelectedYearId] = useState<string>("");
   const [editTarget, setEditTarget] = useState<BatchResponse | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<BatchResponse | null>(null);
 
   const batchesQuery = useBatches(branchId);
   const academicYearsQuery = useAcademicYears(branchId);
@@ -113,12 +115,13 @@ export default function BatchesPage() {
     await updateMutation.mutateAsync({ batchId: editTarget.id, data });
   }
 
-  async function handleDelete(batch: BatchResponse) {
-    const ok = window.confirm(
-      `Delete batch "${batch.name}"? This cannot be undone.`
-    );
-    if (!ok) return;
-    await deleteMutation.mutateAsync(batch.id);
+  function handleDeleteClick(batch: BatchResponse) {
+    setDeleteTarget(batch);
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) return;
+    await deleteMutation.mutateAsync(deleteTarget.id);
   }
 
   return (
@@ -184,7 +187,7 @@ export default function BatchesPage() {
           courses={courses}
           academicYears={academicYears}
           onEdit={handleEdit}
-          onDelete={handleDelete}
+          onDelete={handleDeleteClick}
         />
       )}
 
@@ -194,6 +197,20 @@ export default function BatchesPage() {
         onOpenChange={setEditOpen}
         onSubmit={handleUpdate}
         isPending={updateMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="Delete batch?"
+        description={
+          deleteTarget
+            ? `Are you sure you want to delete "${deleteTarget.name}"? This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={handleDeleteConfirm}
       />
     </div>
   );

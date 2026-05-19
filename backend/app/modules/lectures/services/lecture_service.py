@@ -110,7 +110,7 @@ async def schedule_lecture(
         lecture_status="scheduled",
         notes=data.notes,
         branch_id=batch.branch_id,
-        academic_year_id=batch.academic_year_id,
+        academic_year_id=batch.start_academic_year_id,
     )
 
     await audit_service.log_action(
