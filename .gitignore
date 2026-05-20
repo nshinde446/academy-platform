@@ -18,6 +18,7 @@ env/
 !.env.example
 infra/compose/.env.prod
 infra/compose/.env.staging
+infra/monitoring/.env
 
 # IDE
 .vscode/

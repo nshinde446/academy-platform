@@ -1,4 +1,16 @@
-version: "3.8"
+# Monitoring stack — Prometheus, Alertmanager, Grafana, Flower, exporters.
+#
+# Run from the repo root on the VPS:
+#   docker compose -p academy-monitoring \
+#     -f infra/monitoring/docker-compose.monitoring.yml up -d
+#
+# All ports bind to 127.0.0.1 only — these endpoints are NEVER exposed to
+# the public internet. To reach them from your laptop, SSH tunnel:
+#   ssh -L 3001:127.0.0.1:3001 -L 9090:127.0.0.1:9090 \
+#       -L 9093:127.0.0.1:9093 -L 5555:127.0.0.1:5555 user@<vps-ip>
+# then open http://127.0.0.1:3001 in your browser.
+
+name: academy-monitoring
 
 services:
   prometheus:
@@ -8,7 +20,7 @@ services:
       - ./alert_rules.yml:/etc/prometheus/alert_rules.yml
       - prometheus_data:/prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     restart: unless-stopped
 
   alertmanager:
@@ -16,7 +28,7 @@ services:
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
     ports:
-      - "9093:9093"
+      - "127.0.0.1:9093:9093"
     restart: unless-stopped
 
   grafana:
@@ -25,11 +37,15 @@ services:
       - grafana_data:/var/lib/grafana
       - ./grafana/dashboards:/var/lib/grafana/dashboards
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      # Default to admin/admin only if the env vars below aren't set. Set them
+      # in a non-committed .env file next to this compose file before starting:
+      #   GF_SECURITY_ADMIN_USER=admin
+      #   GF_SECURITY_ADMIN_PASSWORD=<long random string>
+      - GF_SECURITY_ADMIN_USER=${GF_SECURITY_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-admin}
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/platform_overview.json
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     restart: unless-stopped
 
   flower:
@@ -39,15 +55,18 @@ services:
       - flower_data:/data
     command: celery --broker=redis://redis:6379/0 flower --conf=/flowerconfig.py
     ports:
-      - "5555:5555"
+      - "127.0.0.1:5555:5555"
     restart: unless-stopped
 
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.15.0
     environment:
-      DATA_SOURCE_NAME: "postgresql://academy_user:password@db:5432/academy?sslmode=disable"
+      # DATA_SOURCE_NAME must NOT contain a literal password in a committed
+      # file. Set it in a non-committed .env next to this compose file:
+      #   POSTGRES_EXPORTER_DSN=postgresql://user:pw@host:5432/db?sslmode=disable
+      DATA_SOURCE_NAME: ${POSTGRES_EXPORTER_DSN}
     ports:
-      - "9187:9187"
+      - "127.0.0.1:9187:9187"
     restart: unless-stopped
 
   redis-exporter:
@@ -55,7 +74,7 @@ services:
     environment:
       REDIS_ADDR: "redis://redis:6379"
     ports:
-      - "9121:9121"
+      - "127.0.0.1:9121:9121"
     restart: unless-stopped
 
 volumes:
