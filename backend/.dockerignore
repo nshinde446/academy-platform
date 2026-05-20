@@ -1,0 +1,22 @@
+# Keep the build context small — anything not listed here ends up in the image.
+.git
+.gitignore
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+*.log
+*.db
+debug_test.db
+generated_reports
+tests
+import_time*.log
+Dockerfile
+.dockerignore

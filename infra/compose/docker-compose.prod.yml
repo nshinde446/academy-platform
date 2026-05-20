@@ -1,0 +1,97 @@
+# Production stack — runs as the `academy-prod` compose project.
+#
+# Run from the repo root on the VPS:
+#   docker compose -p academy-prod \
+#     -f infra/compose/docker-compose.prod.yml \
+#     --env-file infra/compose/.env.prod \
+#     up -d --pull=always
+#
+# Migration runs as a one-shot `migrate` service before `backend` starts,
+# so the new app code never sees an old schema (and vice versa).
+
+name: academy-prod
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # NEVER expose 5432 to the public internet. Only the bridge network needs it.
+    # Add `ports: ["127.0.0.1:5432:5432"]` only if you genuinely need host access.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  migrate:
+    image: ${BACKEND_IMAGE}
+    restart: "no"
+    env_file: .env.prod
+    depends_on:
+      db: { condition: service_healthy }
+    command: ["alembic", "upgrade", "head"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  backend:
+    image: ${BACKEND_IMAGE}
+    restart: unless-stopped
+    env_file: .env.prod
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    ports:
+      # Bound to localhost only — public traffic comes via host nginx.
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  worker:
+    image: ${BACKEND_IMAGE}
+    restart: unless-stopped
+    env_file: .env.prod
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    command: ["celery", "-A", "app.worker", "worker", "--loglevel=info", "--concurrency=2"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  pgdata:
+  redis_data:

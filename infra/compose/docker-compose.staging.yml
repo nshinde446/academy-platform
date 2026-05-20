@@ -1,0 +1,95 @@
+# Staging stack — identical to prod but isolated:
+#   - separate compose project name (`academy-staging`)
+#   - separate volumes
+#   - backend bound to 127.0.0.1:8001 (prod uses 8000)
+#   - separate .env file
+#
+# Run from the repo root on the VPS:
+#   docker compose -p academy-staging \
+#     -f infra/compose/docker-compose.staging.yml \
+#     --env-file infra/compose/.env.staging \
+#     up -d --pull=always
+
+name: academy-staging
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  migrate:
+    image: ${BACKEND_IMAGE}
+    restart: "no"
+    env_file: .env.staging
+    depends_on:
+      db: { condition: service_healthy }
+    command: ["alembic", "upgrade", "head"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  backend:
+    image: ${BACKEND_IMAGE}
+    restart: unless-stopped
+    env_file: .env.staging
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    ports:
+      - "127.0.0.1:8001:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  worker:
+    image: ${BACKEND_IMAGE}
+    restart: unless-stopped
+    env_file: .env.staging
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    command: ["celery", "-A", "app.worker", "worker", "--loglevel=info", "--concurrency=1"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  pgdata:
+  redis_data:

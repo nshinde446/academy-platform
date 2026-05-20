@@ -16,6 +16,8 @@ env/
 # Environment files
 .env
 !.env.example
+infra/compose/.env.prod
+infra/compose/.env.staging
 
 # IDE
 .vscode/
