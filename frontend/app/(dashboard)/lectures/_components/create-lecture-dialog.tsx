@@ -39,18 +39,24 @@ function isoLocalToIso(local: string): string {
   return d.toISOString();
 }
 
+function toDatetimeLocal(d: Date): string {
+  // Shift by the local timezone offset so toISOString prints local wall-clock.
+  const shifted = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+  return shifted.toISOString().slice(0, 16);
+}
+
 function defaultStart(): string {
   const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset() + 60);
+  d.setMinutes(d.getMinutes() + 60);
   d.setSeconds(0, 0);
-  return d.toISOString().slice(0, 16);
+  return toDatetimeLocal(d);
 }
 
 function defaultEnd(start: string): string {
   const d = new Date(start);
   if (Number.isNaN(d.getTime())) return start;
   d.setHours(d.getHours() + 1);
-  return d.toISOString().slice(0, 16);
+  return toDatetimeLocal(d);
 }
 
 export function CreateLectureDialog({
