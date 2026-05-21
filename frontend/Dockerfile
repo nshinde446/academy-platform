@@ -13,7 +13,12 @@ RUN npm ci --no-audit --no-fund
 
 FROM node:${NODE_VERSION}-slim AS builder
 WORKDIR /app
-ENV NEXT_TELEMETRY_DISABLED=1
+# Next.js bakes `rewrites()` destinations at build time, so API_BASE_URL must be
+# set here, not at runtime. Override with --build-arg if your backend lives
+# elsewhere; the default points at the `backend` service in our compose stack.
+ARG API_BASE_URL=http://backend:8000
+ENV API_BASE_URL=${API_BASE_URL} \
+    NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
