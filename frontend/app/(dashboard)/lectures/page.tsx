@@ -16,6 +16,7 @@ import {
   useCreateLecture,
   useDeleteLecture,
   useLectures,
+  useMarkSubstitute,
   useStartLecture,
   useClassrooms,
   useTeachers,
@@ -24,12 +25,14 @@ import type {
   LectureCreate,
   LectureResponse,
   LectureStatus,
+  LectureSubstitute,
   SubjectSummary,
   TopicSummary,
 } from "./_schemas/lecture";
 import { LectureTable } from "./_components/lecture-table";
 import { LectureEmptyState } from "./_components/lecture-empty-state";
 import { CreateLectureDialog } from "./_components/create-lecture-dialog";
+import { MarkSubstituteDialog } from "./_components/mark-substitute-dialog";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
@@ -102,6 +105,9 @@ export default function LecturesPage() {
   const [deleteTarget, setDeleteTarget] = useState<LectureResponse | null>(
     null
   );
+  const [substituteTarget, setSubstituteTarget] =
+    useState<LectureResponse | null>(null);
+  const [substituteOpen, setSubstituteOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
   const lecturesQuery = useLectures(branchId);
@@ -114,6 +120,7 @@ export default function LecturesPage() {
   const completeMutation = useCompleteLecture(branchId);
   const cancelMutation = useCancelLecture(branchId);
   const deleteMutation = useDeleteLecture(branchId);
+  const substituteMutation = useMarkSubstitute(branchId);
 
   const batches = batchesQuery.data ?? [];
   const teachers = teachersQuery.data ?? [];
@@ -252,6 +259,17 @@ export default function LecturesPage() {
     if (!deleteTarget) return;
     await deleteMutation.mutateAsync(deleteTarget.id);
   }
+  function handleSubstitute(l: LectureResponse) {
+    setSubstituteTarget(l);
+    setSubstituteOpen(true);
+  }
+  async function handleSubstituteSubmit(data: LectureSubstitute) {
+    if (!substituteTarget) return;
+    await substituteMutation.mutateAsync({
+      lectureId: substituteTarget.id,
+      data,
+    });
+  }
 
   const hasFilter = !!(
     debouncedSearch ||
@@ -369,8 +387,21 @@ export default function LecturesPage() {
           onComplete={handleComplete}
           onCancel={handleCancel}
           onDelete={handleDeleteClick}
+          onSubstitute={handleSubstitute}
         />
       )}
+
+      <MarkSubstituteDialog
+        lecture={substituteTarget}
+        teachers={teachers}
+        open={substituteOpen}
+        onOpenChange={(o) => {
+          setSubstituteOpen(o);
+          if (!o) setSubstituteTarget(null);
+        }}
+        onSubmit={handleSubstituteSubmit}
+        isPending={substituteMutation.isPending}
+      />
 
       <ConfirmDialog
         open={!!deleteTarget}

@@ -38,6 +38,9 @@ function makeLecture(over: Partial<LectureResponse> = {}): LectureResponse {
     delivery_mode: "online",
     lecture_status: "scheduled",
     notes: null,
+    actual_teacher_id: null,
+    change_reason: null,
+    change_notes: null,
     branch_id: "br1",
     academic_year_id: "ay1",
     status: "active",
@@ -50,6 +53,7 @@ const handlers = {
   onComplete: vi.fn(),
   onCancel: vi.fn(),
   onDelete: vi.fn(),
+  onSubstitute: vi.fn(),
 };
 
 function renderTable(lectures: LectureResponse[]) {

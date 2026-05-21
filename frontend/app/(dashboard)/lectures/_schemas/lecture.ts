@@ -9,6 +9,13 @@ export type LectureStatus =
   | "cancelled"
   | "rescheduled";
 
+export type ChangeReason =
+  | "SUBSTITUTE"
+  | "SUBJECT_SWAP"
+  | "TOPIC_CHANGE"
+  | "COMBINED_BATCH"
+  | "OTHER";
+
 export interface LectureResponse {
   id: string;
   teacher_id: string;
@@ -23,9 +30,18 @@ export interface LectureResponse {
   delivery_mode: string;
   lecture_status: LectureStatus;
   notes: string | null;
+  actual_teacher_id: string | null;
+  change_reason: ChangeReason | null;
+  change_notes: string | null;
   branch_id: string;
   academic_year_id: string;
   status: string;
+}
+
+export interface LectureSubstitute {
+  actual_teacher_id: string | null;
+  change_reason?: ChangeReason | null;
+  change_notes?: string | null;
 }
 
 export interface LectureCreate {

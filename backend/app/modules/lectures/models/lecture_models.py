@@ -44,6 +44,14 @@ class Lecture(BaseModel):
         String(20), nullable=False, default="scheduled"
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Plan-vs-actual tracking. If actual_teacher_id is set, it overrides
+    # teacher_id for "who actually delivered this lecture" reporting.
+    # change_reason: SUBSTITUTE | SUBJECT_SWAP | TOPIC_CHANGE | COMBINED_BATCH | OTHER
+    actual_teacher_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("teachers.id"), nullable=True
+    )
+    change_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    change_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     branch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=False
     )

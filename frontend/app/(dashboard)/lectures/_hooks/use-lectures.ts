@@ -5,6 +5,7 @@ import type {
   ClassroomSummary,
   LectureCreate,
   LectureResponse,
+  LectureSubstitute,
   SubjectSummary,
   TeacherSummary,
   TopicSummary,
@@ -122,6 +123,33 @@ export function useCompleteLecture(branchId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: statusMutation(branchId, "complete"),
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({
+          queryKey: lectureKeys.list(branchId),
+        });
+      }
+    },
+  });
+}
+
+export function useMarkSubstitute(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      lectureId,
+      data,
+    }: {
+      lectureId: string;
+      data: LectureSubstitute;
+    }) => {
+      const res = await apiClient.patch<LectureResponse>(
+        `/api/v1/lectures/${lectureId}/substitute`,
+        data,
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
     onSuccess: () => {
       if (branchId) {
         queryClient.invalidateQueries({

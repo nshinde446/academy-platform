@@ -27,6 +27,15 @@ class LectureReschedule(BaseModel):
     classroom_id: uuid.UUID | None = None
 
 
+class LectureSubstitute(BaseModel):
+    """Mark a lecture as taught by someone other than the scheduled teacher.
+    Set actual_teacher_id to null to clear the substitution."""
+
+    actual_teacher_id: uuid.UUID | None
+    change_reason: str | None = "SUBSTITUTE"
+    change_notes: str | None = None
+
+
 class LectureResponse(BaseModel):
     id: uuid.UUID
     teacher_id: uuid.UUID
@@ -41,6 +50,9 @@ class LectureResponse(BaseModel):
     delivery_mode: str
     lecture_status: str
     notes: str | None = None
+    actual_teacher_id: uuid.UUID | None = None
+    change_reason: str | None = None
+    change_notes: str | None = None
     branch_id: uuid.UUID
     academic_year_id: uuid.UUID
     status: str

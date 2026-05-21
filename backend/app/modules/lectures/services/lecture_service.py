@@ -12,6 +12,7 @@ from app.modules.lectures.schemas.lecture_schemas import (
     AttendanceMark,
     LectureCreate,
     LectureReschedule,
+    LectureSubstitute,
 )
 
 VALID_TRANSITIONS = {
@@ -25,6 +26,13 @@ VALID_TRANSITIONS = {
 
 VALID_DELIVERY_MODES = {"offline", "online", "hybrid"}
 VALID_ATTENDANCE_STATUSES = {"PRESENT", "ABSENT", "LATE", "PARTIAL", "EXCUSED", "MANUAL_OVERRIDE"}
+VALID_CHANGE_REASONS = {
+    "SUBSTITUTE",
+    "SUBJECT_SWAP",
+    "TOPIC_CHANGE",
+    "COMBINED_BATCH",
+    "OTHER",
+}
 
 
 def _validate_transition(current: str, target: str):
@@ -367,6 +375,83 @@ async def get_attendance(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
 
     return await lecture_repository.get_attendance(session, lecture_id)
+
+
+async def mark_substitute(
+    session: AsyncSession,
+    lecture_id: uuid.UUID,
+    data: LectureSubstitute,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+):
+    lecture = await lecture_repository.get_by_id(session, lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture not found")
+    if lecture.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    if data.actual_teacher_id is not None and data.actual_teacher_id == lecture.teacher_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Substitute teacher must differ from the scheduled teacher",
+        )
+
+    reason = data.change_reason
+    if data.actual_teacher_id is None:
+        reason = None
+    elif reason is not None and reason not in VALID_CHANGE_REASONS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid change_reason: {reason}",
+        )
+
+    old_values = {
+        "actual_teacher_id": str(lecture.actual_teacher_id) if lecture.actual_teacher_id else None,
+        "change_reason": lecture.change_reason,
+        "change_notes": lecture.change_notes,
+    }
+
+    lecture = await lecture_repository.update(
+        session,
+        lecture,
+        actual_teacher_id=data.actual_teacher_id,
+        change_reason=reason,
+        change_notes=data.change_notes if data.actual_teacher_id else None,
+    )
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="UPDATE",
+        table_name="lectures",
+        record_id=lecture.id,
+        old_values=old_values,
+        new_values={
+            "actual_teacher_id": str(data.actual_teacher_id) if data.actual_teacher_id else None,
+            "change_reason": reason,
+            "change_notes": data.change_notes,
+        },
+        ip_address=ip_address,
+        branch_id=lecture.branch_id,
+    )
+
+    if data.actual_teacher_id:
+        await event_service.emit_event(
+            session,
+            event_type="LECTURE_SUBSTITUTED",
+            lecture_id=lecture.id,
+            teacher_id=lecture.teacher_id,
+            batch_id=lecture.batch_id,
+            subject_id=lecture.subject_id,
+            branch_id=lecture.branch_id,
+            metadata={
+                "scheduled_teacher_id": str(lecture.teacher_id),
+                "actual_teacher_id": str(data.actual_teacher_id),
+                "reason": reason or "",
+            },
+        )
+    return lecture
 
 
 async def delete_lecture(

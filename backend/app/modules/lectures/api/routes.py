@@ -11,6 +11,7 @@ from app.modules.lectures.schemas.lecture_schemas import (
     LectureCreate,
     LectureReschedule,
     LectureResponse,
+    LectureSubstitute,
 )
 from app.modules.lectures.services import lecture_service
 
@@ -89,6 +90,21 @@ async def cancel_lecture(
 ):
     return await lecture_service.cancel_lecture(
         session, lecture_id, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.patch("/{lecture_id}/substitute", response_model=LectureResponse)
+async def mark_substitute(
+    lecture_id: uuid.UUID,
+    body: LectureSubstitute,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    session: AsyncSession = Depends(get_db),
+):
+    return await lecture_service.mark_substitute(
+        session, lecture_id, body, branch_id, current_user["user_id"],
         request.client.host if request.client else None,
     )
 

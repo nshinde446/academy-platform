@@ -30,6 +30,7 @@ interface LectureTableProps {
   onComplete: (lecture: LectureResponse) => void;
   onCancel: (lecture: LectureResponse) => void;
   onDelete: (lecture: LectureResponse) => void;
+  onSubstitute: (lecture: LectureResponse) => void;
 }
 
 const STATUS_VARIANTS: Record<
@@ -76,6 +77,7 @@ export function LectureTable({
   onComplete,
   onCancel,
   onDelete,
+  onSubstitute,
 }: LectureTableProps) {
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
@@ -95,6 +97,7 @@ export function LectureTable({
           {lectures.map((l) => {
             const batch = lookup(batches, l.batch_id);
             const teacher = lookup(teachers, l.teacher_id);
+            const actualTeacher = lookup(teachers, l.actual_teacher_id);
             const subject = lookup(subjects, l.subject_id);
             const topic = lookup(topics, l.topic_id);
             const canStart = l.lecture_status === "scheduled";
@@ -104,6 +107,7 @@ export function LectureTable({
               l.lecture_status === "scheduled" ||
               l.lecture_status === "started" ||
               l.lecture_status === "paused";
+            const canSubstitute = l.lecture_status !== "cancelled";
 
             return (
               <TableRow key={l.id}>
@@ -111,7 +115,21 @@ export function LectureTable({
                   {batch ? batch.name : "—"}
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">
-                  {teacherName(teacher)}
+                  {actualTeacher ? (
+                    <div className="flex flex-col">
+                      <span className="line-through text-muted-foreground text-xs">
+                        {teacherName(teacher)}
+                      </span>
+                      <span className="font-medium">
+                        {teacherName(actualTeacher)}
+                      </span>
+                      <Badge variant="secondary" className="w-fit mt-0.5 text-[10px]">
+                        {l.change_reason ?? "substitute"}
+                      </Badge>
+                    </div>
+                  ) : (
+                    teacherName(teacher)
+                  )}
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
                   {subject ? subject.name : "—"}
@@ -158,6 +176,17 @@ export function LectureTable({
                         aria-label={`Cancel lecture ${l.id}`}
                       >
                         Cancel
+                      </Button>
+                    )}
+                    {canSubstitute && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onSubstitute(l)}
+                        aria-label={`Mark substitute for lecture ${l.id}`}
+                      >
+                        {l.actual_teacher_id ? "Edit Sub" : "Substitute"}
                       </Button>
                     )}
                     <Link
