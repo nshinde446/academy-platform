@@ -167,6 +167,25 @@ async def list_subjects(session: AsyncSession, branch_id: uuid.UUID, course_id: 
     return list(result.scalars().all())
 
 
+async def find_subjects_by_names(
+    session: AsyncSession, branch_id: uuid.UUID, names: list[str]
+) -> list[Subject]:
+    """Case-insensitive lookup of subjects in a branch by display name. Returns
+    distinct Subject rows matching any of the given names (one subject name may
+    map to multiple rows across courses)."""
+    if not names:
+        return []
+    lowered = [n.lower() for n in names if n]
+    result = await session.execute(
+        select(Subject).where(
+            Subject.branch_id == branch_id,
+            Subject.is_deleted == False,
+            func.lower(Subject.name).in_(lowered),
+        )
+    )
+    return list(result.scalars().all())
+
+
 async def create_chapter(session: AsyncSession, **kwargs) -> Chapter:
     ch = Chapter(**kwargs)
     session.add(ch)

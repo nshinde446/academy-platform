@@ -1,16 +1,17 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.teacher.schemas.teacher_schemas import (
+    ImportSummary,
     TeacherCreate,
     TeacherResponse,
     TeacherUpdate,
 )
-from app.modules.teacher.services import teacher_service
+from app.modules.teacher.services import import_service, teacher_service
 
 router = APIRouter(prefix="/teachers", tags=["teachers"])
 
@@ -60,6 +61,23 @@ async def update_teacher(
 ):
     return await teacher_service.update_teacher(
         session, teacher_id, body, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.post("/import", response_model=ImportSummary)
+async def import_teachers(
+    request: Request,
+    file: UploadFile = File(...),
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    return await import_service.import_teachers(
+        session,
+        file,
+        branch_id,
+        current_user["user_id"],
         request.client.host if request.client else None,
     )
 

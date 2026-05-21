@@ -32,3 +32,9 @@ class TeacherResponse(BaseModel):
     qualification: str | None = None
     status: str
     model_config = {"from_attributes": True}
+
+
+class ImportSummary(BaseModel):
+    imported: int
+    skipped: int
+    errors: list[str] = []

@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.teacher.models.teacher_models import Teacher
+from app.modules.teacher.models.teacher_models import Teacher, TeacherSubjectMapping
 
 
 async def create(session: AsyncSession, **kwargs) -> Teacher:
@@ -42,4 +42,21 @@ async def update(session: AsyncSession, teacher: Teacher, **kwargs) -> Teacher:
 
 async def soft_delete(session: AsyncSession, teacher: Teacher) -> None:
     teacher.is_deleted = True
+    await session.flush()
+
+
+async def add_subject_mappings(
+    session: AsyncSession,
+    teacher_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    subject_ids: list[uuid.UUID],
+) -> None:
+    for subject_id in subject_ids:
+        session.add(
+            TeacherSubjectMapping(
+                teacher_id=teacher_id,
+                subject_id=subject_id,
+                branch_id=branch_id,
+            )
+        )
     await session.flush()
