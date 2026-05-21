@@ -61,3 +61,6 @@ backend/generated_reports/
 Capture.PNG
 gen_syllabus_part1.py
 misc/NEET.pdf
+
+.vercel
+.env*.local
