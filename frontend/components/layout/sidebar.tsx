@@ -26,6 +26,7 @@ const ACADEMICS: NavGroup = {
   items: [
     { label: "Courses", href: "/courses" },
     { label: "Batches", href: "/batches" },
+    { label: "Classrooms", href: "/classrooms" },
     { label: "Academic Years", href: "/academic-years" },
     { label: "Syllabus", href: "/syllabus" },
   ],
