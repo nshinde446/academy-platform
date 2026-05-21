@@ -18,6 +18,7 @@ import {
 } from "../_hooks/use-lectures";
 import type {
   BatchSummary,
+  ClassroomSummary,
   LectureCreate,
   TeacherSummary,
 } from "../_schemas/lecture";
@@ -26,6 +27,7 @@ interface CreateLectureDialogProps {
   branchId: string | undefined;
   batches: BatchSummary[];
   teachers: TeacherSummary[];
+  classrooms: ClassroomSummary[];
   onSubmit: (data: LectureCreate) => Promise<void> | void;
   isPending: boolean;
 }
@@ -63,6 +65,7 @@ export function CreateLectureDialog({
   branchId,
   batches,
   teachers,
+  classrooms,
   onSubmit,
   isPending,
 }: CreateLectureDialogProps) {
@@ -71,6 +74,7 @@ export function CreateLectureDialog({
   const [teacherId, setTeacherId] = useState("");
   const [subjectId, setSubjectId] = useState("");
   const [topicId, setTopicId] = useState("");
+  const [classroomId, setClassroomId] = useState("");
   const [start, setStart] = useState(defaultStart());
   const [end, setEnd] = useState(defaultEnd(defaultStart()));
   const [deliveryMode, setDeliveryMode] = useState("online");
@@ -104,6 +108,7 @@ export function CreateLectureDialog({
     setTeacherId("");
     setSubjectId("");
     setTopicId("");
+    setClassroomId("");
     const s = defaultStart();
     setStart(s);
     setEnd(defaultEnd(s));
@@ -134,6 +139,10 @@ export function CreateLectureDialog({
       setError("End time must be after start time");
       return;
     }
+    if (deliveryMode === "offline" && !classroomId) {
+      setError("Offline lectures require a classroom");
+      return;
+    }
 
     try {
       await onSubmit({
@@ -141,6 +150,7 @@ export function CreateLectureDialog({
         teacher_id: teacherId,
         subject_id: subjectId,
         topic_id: topicId || null,
+        classroom_id: classroomId || null,
         scheduled_start: isoLocalToIso(start),
         scheduled_end: isoLocalToIso(end),
         delivery_mode: deliveryMode,
@@ -322,12 +332,37 @@ export function CreateLectureDialog({
             </div>
           </div>
 
-          {deliveryMode === "offline" && (
-            <p className="text-xs text-muted-foreground">
-              Offline lectures require a classroom — backend rejects the create
-              call until classroom assignment is wired up.
-            </p>
-          )}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="lecture_classroom">
+              Classroom{deliveryMode === "offline" ? " *" : ""}
+            </Label>
+            <select
+              id="lecture_classroom"
+              value={classroomId}
+              onChange={(e) => setClassroomId(e.target.value)}
+              className={SELECT_CLASS}
+              required={deliveryMode === "offline"}
+            >
+              <option value="">
+                {classrooms.length === 0
+                  ? "No classrooms yet — create one first"
+                  : deliveryMode === "offline"
+                  ? "Select a classroom..."
+                  : "Select a classroom (optional)..."}
+              </option>
+              {classrooms.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.code}) · cap {c.capacity}
+                </option>
+              ))}
+            </select>
+            {deliveryMode === "offline" && classrooms.length === 0 && (
+              <p className="text-xs text-destructive">
+                You need at least one classroom in this branch before scheduling
+                an offline lecture.
+              </p>
+            )}
+          </div>
 
           <div className="flex justify-end gap-2 pt-2">
             <DialogClose

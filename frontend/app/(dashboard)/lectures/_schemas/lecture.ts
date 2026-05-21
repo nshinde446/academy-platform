@@ -67,3 +67,10 @@ export interface TopicSummary {
   name: string;
   chapter_id: string;
 }
+
+export interface ClassroomSummary {
+  id: string;
+  name: string;
+  code: string;
+  capacity: number;
+}

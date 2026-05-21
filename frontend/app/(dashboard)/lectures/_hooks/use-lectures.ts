@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
 import type {
   BatchSummary,
+  ClassroomSummary,
   LectureCreate,
   LectureResponse,
   SubjectSummary,
@@ -35,6 +36,25 @@ export const batchKeys = {
   all: ["batches"] as const,
   list: (branchId: string) => [...batchKeys.all, "list", branchId] as const,
 };
+
+export const classroomKeys = {
+  all: ["classrooms"] as const,
+  list: (branchId: string) => [...classroomKeys.all, "list", branchId] as const,
+};
+
+export function useClassrooms(branchId: string | undefined) {
+  return useQuery<ClassroomSummary[]>({
+    queryKey: classroomKeys.list(branchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<ClassroomSummary[]>(
+        "/api/v1/classrooms",
+        { params: { branch_id: branchId, limit: 200 } }
+      );
+      return res.data;
+    },
+    enabled: !!branchId,
+  });
+}
 
 export function useLectures(branchId: string | undefined) {
   return useQuery<LectureResponse[]>({

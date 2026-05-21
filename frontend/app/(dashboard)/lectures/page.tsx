@@ -17,6 +17,7 @@ import {
   useDeleteLecture,
   useLectures,
   useStartLecture,
+  useClassrooms,
   useTeachers,
 } from "./_hooks/use-lectures";
 import type {
@@ -106,6 +107,7 @@ export default function LecturesPage() {
   const lecturesQuery = useLectures(branchId);
   const batchesQuery = useBatchesForLectures(branchId);
   const teachersQuery = useTeachers(branchId);
+  const classroomsQuery = useClassrooms(branchId);
 
   const createMutation = useCreateLecture(branchId);
   const startMutation = useStartLecture(branchId);
@@ -115,6 +117,7 @@ export default function LecturesPage() {
 
   const batches = batchesQuery.data ?? [];
   const teachers = teachersQuery.data ?? [];
+  const classrooms = classroomsQuery.data ?? [];
   const lectures = lecturesQuery.data ?? [];
 
   // Resolve all subjects/topics referenced by the visible lectures so the
@@ -274,6 +277,7 @@ export default function LecturesPage() {
           branchId={branchId}
           batches={batches}
           teachers={teachers}
+          classrooms={classrooms}
           onSubmit={handleCreate}
           isPending={createMutation.isPending}
         />
