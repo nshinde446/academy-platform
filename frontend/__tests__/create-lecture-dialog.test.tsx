@@ -60,6 +60,7 @@ describe("CreateLectureDialog", () => {
           branchId="br1"
           batches={BATCHES}
           teachers={TEACHERS}
+          classrooms={[]}
           onSubmit={onSubmit}
           isPending={false}
         />
@@ -78,6 +79,7 @@ describe("CreateLectureDialog", () => {
           branchId="br1"
           batches={BATCHES}
           teachers={TEACHERS}
+          classrooms={[]}
           onSubmit={vi.fn()}
           isPending={false}
         />
@@ -99,6 +101,7 @@ describe("CreateLectureDialog", () => {
           branchId="br1"
           batches={BATCHES}
           teachers={TEACHERS}
+          classrooms={[]}
           onSubmit={vi.fn()}
           isPending={false}
         />
@@ -133,6 +136,7 @@ describe("CreateLectureDialog", () => {
           branchId="br1"
           batches={BATCHES}
           teachers={TEACHERS}
+          classrooms={[]}
           onSubmit={vi.fn()}
           isPending={false}
         />
@@ -170,6 +174,7 @@ describe("CreateLectureDialog", () => {
           branchId="br1"
           batches={BATCHES}
           teachers={TEACHERS}
+          classrooms={[]}
           onSubmit={onSubmit}
           isPending={false}
         />
