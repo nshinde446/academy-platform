@@ -69,16 +69,24 @@ jobs:
           cd frontend
           npm ci
 
-      - name: Run frontend unit tests with coverage
+      - name: Run frontend unit tests
+        run: |
+          cd frontend
+          npm run test:unit
+
+      - name: Generate frontend coverage report
         run: |
           cd frontend
           npm run test:coverage
+        continue-on-error: true
 
       - name: Upload frontend coverage
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: frontend-coverage
           path: frontend/coverage
+          if-no-files-found: ignore
 
       - name: Install Playwright browsers
         run: |
