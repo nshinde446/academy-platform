@@ -92,6 +92,29 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      # next.config.ts uses this to proxy /api/* requests server-side.
+      # Pointing at the internal `backend` service skips the public TLS round-trip.
+      API_BASE_URL: http://backend:8000
+    depends_on:
+      backend: { condition: service_healthy }
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/login', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
 volumes:
   pgdata:
   redis_data:

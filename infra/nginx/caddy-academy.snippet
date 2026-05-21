@@ -1,0 +1,19 @@
+################################################################
+# Caddy site blocks for the Academy platform.
+#
+# Append BOTH of these to /etc/caddy/Caddyfile on the VPS, below
+# the existing eduworld-livekit.duckdns.org block. Then:
+#   sudo caddy validate --config /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# Caddy auto-fetches a Let's Encrypt cert for each hostname on
+# first request (~10s).
+################################################################
+
+api.eduworld-livekit.duckdns.org {
+    reverse_proxy localhost:8000
+}
+
+app.eduworld-livekit.duckdns.org {
+    reverse_proxy localhost:3000
+}

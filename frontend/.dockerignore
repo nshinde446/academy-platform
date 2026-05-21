@@ -1,0 +1,13 @@
+node_modules
+.next
+out
+.git
+.gitignore
+.env*.local
+.vercel
+__tests__
+coverage
+*.log
+Dockerfile
+.dockerignore
+README.md
