@@ -2,18 +2,20 @@
 # Deploy entrypoint — executed on the VPS by the GitHub Actions workflow over SSH.
 #
 # Usage:
-#   deploy.sh <env> <image-tag>
-#     env       — "prod" or "staging"
-#     image-tag — e.g. "ghcr.io/nshinde446/academy-platform-backend:abc1234"
+#   deploy.sh <env> <backend-image> <frontend-image>
+#     env             — "prod" or "staging"
+#     backend-image   — e.g. "ghcr.io/nshinde446/academy-platform-backend:abc1234"
+#     frontend-image  — e.g. "ghcr.io/nshinde446/academy-platform-frontend:abc1234"
 #
-# Idempotent. Pulls the new image, runs migrations as a one-shot, restarts
-# backend + worker. The compose stack already has health checks; if migration
-# fails the new backend won't start (depends_on / condition).
+# Idempotent. Pulls the new images, runs migrations as a one-shot, restarts
+# backend + worker + frontend. The compose stack already has health checks;
+# if migration fails the new backend won't start (depends_on / condition).
 
 set -euo pipefail
 
 ENV="${1:?env required (prod|staging)}"
-IMAGE="${2:?image tag required}"
+BACKEND_IMAGE="${2:?backend image tag required}"
+FRONTEND_IMAGE="${3:?frontend image tag required}"
 
 case "$ENV" in
     prod)
@@ -40,11 +42,14 @@ if [[ ! -f "$ENV_FILE" ]]; then
     exit 3
 fi
 
-# Inject the new image tag into the env file used by compose for image substitution.
-# Re-writes the BACKEND_IMAGE line atomically.
+# Inject the new image tags into the env file used by compose for image
+# substitution. Re-writes the BACKEND_IMAGE / FRONTEND_IMAGE lines atomically.
 tmp=$(mktemp)
-grep -v '^BACKEND_IMAGE=' "$ENV_FILE" > "$tmp" || true
-echo "BACKEND_IMAGE=$IMAGE" >> "$tmp"
+grep -vE '^(BACKEND_IMAGE|FRONTEND_IMAGE)=' "$ENV_FILE" > "$tmp" || true
+{
+    echo "BACKEND_IMAGE=$BACKEND_IMAGE"
+    echo "FRONTEND_IMAGE=$FRONTEND_IMAGE"
+} >> "$tmp"
 mv "$tmp" "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
@@ -53,7 +58,7 @@ if [[ -n "${GHCR_TOKEN:-}" ]]; then
     echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-token}" --password-stdin
 fi
 
-echo "==> docker compose pull (image: $IMAGE)"
+echo "==> docker compose pull (backend: $BACKEND_IMAGE, frontend: $FRONTEND_IMAGE)"
 docker compose -p "$PROJECT" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" pull
 
 echo "==> docker compose up -d (migrations run as one-shot, then backend/worker restart)"
@@ -74,4 +79,4 @@ done
 echo "==> docker image prune"
 docker image prune -f >/dev/null
 
-echo "==> $ENV deploy OK (image: $IMAGE)"
+echo "==> $ENV deploy OK (backend: $BACKEND_IMAGE, frontend: $FRONTEND_IMAGE)"
