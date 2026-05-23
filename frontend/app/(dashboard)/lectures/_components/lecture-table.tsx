@@ -26,6 +26,9 @@ interface LectureTableProps {
   teachers: TeacherSummary[];
   subjects: SubjectSummary[];
   topics: TopicSummary[];
+  /** Lecture IDs that have at least one linked LectureSession — drives
+   * the "MADE UP" chip on no-show rows that were later covered. */
+  coveredLectureIds?: Set<string>;
   onStart: (lecture: LectureResponse) => void;
   onComplete: (lecture: LectureResponse) => void;
   onCancel: (lecture: LectureResponse) => void;
@@ -33,6 +36,13 @@ interface LectureTableProps {
   onSubstitute: (lecture: LectureResponse) => void;
   onNoShow: (lecture: LectureResponse) => void;
 }
+
+const NO_SHOW_REASON_LABEL: Record<string, string> = {
+  TEACHER_NO_SHOW: "teacher",
+  STUDENT_NO_SHOW: "students",
+  EXTERNAL: "external",
+  OTHER: "other",
+};
 
 const STATUS_VARIANTS: Record<
   LectureStatus,
@@ -75,6 +85,7 @@ export function LectureTable({
   teachers,
   subjects,
   topics,
+  coveredLectureIds,
   onStart,
   onComplete,
   onCancel,
@@ -103,14 +114,20 @@ export function LectureTable({
             const actualTeacher = lookup(teachers, l.actual_teacher_id);
             const subject = lookup(subjects, l.subject_id);
             const topic = lookup(topics, l.topic_id);
-            const canStart = l.lecture_status === "scheduled";
+            // rescheduled is treated as scheduled for lifecycle purposes —
+            // new reschedules write back as "scheduled", but legacy rows
+            // with status "rescheduled" still need a path forward.
+            const isScheduledLike =
+              l.lecture_status === "scheduled" ||
+              l.lecture_status === "rescheduled";
+            const canStart = isScheduledLike;
             const canComplete =
               l.lecture_status === "started" || l.lecture_status === "paused";
             const canCancel =
-              l.lecture_status === "scheduled" ||
+              isScheduledLike ||
               l.lecture_status === "started" ||
               l.lecture_status === "paused";
-            const canNoShow = l.lecture_status === "scheduled";
+            const canNoShow = isScheduledLike;
             const canSubstitute =
               l.lecture_status !== "cancelled" &&
               l.lecture_status !== "no_show";
@@ -145,9 +162,25 @@ export function LectureTable({
                 </TableCell>
                 <TableCell>{formatDateTime(l.scheduled_start)}</TableCell>
                 <TableCell>
-                  <Badge variant={STATUS_VARIANTS[l.lecture_status]}>
-                    {l.lecture_status}
-                  </Badge>
+                  <div className="flex flex-col gap-1 items-start">
+                    <Badge variant={STATUS_VARIANTS[l.lecture_status]}>
+                      {l.lecture_status}
+                    </Badge>
+                    {l.lecture_status === "no_show" && l.no_show_reason && (
+                      <Badge
+                        variant="secondary"
+                        className="text-[10px] uppercase"
+                      >
+                        {NO_SHOW_REASON_LABEL[l.no_show_reason] ??
+                          l.no_show_reason}
+                      </Badge>
+                    )}
+                    {coveredLectureIds?.has(l.id) && (
+                      <Badge variant="success" className="text-[10px]">
+                        MADE UP
+                      </Badge>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex flex-wrap justify-end gap-1">

@@ -277,6 +277,43 @@ async def lecture_totals_in_range(
     }
 
 
+async def no_show_breakdown_in_range(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+) -> dict[str, int]:
+    """Count no_show lectures grouped by no_show_reason.
+
+    Distinguishes teacher-attributable no-shows (the real reliability
+    signal) from student / external / other ones. Filtered on
+    scheduled_start matching the totals query.
+    """
+    stmt = (
+        select(Lecture.no_show_reason, func.count())
+        .where(
+            Lecture.branch_id == branch_id,
+            Lecture.is_deleted == False,
+            Lecture.lecture_status == "no_show",
+        )
+        .group_by(Lecture.no_show_reason)
+    )
+    if from_dt is not None:
+        stmt = stmt.where(Lecture.scheduled_start >= from_dt)
+    if to_dt is not None:
+        stmt = stmt.where(Lecture.scheduled_start <= to_dt)
+
+    rows = (await session.execute(stmt)).all()
+    by_reason = {r[0]: int(r[1] or 0) for r in rows}
+    return {
+        "teacher": by_reason.get("TEACHER_NO_SHOW", 0),
+        "student": by_reason.get("STUDENT_NO_SHOW", 0),
+        "external": by_reason.get("EXTERNAL", 0),
+        "other": by_reason.get("OTHER", 0)
+        + by_reason.get(None, 0),
+    }
+
+
 async def session_origin_totals_in_range(
     session: AsyncSession,
     branch_id: uuid.UUID,

@@ -200,6 +200,14 @@ export default function LecturesPage() {
     })),
   });
 
+  const coveredLectureIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of sessions) {
+      for (const lid of s.lecture_ids) set.add(lid);
+    }
+    return set;
+  }, [sessions]);
+
   const allSubjects: SubjectSummary[] = useMemo(() => {
     const map = new Map<string, SubjectSummary>();
     for (const q of subjectQueries) {
@@ -441,6 +449,7 @@ export default function LecturesPage() {
           teachers={teachers}
           subjects={allSubjects}
           topics={allTopics}
+          coveredLectureIds={coveredLectureIds}
           onStart={handleStart}
           onComplete={handleComplete}
           onCancel={handleCancel}

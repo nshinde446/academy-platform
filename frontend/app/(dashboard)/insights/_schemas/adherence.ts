@@ -19,6 +19,14 @@ export interface AdherenceRates {
   substitute_pct: number;
   cancellation_pct: number;
   no_show_pct: number;
+  teacher_no_show_pct: number;
+}
+
+export interface AdherenceNoShowBreakdown {
+  teacher: number;
+  student: number;
+  external: number;
+  other: number;
 }
 
 export interface SyllabusBatchRow {
@@ -48,6 +56,7 @@ export interface AdherenceResponse {
   totals: AdherenceTotals;
   sessions: AdherenceSessions;
   rates: AdherenceRates;
+  no_show_breakdown: AdherenceNoShowBreakdown;
   by_teacher: AdherenceTeacherRow[];
   by_batch_syllabus: SyllabusBatchRow[];
 }

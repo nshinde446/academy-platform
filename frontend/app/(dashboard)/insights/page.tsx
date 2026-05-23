@@ -46,6 +46,7 @@ export default function InsightsPage() {
   const totals = data?.totals;
   const sessions = data?.sessions;
   const rates = data?.rates;
+  const noShowBreakdown = data?.no_show_breakdown;
   const byTeacher = data?.by_teacher ?? [];
   const bySyllabus = data?.by_batch_syllabus ?? [];
 
@@ -119,10 +120,22 @@ export default function InsightsPage() {
               tone={rates ? subRateTone(rates.substitute_pct) : "default"}
             />
             <KpiCard
-              label="No-show rate"
-              value={rates ? `${rates.no_show_pct.toFixed(1)}%` : "—"}
-              hint={totals ? `${totals.no_show} no-show` : undefined}
-              tone={rates && rates.no_show_pct >= 10 ? "destructive" : rates && rates.no_show_pct > 0 ? "warning" : "default"}
+              label="Teacher no-show"
+              value={
+                rates ? `${rates.teacher_no_show_pct.toFixed(1)}%` : "—"
+              }
+              hint={
+                noShowBreakdown
+                  ? `${noShowBreakdown.teacher} teacher · ${noShowBreakdown.student} student · ${noShowBreakdown.external} external · ${noShowBreakdown.other} other`
+                  : undefined
+              }
+              tone={
+                rates && rates.teacher_no_show_pct >= 10
+                  ? "destructive"
+                  : rates && rates.teacher_no_show_pct > 0
+                  ? "warning"
+                  : "default"
+              }
             />
             <KpiCard
               label="Cancellation rate"

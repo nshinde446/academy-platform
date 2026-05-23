@@ -26,7 +26,10 @@ VALID_TRANSITIONS = {
     "completed": [],
     "cancelled": [],
     "no_show": [],
-    "rescheduled": ["scheduled"],
+    # rescheduled is a legacy/transient status — new reschedules now write
+    # back to "scheduled" with the new times (see reschedule_lecture). Kept
+    # here so any pre-existing rescheduled rows still have a lifecycle.
+    "rescheduled": ["started", "cancelled", "no_show", "scheduled"],
 }
 VALID_NO_SHOW_REASONS = {
     "TEACHER_NO_SHOW",
@@ -311,12 +314,15 @@ async def reschedule_lecture(
         "lecture_status": lecture.lecture_status,
     }
 
+    # Reschedule writes the new times back as a regular "scheduled" lecture
+    # so the lifecycle continues — Start / Cancel / No-Show all remain
+    # available. The audit log records the reschedule action separately.
     lecture = await lecture_repository.update(
         session, lecture,
         scheduled_start=data.scheduled_start,
         scheduled_end=data.scheduled_end,
         classroom_id=classroom_id,
-        lecture_status="rescheduled",
+        lecture_status="scheduled",
     )
 
     await audit_service.log_action(
@@ -326,7 +332,7 @@ async def reschedule_lecture(
         table_name="lectures",
         record_id=lecture.id,
         old_values=old_values,
-        new_values={"scheduled_start": str(data.scheduled_start), "scheduled_end": str(data.scheduled_end), "lecture_status": "rescheduled"},
+        new_values={"scheduled_start": str(data.scheduled_start), "scheduled_end": str(data.scheduled_end), "lecture_status": "scheduled"},
         ip_address=ip_address,
         branch_id=lecture.branch_id,
     )
@@ -743,12 +749,19 @@ async def get_adherence_insights(
     per_teacher = await lecture_repository.per_teacher_adherence_in_range(
         session, branch_id, from_dt, to_dt
     )
+    no_show_breakdown = await lecture_repository.no_show_breakdown_in_range(
+        session, branch_id, from_dt, to_dt
+    )
 
     rates = {
         "adherence_pct": _safe_pct(totals["completed_as_planned"], totals["planned"]),
         "substitute_pct": _safe_pct(totals["substituted"], totals["planned"]),
         "cancellation_pct": _safe_pct(totals["cancelled"], totals["planned"]),
         "no_show_pct": _safe_pct(totals["no_show"], totals["planned"]),
+        # Reliability signal — only teacher-attributable no-shows.
+        "teacher_no_show_pct": _safe_pct(
+            no_show_breakdown["teacher"], totals["planned"]
+        ),
     }
 
     # Enrich per-teacher rows with names and substitute rate.
@@ -793,6 +806,7 @@ async def get_adherence_insights(
         "totals": totals,
         "sessions": sessions,
         "rates": rates,
+        "no_show_breakdown": no_show_breakdown,
         "by_teacher": teacher_rows,
         "by_batch_syllabus": syllabus_rows,
     }

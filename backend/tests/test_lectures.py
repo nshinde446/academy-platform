@@ -173,19 +173,24 @@ async def test_cancel_lecture(client: AsyncClient, seed_data):
 # ─── Test 9: Reschedule lecture ────────────────────────────────────────────────
 
 async def test_reschedule_lecture(client: AsyncClient, seed_data):
+    """Reschedule writes new times back as `scheduled` so Start / Cancel /
+    No-Show all remain reachable on the lecture row."""
     await _login_admin(client)
     lecture = await _create_lecture(client)
     now = datetime.now(timezone.utc)
+    new_start = (now + timedelta(hours=5)).isoformat()
     resp = await client.patch(
         f"/api/v1/lectures/{lecture['id']}/reschedule",
         params={"branch_id": BRANCH_A_ID},
         json={
-            "scheduled_start": (now + timedelta(hours=5)).isoformat(),
+            "scheduled_start": new_start,
             "scheduled_end": (now + timedelta(hours=6)).isoformat(),
         },
     )
     assert resp.status_code == 200
-    assert resp.json()["lecture_status"] == "rescheduled"
+    body = resp.json()
+    assert body["lecture_status"] == "scheduled"
+    assert body["scheduled_start"].startswith(new_start[:16])
 
 
 # ─── Test 10: Branch isolation – cannot access other branch's lecture ─────────

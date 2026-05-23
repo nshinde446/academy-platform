@@ -135,6 +135,15 @@ class AdherenceRates(BaseModel):
     substitute_pct: float
     cancellation_pct: float
     no_show_pct: float
+    # Teacher-attributable no-shows only — the reliability KPI.
+    teacher_no_show_pct: float
+
+
+class AdherenceNoShowBreakdown(BaseModel):
+    teacher: int
+    student: int
+    external: int
+    other: int
 
 
 class AdherenceTeacherRow(BaseModel):
@@ -164,6 +173,7 @@ class AdherenceResponse(BaseModel):
     totals: AdherenceTotals
     sessions: AdherenceSessions
     rates: AdherenceRates
+    no_show_breakdown: AdherenceNoShowBreakdown
     by_teacher: list[AdherenceTeacherRow]
     by_batch_syllabus: list[SyllabusBatchRow] = []
 
