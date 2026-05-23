@@ -848,6 +848,382 @@ async def get_adherence_insights(
     }
 
 
+_NO_SHOW_REASON_LABEL = {
+    "TEACHER_NO_SHOW": "teacher",
+    "STUDENT_NO_SHOW": "students",
+    "EXTERNAL": "external",
+    "OTHER": "other",
+}
+
+
+def _derive_lecture_status(lecture, is_covered: bool) -> dict:
+    """Mirror of frontend deriveStatus(). Keep in sync."""
+    has_sub = lecture.actual_teacher_id is not None
+    status = lecture.lecture_status
+
+    if is_covered and status in ("cancelled", "no_show"):
+        return {
+            "status_label": "Made up",
+            "status_tone": "success",
+            "status_sub": "was cancelled" if status == "cancelled" else "was no-show",
+        }
+    if status == "no_show":
+        reason = (lecture.no_show_reason or "OTHER").upper()
+        return {
+            "status_label": f"No-show · {_NO_SHOW_REASON_LABEL.get(reason, 'other')}",
+            "status_tone": "destructive" if reason == "TEACHER_NO_SHOW" else "secondary",
+            "status_sub": None,
+        }
+    if status == "cancelled":
+        return {"status_label": "Cancelled", "status_tone": "secondary", "status_sub": None}
+    if status == "started":
+        return {
+            "status_label": "In progress",
+            "status_tone": "default",
+            "status_sub": "with substitute" if has_sub else None,
+        }
+    if status == "paused":
+        return {"status_label": "Paused", "status_tone": "secondary", "status_sub": None}
+    if status == "completed":
+        if has_sub:
+            return {"status_label": "Completed", "status_tone": "default", "status_sub": "by substitute"}
+        return {"status_label": "Completed", "status_tone": "success", "status_sub": None}
+    if status == "rescheduled":
+        return {"status_label": "Rescheduled", "status_tone": "secondary", "status_sub": None}
+    return {"status_label": "Scheduled", "status_tone": "default", "status_sub": None}
+
+
+def _teacher_sort_key(t: dict, now: datetime) -> tuple:
+    """Lower tuple = earlier in the list.
+
+    Order: (problems → live → upcoming → done → no-activity)
+    """
+    s = t["summary"]
+    has_red = s["no_show"] > 0
+    has_live = s["in_progress"] > 0
+
+    def _is_upcoming(ev: dict) -> bool:
+        if ev["kind"] != "lecture":
+            return False
+        if not ev["status_label"].startswith("Scheduled"):
+            return False
+        start = ev["start"]
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        return start > now
+
+    has_upcoming = any(_is_upcoming(ev) for ev in t["events"])
+    has_done = s["completed"] > 0
+    total = len(t["events"])
+    return (
+        0 if has_red else 1,
+        0 if has_live else 1,
+        0 if has_upcoming else 1,
+        0 if has_done else 1,
+        -total,
+    )
+
+
+async def get_roster(
+    db: AsyncSession,
+    branch_id: uuid.UUID,
+    day: datetime,
+) -> dict:
+    """Today's Roster: per-teacher timeline of every lecture + off-plan
+    session on a given date, plus snapshot KPIs and a Live Now strip.
+
+    `day` is a UTC datetime; the window is its [00:00, 23:59:59].
+    """
+    day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day.replace(hour=23, minute=59, second=59, microsecond=999999)
+    now = datetime.now(timezone.utc)
+
+    def _aware(dt: datetime | None) -> datetime | None:
+        # SQLite (test DB) returns naive datetimes even for timezone=True
+        # columns. Coerce to UTC so comparisons with `now` don't blow up.
+        if dt is None:
+            return None
+        return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+    lectures = await lecture_repository.list_lectures_for_day(
+        db, branch_id, day_start, day_end
+    )
+    sessions = await lecture_repository.list_sessions_for_day(
+        db, branch_id, day_start, day_end
+    )
+
+    # Lookup tables (batched fetches).
+    teacher_ids = {l.teacher_id for l in lectures} | {s.teacher_id for s in sessions}
+    teacher_ids |= {l.actual_teacher_id for l in lectures if l.actual_teacher_id}
+
+    teachers_by_id: dict[uuid.UUID, Teacher] = {}
+    if teacher_ids:
+        result = await db.execute(
+            select(Teacher).where(
+                Teacher.id.in_(teacher_ids), Teacher.is_deleted == False
+            )
+        )
+        teachers_by_id = {t.id: t for t in result.scalars().all()}
+
+    # Also fetch ALL branch teachers for the idle list (those with nothing today).
+    result = await db.execute(
+        select(Teacher).where(
+            Teacher.branch_id == branch_id, Teacher.is_deleted == False
+        )
+    )
+    all_branch_teachers = list(result.scalars().all())
+
+    # Batches, subjects, topics, classrooms — names only.
+    from app.modules.batch.models.batch_models import Batch
+    from app.modules.academic.models.academic_models import Subject, Topic
+    from app.modules.classroom.models.classroom_models import Classroom
+
+    batch_ids = {l.batch_id for l in lectures}
+    subject_ids = {l.subject_id for l in lectures} | {s.subject_id for s in sessions}
+    topic_ids = {l.topic_id for l in lectures if l.topic_id} | {
+        s.topic_id for s in sessions if s.topic_id
+    }
+    classroom_ids = {l.classroom_id for l in lectures if l.classroom_id} | {
+        s.classroom_id for s in sessions if s.classroom_id
+    }
+
+    async def _by_id(model, ids):
+        if not ids:
+            return {}
+        r = await db.execute(select(model).where(model.id.in_(ids)))
+        return {x.id: x for x in r.scalars().all()}
+
+    batches_by_id = await _by_id(Batch, batch_ids)
+    subjects_by_id = await _by_id(Subject, subject_ids)
+    topics_by_id = await _by_id(Topic, topic_ids)
+    classrooms_by_id = await _by_id(Classroom, classroom_ids)
+
+    # Session → batch_ids and session → covered lecture_ids.
+    session_ids = [s.id for s in sessions]
+    session_batches = await lecture_repository.list_session_batches_for_sessions(
+        db, session_ids
+    )
+    session_plans = await lecture_repository.list_session_plans_for_sessions(
+        db, session_ids
+    )
+    batches_by_session: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for sb in session_batches:
+        batches_by_session.setdefault(sb.session_id, []).append(sb.batch_id)
+    plans_by_session: dict[uuid.UUID, int] = {}
+    for sp in session_plans:
+        plans_by_session[sp.session_id] = plans_by_session.get(sp.session_id, 0) + 1
+
+    # Which of today's lectures are covered by ANY session (today or otherwise)?
+    lecture_ids = [l.id for l in lectures]
+    coverage_links = await lecture_repository.list_session_plans_by_lecture_ids(
+        db, lecture_ids
+    )
+    covered_lecture_ids: set[uuid.UUID] = {sp.lecture_id for sp in coverage_links}
+
+    # Snapshot.
+    no_show_teacher = sum(
+        1 for l in lectures
+        if l.lecture_status == "no_show" and (l.no_show_reason or "").upper() == "TEACHER_NO_SHOW"
+    )
+    snapshot = {
+        "planned": len(lectures),
+        "completed": sum(1 for l in lectures if l.lecture_status == "completed"),
+        "in_progress": sum(
+            1 for l in lectures if l.lecture_status in ("started", "paused")
+        ),
+        "pending": sum(
+            1 for l in lectures if l.lecture_status in ("scheduled", "rescheduled")
+        ),
+        "no_show_teacher": no_show_teacher,
+        "no_show_other": sum(1 for l in lectures if l.lecture_status == "no_show") - no_show_teacher,
+        "cancelled": sum(1 for l in lectures if l.lecture_status == "cancelled"),
+        "off_plan_makeup": sum(1 for s in sessions if s.origin == "makeup"),
+        "off_plan_ad_hoc": sum(1 for s in sessions if s.origin == "ad_hoc"),
+        "off_plan_merged": sum(
+            1 for s in sessions if plans_by_session.get(s.id, 0) >= 2
+        ),
+    }
+
+    # Live now — live + overdue.
+    live_now: list[dict] = []
+    for l in lectures:
+        teacher = teachers_by_id.get(l.teacher_id)
+        if not teacher:
+            continue
+        base = {
+            "lecture_id": l.id,
+            "teacher_id": l.teacher_id,
+            "teacher_name": f"{teacher.first_name} {teacher.last_name}",
+            "batch_name": batches_by_id.get(l.batch_id).name if l.batch_id in batches_by_id else None,
+            "subject_name": subjects_by_id.get(l.subject_id).name if l.subject_id in subjects_by_id else None,
+            "topic_name": topics_by_id.get(l.topic_id).name if l.topic_id in topics_by_id else None,
+            "classroom_name": classrooms_by_id.get(l.classroom_id).name if l.classroom_id in classrooms_by_id else None,
+            "scheduled_start": l.scheduled_start,
+            "scheduled_end": l.scheduled_end,
+        }
+        if l.lecture_status == "started":
+            live_now.append({"kind": "live", **base})
+        elif l.lecture_status in ("scheduled", "rescheduled"):
+            ss = _aware(l.scheduled_start)
+            if ss is not None and ss < now:
+                minutes_overdue = int((now - ss).total_seconds() // 60)
+                live_now.append(
+                    {"kind": "overdue", "minutes_overdue": minutes_overdue, **base}
+                )
+
+    # Per-teacher events.
+    by_teacher: dict[uuid.UUID, dict] = {}
+    for l in lectures:
+        teacher = teachers_by_id.get(l.teacher_id)
+        if teacher is None:
+            continue
+        bucket = by_teacher.setdefault(
+            l.teacher_id,
+            {
+                "teacher_id": l.teacher_id,
+                "first_name": teacher.first_name,
+                "last_name": teacher.last_name,
+                "events": [],
+                "summary": {
+                    "planned": 0,
+                    "completed": 0,
+                    "in_progress": 0,
+                    "no_show": 0,
+                    "cancelled": 0,
+                    "sub_in": 0,
+                    "sub_out": 0,
+                    "off_plan": 0,
+                },
+            },
+        )
+        is_covered = l.id in covered_lecture_ids
+        derived = _derive_lecture_status(l, is_covered)
+        bucket["events"].append(
+            {
+                "kind": "lecture",
+                "id": l.id,
+                "start": l.scheduled_start,
+                "end": l.scheduled_end,
+                **derived,
+                "batch_name": batches_by_id.get(l.batch_id).name if l.batch_id in batches_by_id else None,
+                "batch_names": [],
+                "subject_name": subjects_by_id.get(l.subject_id).name if l.subject_id in subjects_by_id else None,
+                "topic_name": topics_by_id.get(l.topic_id).name if l.topic_id in topics_by_id else None,
+                "classroom_name": classrooms_by_id.get(l.classroom_id).name if l.classroom_id in classrooms_by_id else None,
+                "actual_teacher_id": l.actual_teacher_id,
+                "actual_teacher_name": (
+                    f"{teachers_by_id[l.actual_teacher_id].first_name} {teachers_by_id[l.actual_teacher_id].last_name}"
+                    if l.actual_teacher_id and l.actual_teacher_id in teachers_by_id
+                    else None
+                ),
+                "no_show_reason": l.no_show_reason,
+                "is_covered": is_covered,
+                "origin": None,
+            }
+        )
+        # Roll up counts.
+        bucket["summary"]["planned"] += 1
+        if l.lecture_status == "completed":
+            bucket["summary"]["completed"] += 1
+        if l.lecture_status in ("started", "paused"):
+            bucket["summary"]["in_progress"] += 1
+        if l.lecture_status == "no_show":
+            bucket["summary"]["no_show"] += 1
+        if l.lecture_status == "cancelled":
+            bucket["summary"]["cancelled"] += 1
+        if l.actual_teacher_id is not None:
+            bucket["summary"]["sub_out"] += 1
+            # Also bump the actual_teacher's sub_in.
+            sub_in_bucket = by_teacher.get(l.actual_teacher_id)
+            if sub_in_bucket:
+                sub_in_bucket["summary"]["sub_in"] += 1
+
+    # Add sessions (off-plan) onto the responsible teacher's timeline.
+    for s in sessions:
+        teacher = teachers_by_id.get(s.teacher_id)
+        if teacher is None:
+            continue
+        bucket = by_teacher.setdefault(
+            s.teacher_id,
+            {
+                "teacher_id": s.teacher_id,
+                "first_name": teacher.first_name,
+                "last_name": teacher.last_name,
+                "events": [],
+                "summary": {
+                    "planned": 0,
+                    "completed": 0,
+                    "in_progress": 0,
+                    "no_show": 0,
+                    "cancelled": 0,
+                    "sub_in": 0,
+                    "sub_out": 0,
+                    "off_plan": 0,
+                },
+            },
+        )
+        # Session status pill — coloured by origin.
+        if s.origin == "makeup":
+            session_label, session_tone = "Makeup", "success"
+        elif s.origin == "ad_hoc":
+            session_label, session_tone = "Ad-hoc", "default"
+        else:
+            session_label, session_tone = (s.origin or "session").capitalize(), "default"
+
+        batch_ids_for_session = batches_by_session.get(s.id, [])
+        batch_names_for_session = [
+            batches_by_id[bid].name for bid in batch_ids_for_session if bid in batches_by_id
+        ]
+
+        bucket["events"].append(
+            {
+                "kind": "session",
+                "id": s.id,
+                "start": s.actual_start,
+                "end": s.actual_end,
+                "status_label": session_label,
+                "status_tone": session_tone,
+                "status_sub": None,
+                "batch_name": batch_names_for_session[0] if batch_names_for_session else None,
+                "batch_names": batch_names_for_session,
+                "subject_name": subjects_by_id.get(s.subject_id).name if s.subject_id in subjects_by_id else None,
+                "topic_name": topics_by_id.get(s.topic_id).name if s.topic_id in topics_by_id else None,
+                "classroom_name": classrooms_by_id.get(s.classroom_id).name if s.classroom_id in classrooms_by_id else None,
+                "actual_teacher_id": None,
+                "actual_teacher_name": None,
+                "no_show_reason": None,
+                "is_covered": False,
+                "origin": s.origin,
+            }
+        )
+        bucket["summary"]["off_plan"] += 1
+
+    # Sort events within each teacher row by time.
+    for t in by_teacher.values():
+        t["events"].sort(key=lambda e: e["start"])
+
+    teachers_sorted = sorted(
+        by_teacher.values(), key=lambda t: _teacher_sort_key(t, now)
+    )
+
+    idle_teachers = [
+        {"teacher_id": t.id, "first_name": t.first_name, "last_name": t.last_name}
+        for t in all_branch_teachers
+        if t.id not in by_teacher
+    ]
+    # Stable: alphabetical for idle.
+    idle_teachers.sort(key=lambda t: (t["first_name"], t["last_name"]))
+
+    return {
+        "date": day.strftime("%Y-%m-%d"),
+        "now": now,
+        "snapshot": snapshot,
+        "live_now": live_now,
+        "teachers": teachers_sorted,
+        "idle_teachers": idle_teachers,
+    }
+
+
 async def delete_lecture(
     session: AsyncSession,
     lecture_id: uuid.UUID,

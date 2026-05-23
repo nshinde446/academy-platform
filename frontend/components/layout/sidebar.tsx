@@ -16,6 +16,7 @@ interface NavGroup {
 
 const TOP_LEVEL: NavItem[] = [
   { label: "Home", href: "/home" },
+  { label: "Today", href: "/today" },
   { label: "Students", href: "/students" },
   { label: "Teachers", href: "/teachers" },
   { label: "Lectures", href: "/lectures" },

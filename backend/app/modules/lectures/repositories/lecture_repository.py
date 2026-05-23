@@ -234,6 +234,62 @@ async def list_session_batches_for_sessions(
     return list(result.scalars().all())
 
 
+async def list_lectures_for_day(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    day_start: datetime,
+    day_end: datetime,
+) -> list[Lecture]:
+    """All lectures whose scheduled_start falls in the day window."""
+    result = await session.execute(
+        select(Lecture)
+        .where(
+            Lecture.branch_id == branch_id,
+            Lecture.is_deleted == False,
+            Lecture.scheduled_start >= day_start,
+            Lecture.scheduled_start <= day_end,
+        )
+        .order_by(Lecture.scheduled_start.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def list_sessions_for_day(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    day_start: datetime,
+    day_end: datetime,
+) -> list[LectureSession]:
+    """All sessions whose actual_start falls in the day window."""
+    result = await session.execute(
+        select(LectureSession)
+        .where(
+            LectureSession.branch_id == branch_id,
+            LectureSession.is_deleted == False,
+            LectureSession.actual_start >= day_start,
+            LectureSession.actual_start <= day_end,
+        )
+        .order_by(LectureSession.actual_start.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def list_session_plans_by_lecture_ids(
+    session: AsyncSession, lecture_ids: list[uuid.UUID]
+) -> list[LectureSessionPlan]:
+    """All session-plan links for the given lecture IDs (any date) —
+    drives the 'made up' indicator for today's missed lectures."""
+    if not lecture_ids:
+        return []
+    result = await session.execute(
+        select(LectureSessionPlan).where(
+            LectureSessionPlan.lecture_id.in_(lecture_ids),
+            LectureSessionPlan.is_deleted == False,
+        )
+    )
+    return list(result.scalars().all())
+
+
 async def lecture_totals_in_range(
     session: AsyncSession,
     branch_id: uuid.UUID,

@@ -178,6 +178,94 @@ class AdherenceResponse(BaseModel):
     by_batch_syllabus: list[SyllabusBatchRow] = []
 
 
+class RosterSnapshot(BaseModel):
+    planned: int
+    completed: int
+    in_progress: int
+    pending: int
+    no_show_teacher: int
+    no_show_other: int
+    cancelled: int
+    off_plan_makeup: int
+    off_plan_ad_hoc: int
+    off_plan_merged: int
+
+
+class RosterEvent(BaseModel):
+    """A lecture or session pre-rendered for the roster timeline.
+
+    The frontend stays presentation-only — status_label / status_tone /
+    status_sub are derived here using the same rules as the lectures-table
+    deriveStatus() helper.
+    """
+
+    kind: str  # "lecture" | "session"
+    id: uuid.UUID
+    start: datetime
+    end: datetime | None = None
+    status_label: str
+    status_tone: str  # "default" | "secondary" | "success" | "destructive"
+    status_sub: str | None = None
+    batch_name: str | None = None
+    batch_names: list[str] = []  # session can span multiple batches
+    subject_name: str | None = None
+    topic_name: str | None = None
+    classroom_name: str | None = None
+    actual_teacher_id: uuid.UUID | None = None
+    actual_teacher_name: str | None = None
+    no_show_reason: str | None = None
+    is_covered: bool = False
+    origin: str | None = None  # for sessions only
+
+
+class RosterLiveNow(BaseModel):
+    kind: str  # "live" | "overdue"
+    lecture_id: uuid.UUID
+    teacher_id: uuid.UUID
+    teacher_name: str
+    batch_name: str | None = None
+    subject_name: str | None = None
+    topic_name: str | None = None
+    classroom_name: str | None = None
+    scheduled_start: datetime
+    scheduled_end: datetime
+    minutes_overdue: int | None = None
+
+
+class RosterTeacherSummary(BaseModel):
+    planned: int
+    completed: int
+    in_progress: int
+    no_show: int
+    cancelled: int
+    sub_in: int
+    sub_out: int
+    off_plan: int
+
+
+class RosterTeacherRow(BaseModel):
+    teacher_id: uuid.UUID
+    first_name: str
+    last_name: str
+    summary: RosterTeacherSummary
+    events: list[RosterEvent]
+
+
+class RosterIdleTeacher(BaseModel):
+    teacher_id: uuid.UUID
+    first_name: str
+    last_name: str
+
+
+class RosterResponse(BaseModel):
+    date: str
+    now: datetime
+    snapshot: RosterSnapshot
+    live_now: list[RosterLiveNow]
+    teachers: list[RosterTeacherRow]
+    idle_teachers: list[RosterIdleTeacher]
+
+
 class AttendanceMark(BaseModel):
     student_id: uuid.UUID
     attendance_status: str = "PRESENT"

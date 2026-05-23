@@ -17,6 +17,7 @@ from app.modules.lectures.schemas.lecture_schemas import (
     LectureSessionCreate,
     LectureSessionResponse,
     LectureSubstitute,
+    RosterResponse,
 )
 from app.modules.lectures.services import lecture_service
 
@@ -75,6 +76,29 @@ async def list_lecture_sessions(
     session: AsyncSession = Depends(get_db),
 ):
     return await lecture_service.list_lecture_sessions(session, branch_id, offset, limit)
+
+
+@router.get("/roster", response_model=RosterResponse)
+async def get_roster(
+    branch_id: uuid.UUID = Query(...),
+    date: str = Query(..., description="YYYY-MM-DD UTC date"),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Today's Roster: per-teacher timeline of every lecture and off-plan
+    session for a given date, plus snapshot KPIs and a Live Now strip
+    (in-progress + overdue starts).
+    """
+    from datetime import datetime, timezone
+    try:
+        day = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        from fastapi import HTTPException, status as http_status
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="date must be YYYY-MM-DD",
+        )
+    return await lecture_service.get_roster(session, branch_id, day)
 
 
 @router.get("/insights/adherence", response_model=AdherenceResponse)

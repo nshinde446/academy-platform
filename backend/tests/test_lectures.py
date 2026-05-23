@@ -193,6 +193,50 @@ async def test_reschedule_lecture(client: AsyncClient, seed_data):
     assert body["scheduled_start"].startswith(new_start[:16])
 
 
+# ─── Test 9b: Roster endpoint shape ───────────────────────────────────────────
+
+async def test_roster_shape(client: AsyncClient, seed_data):
+    """Roster returns snapshot, live_now, teachers, idle_teachers and a today
+    lecture should appear inside the right teacher's events with derived
+    status fields populated."""
+    await _login_admin(client)
+    # Schedule a lecture today so it shows up.
+    lecture = await _create_lecture(client)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    resp = await client.get(
+        "/api/v1/lectures/roster",
+        params={"branch_id": BRANCH_A_ID, "date": today},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["date"] == today
+    assert "snapshot" in body and "planned" in body["snapshot"]
+    assert "live_now" in body
+    assert isinstance(body["teachers"], list)
+    # The newly created lecture should be inside one of the teacher rows.
+    all_event_ids = {
+        ev["id"] for t in body["teachers"] for ev in t["events"]
+    }
+    assert lecture["id"] in all_event_ids
+    # And it should carry a pre-derived status label/tone.
+    for t in body["teachers"]:
+        for ev in t["events"]:
+            if ev["id"] == lecture["id"]:
+                assert ev["status_label"]
+                assert ev["status_tone"] in (
+                    "default", "secondary", "success", "destructive",
+                )
+
+
+async def test_roster_invalid_date_rejected(client: AsyncClient, seed_data):
+    await _login_admin(client)
+    resp = await client.get(
+        "/api/v1/lectures/roster",
+        params={"branch_id": BRANCH_A_ID, "date": "not-a-date"},
+    )
+    assert resp.status_code == 422
+
+
 # ─── Test 10: Branch isolation – cannot access other branch's lecture ─────────
 
 async def test_branch_isolation(client: AsyncClient, seed_data):
