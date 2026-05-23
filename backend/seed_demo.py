@@ -30,7 +30,7 @@ Layout it creates:
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -253,7 +253,11 @@ async def seed():
         priya = teachers["Priya"]
         asha = teachers["Asha"]
 
-        # ---- Batches
+        # ---- Batches.
+        # Target exam date is ~6 months out so the pacing badges on
+        # /insights and /teachers/[id] show realistic deltas (not 100%
+        # expected immediately).
+        demo_exam = (date.today() + timedelta(days=180))
         batches = {}
         for name, code in [("NEET 2025-A", "NEET-A"), ("NEET 2025-B", "NEET-B")]:
             b, _ = await _find_or_create(
@@ -264,6 +268,7 @@ async def seed():
                     "end_academic_year_id": ay.id,
                     "course_id": course.id,
                     "capacity": 60,
+                    "target_exam_date": demo_exam,
                     "status": "active",
                     "is_deleted": False,
                 },
@@ -271,6 +276,11 @@ async def seed():
                 name=name,
                 code=code,
             )
+            # If an existing row had a NULL exam date from before this
+            # field existed, backfill it so the demo is consistent.
+            if b.target_exam_date is None:
+                b.target_exam_date = demo_exam
+                await session.flush()
             batches[code] = b
         neet_a = batches["NEET-A"]
         neet_b = batches["NEET-B"]

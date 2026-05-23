@@ -1,6 +1,7 @@
 import uuid
+from datetime import date
 
-from sqlalchemy import ForeignKey, Integer, String, Time, Uuid
+from sqlalchemy import Date, ForeignKey, Integer, String, Time, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database.base import BaseModel
@@ -24,6 +25,10 @@ class Batch(BaseModel):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), nullable=False)
     capacity: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    # Target exam date (e.g. NEET on 2026-05-04). Drives time-weighted
+    # syllabus pace on /insights and /teachers detail. When null the
+    # service falls back to mid-May of the end academic year.
+    target_exam_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class BatchSubjectMapping(BaseModel):

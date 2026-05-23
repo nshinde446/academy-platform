@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -765,6 +765,69 @@ def _safe_pct(numerator: int, denominator: int) -> float:
     return round((numerator * 100) / denominator, 1)
 
 
+def _compute_pace(
+    coverage_pct: float,
+    target_exam_date: date | None,
+    start_year: int | None,
+    end_year: int | None,
+    today: date | None = None,
+) -> dict:
+    """Time-weighted pace.
+
+    Linear interpolation between the academic year start and the target
+    exam date. When target_exam_date is missing we fall back to the
+    Indian coaching default of mid-May of the end academic year.
+    Pacing start is fixed at June 1 of the start academic year — that's
+    when new sessions typically begin for NEET/JEE prep.
+
+    Returns expected_coverage_pct + pace_delta_pct + pace_status:
+        ahead (delta ≥ +10)
+        on_pace ( -5 ≤ delta < +10 )
+        behind ( -15 ≤ delta < -5 )
+        critically_behind ( delta < -15 )
+        no_data (when dates can't be derived)
+    """
+    today = today or date.today()
+    exam = target_exam_date
+    if exam is None and end_year is not None:
+        exam = date(end_year, 5, 15)
+    start = date(start_year, 6, 1) if start_year is not None else None
+
+    if start is None or exam is None or exam <= start:
+        return {
+            "expected_coverage_pct": 0.0,
+            "pace_delta_pct": 0.0,
+            "pace_status": "no_data",
+        }
+
+    total_days = (exam - start).days
+    if today <= start:
+        expected = 0.0
+    elif today >= exam:
+        expected = 100.0
+    else:
+        elapsed = (today - start).days
+        expected = round((elapsed * 100) / total_days, 1)
+
+    delta = round(coverage_pct - expected, 1)
+    if expected == 100.0 and coverage_pct >= 100.0:
+        status = "on_pace"
+    elif delta >= 10:
+        status = "ahead"
+    elif delta >= -5:
+        status = "on_pace"
+    elif delta >= -15:
+        status = "behind"
+    else:
+        status = "critically_behind"
+
+    return {
+        "expected_coverage_pct": expected,
+        "pace_delta_pct": delta,
+        "pace_status": status,
+    }
+
+
 async def get_adherence_insights(
     session: AsyncSession,
     branch_id: uuid.UUID,
@@ -835,6 +898,17 @@ async def get_adherence_insights(
     syllabus_rows = await lecture_repository.batch_syllabus_coverage(
         session, branch_id
     )
+    # Decorate each row with time-weighted pace fields. Pure derivation,
+    # no DB hit, so we do it inline.
+    for row in syllabus_rows:
+        row.update(
+            _compute_pace(
+                coverage_pct=row["coverage_pct"],
+                target_exam_date=row.get("target_exam_date"),
+                start_year=row.get("start_year"),
+                end_year=row.get("end_year"),
+            )
+        )
 
     return {
         "from_date": from_dt,

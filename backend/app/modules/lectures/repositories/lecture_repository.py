@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.academic.models.academic_models import Chapter, Topic
+from app.modules.academic.models.academic_models import AcademicYear, Chapter, Topic
 from app.modules.batch.models.batch_models import Batch, BatchSubjectMapping
 from app.modules.lectures.models.lecture_models import (
     Lecture,
@@ -590,12 +590,27 @@ async def batch_syllabus_coverage(
             r.topic_id
         )
 
+    # Load academic year start/end years for each batch so the service can
+    # compute time-weighted pace (Tier 7). We deliberately stop at raw data
+    # here — the pacing formula and thresholds live in the service layer.
+    ay_ids = {b.start_academic_year_id for b in batch_rows} | {
+        b.end_academic_year_id for b in batch_rows
+    }
+    academic_years: dict[uuid.UUID, AcademicYear] = {}
+    if ay_ids:
+        ay_result = await session.execute(
+            select(AcademicYear).where(AcademicYear.id.in_(ay_ids))
+        )
+        academic_years = {ay.id: ay for ay in ay_result.scalars().all()}
+
     # Assemble.
     result: list[dict] = []
     for b in batch_rows:
         total = total_by_batch.get(b.id, 0)
         delivered = len(delivered_topic_ids_by_batch.get(b.id, set()))
         coverage = round((delivered * 100) / total, 1) if total > 0 else 0.0
+        start_ay = academic_years.get(b.start_academic_year_id)
+        end_ay = academic_years.get(b.end_academic_year_id)
         result.append(
             {
                 "batch_id": b.id,
@@ -605,6 +620,9 @@ async def batch_syllabus_coverage(
                 "total_topics": total,
                 "delivered_topics": delivered,
                 "coverage_pct": coverage,
+                "target_exam_date": b.target_exam_date,
+                "start_year": start_ay.start_year if start_ay else None,
+                "end_year": end_ay.end_year if end_ay else None,
             }
         )
     result.sort(key=lambda r: r["coverage_pct"])

@@ -29,6 +29,13 @@ export interface AdherenceNoShowBreakdown {
   other: number;
 }
 
+export type PaceStatus =
+  | "ahead"
+  | "on_pace"
+  | "behind"
+  | "critically_behind"
+  | "no_data";
+
 export interface SyllabusBatchRow {
   batch_id: string;
   batch_name: string;
@@ -37,6 +44,11 @@ export interface SyllabusBatchRow {
   total_topics: number;
   delivered_topics: number;
   coverage_pct: number;
+  // Tier 7 — time-weighted pace
+  target_exam_date: string | null;
+  expected_coverage_pct: number;
+  pace_delta_pct: number;
+  pace_status: PaceStatus;
 }
 
 export interface AdherenceTeacherRow {

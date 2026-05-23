@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -165,6 +165,12 @@ class SyllabusBatchRow(BaseModel):
     total_topics: int
     delivered_topics: int
     coverage_pct: float
+    # Time-weighted pace fields (Tier 7).
+    target_exam_date: date | None = None
+    expected_coverage_pct: float = 0.0
+    pace_delta_pct: float = 0.0
+    # ahead | on_pace | behind | critically_behind | no_data
+    pace_status: str = "no_data"
 
 
 class AdherenceResponse(BaseModel):
