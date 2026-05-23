@@ -9,6 +9,7 @@ from app.modules.audit.services import audit_service
 from app.modules.batch.repositories import batch_repository
 from app.modules.events.services import event_service
 from app.modules.lectures.repositories import lecture_repository
+from app.modules.academic.models.academic_models import Subject
 from app.modules.teacher.models.teacher_models import Teacher
 from app.modules.lectures.schemas.lecture_schemas import (
     AttendanceMark,
@@ -996,6 +997,102 @@ def _teacher_sort_key(t: dict, now: datetime) -> tuple:
         0 if has_done else 1,
         -total,
     )
+
+
+async def get_outcome_insights(
+    db: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+) -> dict:
+    """Tier 9 outcome correlation.
+
+    Returns:
+      summary           — tests evaluated, students with marks, branch avg
+      by_teacher        — per (teacher × subject) avg score vs branch avg
+      attendance_buckets — branch-wide attendance % vs avg test score
+    """
+    summary = await lecture_repository.branch_test_summary(
+        db, branch_id, from_dt, to_dt
+    )
+    teacher_rows = await lecture_repository.teacher_outcome_rows(
+        db, branch_id, from_dt, to_dt
+    )
+    pairs = await lecture_repository.attendance_outcome_pairs(
+        db, branch_id, from_dt, to_dt
+    )
+
+    # Enrich teacher rows with names and subject names.
+    teacher_ids = list({r["teacher_id"] for r in teacher_rows})
+    subject_ids = list({r["subject_id"] for r in teacher_rows})
+
+    teachers_by_id: dict[uuid.UUID, Teacher] = {}
+    subjects_by_id: dict[uuid.UUID, Subject] = {}
+    if teacher_ids:
+        result = await db.execute(
+            select(Teacher).where(
+                Teacher.id.in_(teacher_ids),
+                Teacher.is_deleted == False,
+            )
+        )
+        teachers_by_id = {t.id: t for t in result.scalars().all()}
+    if subject_ids:
+        result = await db.execute(
+            select(Subject).where(
+                Subject.id.in_(subject_ids),
+                Subject.is_deleted == False,
+            )
+        )
+        subjects_by_id = {s.id: s for s in result.scalars().all()}
+
+    branch_avg = summary["branch_avg_score"]
+    enriched: list[dict] = []
+    for r in teacher_rows:
+        t = teachers_by_id.get(r["teacher_id"])
+        s = subjects_by_id.get(r["subject_id"])
+        if t is None or s is None:
+            continue
+        enriched.append(
+            {
+                "teacher_id": r["teacher_id"],
+                "first_name": t.first_name,
+                "last_name": t.last_name,
+                "subject_id": r["subject_id"],
+                "subject_name": s.name,
+                "tests_count": r["tests_count"],
+                "students_count": r["students_count"],
+                "avg_score_pct": r["avg_score_pct"],
+                "delta_vs_branch_pct": round(r["avg_score_pct"] - branch_avg, 1),
+            }
+        )
+    enriched.sort(key=lambda r: r["delta_vs_branch_pct"], reverse=True)
+
+    # Attendance × score buckets.
+    buckets_def = [(">=80%", 80.0, 101.0), ("50-80%", 50.0, 80.0), ("<50%", 0.0, 50.0)]
+    buckets: list[dict] = []
+    for label, lo, hi in buckets_def:
+        bucket_pairs = [
+            p for p in pairs if lo <= p["attendance_pct"] < hi
+        ]
+        if not bucket_pairs:
+            buckets.append({"bucket": label, "students": 0, "avg_score": 0.0})
+            continue
+        avg = sum(p["avg_test_pct"] for p in bucket_pairs) / len(bucket_pairs)
+        buckets.append(
+            {
+                "bucket": label,
+                "students": len(bucket_pairs),
+                "avg_score": round(avg, 1),
+            }
+        )
+
+    return {
+        "from_date": from_dt,
+        "to_date": to_dt,
+        "summary": summary,
+        "by_teacher": enriched,
+        "attendance_buckets": buckets,
+    }
 
 
 async def get_roster(

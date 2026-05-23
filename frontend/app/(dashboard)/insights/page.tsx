@@ -3,11 +3,16 @@
 import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { useUserStore } from "@/store/user-store";
-import { useAdherenceInsights } from "./_hooks/use-adherence";
+import {
+  useAdherenceInsights,
+  useOutcomeInsights,
+} from "./_hooks/use-adherence";
 import { KpiCard } from "./_components/kpi-card";
 import { SessionsBreakdown } from "./_components/sessions-breakdown";
 import { TeacherLeaderboard } from "./_components/teacher-leaderboard";
 import { SyllabusCoverage } from "./_components/syllabus-coverage";
+import { OutcomeBuckets } from "./_components/outcome-buckets";
+import { OutcomeTeachers } from "./_components/outcome-teachers";
 
 function isoDateNDaysAgo(n: number): string {
   const d = new Date();
@@ -41,7 +46,9 @@ export default function InsightsPage() {
   const [toDate, setToDate] = useState(isoToday());
 
   const insightsQuery = useAdherenceInsights(branchId, fromDate, toDate);
+  const outcomesQuery = useOutcomeInsights(branchId, fromDate, toDate);
   const data = insightsQuery.data;
+  const outcomes = outcomesQuery.data;
 
   const totals = data?.totals;
   const sessions = data?.sessions;
@@ -172,6 +179,43 @@ export default function InsightsPage() {
             </div>
             <SyllabusCoverage rows={bySyllabus} />
           </div>
+
+          {outcomes && (
+            <div className="flex flex-col gap-5 border-t pt-5">
+              <div>
+                <h3 className="text-lg font-semibold">Outcomes</h3>
+                <p className="text-sm text-muted-foreground">
+                  Are the lectures actually working? Cross-references
+                  completed lectures with student test scores in this window.
+                  Based on {outcomes.summary.tests_evaluated} test
+                  {outcomes.summary.tests_evaluated !== 1 ? "s" : ""},{" "}
+                  {outcomes.summary.students_with_marks} student
+                  {outcomes.summary.students_with_marks !== 1 ? "s" : ""};
+                  branch avg{" "}
+                  <span className="font-medium text-foreground">
+                    {outcomes.summary.branch_avg_score.toFixed(1)}%
+                  </span>
+                  .
+                </p>
+              </div>
+              <OutcomeBuckets buckets={outcomes.attendance_buckets} />
+              <div className="flex flex-col gap-2">
+                <h4 className="text-base font-semibold">
+                  Per-teacher score vs. branch
+                </h4>
+                <p className="text-sm text-muted-foreground">
+                  Each row is a (teacher × subject) where the teacher
+                  delivered at least one completed lecture AND a test
+                  was held for that subject. Positive delta = students
+                  scored above the branch average.
+                </p>
+                <OutcomeTeachers
+                  rows={outcomes.by_teacher}
+                  branchAvg={outcomes.summary.branch_avg_score}
+                />
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

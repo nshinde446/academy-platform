@@ -17,6 +17,7 @@ from app.modules.lectures.schemas.lecture_schemas import (
     LectureSessionCreate,
     LectureSessionResponse,
     LectureSubstitute,
+    OutcomeResponse,
     RosterResponse,
 )
 from app.modules.lectures.services import lecture_service
@@ -99,6 +100,25 @@ async def get_roster(
             detail="date must be YYYY-MM-DD",
         )
     return await lecture_service.get_roster(session, branch_id, day)
+
+
+@router.get("/insights/outcomes", response_model=OutcomeResponse)
+async def get_outcome_insights(
+    branch_id: uuid.UUID = Query(...),
+    from_date: datetime | None = Query(None),
+    to_date: datetime | None = Query(None),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Outcome correlation: lectures × tests.
+
+    Per (teacher × subject) avg student score on tests for their batches,
+    delta vs branch avg. Plus a branch-wide attendance × score breakdown
+    answering 'do students who attend score better?'.
+    """
+    return await lecture_service.get_outcome_insights(
+        session, branch_id, from_date, to_date
+    )
 
 
 @router.get("/insights/adherence", response_model=AdherenceResponse)

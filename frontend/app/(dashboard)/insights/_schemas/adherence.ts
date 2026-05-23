@@ -62,6 +62,38 @@ export interface AdherenceTeacherRow {
   substitute_rate_pct: number;
 }
 
+export interface OutcomeSummary {
+  tests_evaluated: number;
+  students_with_marks: number;
+  branch_avg_score: number;
+}
+
+export interface OutcomeTeacherRow {
+  teacher_id: string;
+  first_name: string;
+  last_name: string;
+  subject_id: string;
+  subject_name: string;
+  tests_count: number;
+  students_count: number;
+  avg_score_pct: number;
+  delta_vs_branch_pct: number;
+}
+
+export interface OutcomeAttendanceBucket {
+  bucket: string;
+  students: number;
+  avg_score: number;
+}
+
+export interface OutcomeResponse {
+  from_date: string | null;
+  to_date: string | null;
+  summary: OutcomeSummary;
+  by_teacher: OutcomeTeacherRow[];
+  attendance_buckets: OutcomeAttendanceBucket[];
+}
+
 export interface AdherenceResponse {
   from_date: string | null;
   to_date: string | null;

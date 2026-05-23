@@ -4,8 +4,9 @@ from datetime import datetime
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.academic.models.academic_models import AcademicYear, Chapter, Topic
+from app.modules.academic.models.academic_models import AcademicYear, Chapter, Topic, Subject
 from app.modules.batch.models.batch_models import Batch, BatchSubjectMapping
+from app.modules.tests.models.test_models import StudentMark, Test
 from app.modules.lectures.models.lecture_models import (
     Lecture,
     LectureAttendanceMapping,
@@ -641,3 +642,240 @@ async def list_session_plans_for_sessions(
         )
     )
     return list(result.scalars().all())
+
+
+async def teacher_outcome_rows(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+) -> list[dict]:
+    """Per (teacher, subject) average test percentage.
+
+    Algorithm:
+      1. For each (teacher, subject), find batches where the teacher
+         delivered at least one completed lecture in the date window.
+      2. Find tests for those (batch, subject) pairs whose scheduled_at
+         falls in the window.
+      3. Average StudentMark.percentage across attended marks
+         (is_absent=False).
+
+    The teacher_id used is the EFFECTIVE teacher — if a substitute
+    actually taught a lecture, the substitute earns the credit. We
+    treat actual_teacher_id IS NOT NULL as the override.
+    """
+    # Step 1: teacher × subject × batch participation.
+    base_filters = [
+        Lecture.branch_id == branch_id,
+        Lecture.is_deleted == False,
+        Lecture.lecture_status == "completed",
+    ]
+    if from_dt is not None:
+        base_filters.append(Lecture.scheduled_start >= from_dt)
+    if to_dt is not None:
+        base_filters.append(Lecture.scheduled_start <= to_dt)
+
+    effective_teacher = func.coalesce(
+        Lecture.actual_teacher_id, Lecture.teacher_id
+    ).label("effective_teacher_id")
+
+    participation_stmt = (
+        select(
+            effective_teacher,
+            Lecture.subject_id,
+            Lecture.batch_id,
+        )
+        .where(and_(*base_filters))
+        .distinct()
+    )
+    participation = (await session.execute(participation_stmt)).all()
+    if not participation:
+        return []
+
+    # Group by (teacher, subject) → set of batches.
+    by_key: dict[tuple[uuid.UUID, uuid.UUID], set[uuid.UUID]] = {}
+    for row in participation:
+        key = (row.effective_teacher_id, row.subject_id)
+        by_key.setdefault(key, set()).add(row.batch_id)
+
+    # Step 2 + 3: for each (teacher, subject), join through tests for
+    # their batches and average the non-absent percentages.
+    results: list[dict] = []
+    for (teacher_id, subject_id), batch_ids in by_key.items():
+        tests_filters = [
+            Test.branch_id == branch_id,
+            Test.is_deleted == False,
+            Test.subject_id == subject_id,
+            Test.batch_id.in_(batch_ids),
+        ]
+        if from_dt is not None:
+            tests_filters.append(Test.scheduled_at >= from_dt)
+        if to_dt is not None:
+            tests_filters.append(Test.scheduled_at <= to_dt)
+
+        # First confirm there are tests in scope.
+        test_ids_stmt = select(Test.id).where(and_(*tests_filters))
+        test_ids = [r[0] for r in (await session.execute(test_ids_stmt)).all()]
+        if not test_ids:
+            continue
+
+        marks_stmt = select(
+            func.avg(StudentMark.percentage),
+            func.count(func.distinct(StudentMark.student_id)),
+        ).where(
+            StudentMark.test_id.in_(test_ids),
+            StudentMark.is_deleted == False,
+            StudentMark.is_absent == False,
+        )
+        row = (await session.execute(marks_stmt)).one()
+        avg_pct, students = row[0], int(row[1] or 0)
+        if avg_pct is None or students == 0:
+            continue
+
+        results.append(
+            {
+                "teacher_id": teacher_id,
+                "subject_id": subject_id,
+                "tests_count": len(test_ids),
+                "students_count": students,
+                "avg_score_pct": round(float(avg_pct), 1),
+            }
+        )
+
+    return results
+
+
+async def attendance_outcome_pairs(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+) -> list[dict]:
+    """Per-student (attendance_pct, avg_test_pct) pairs across the branch.
+
+    Attendance is computed across ALL lectures (any subject) in the
+    window — gives the headline "does showing up correlate with
+    scoring" answer, even if not subject-matched. Subject-matched
+    correlation is a possible follow-up.
+    """
+    # Attendance per student.
+    att_filters = [
+        Lecture.branch_id == branch_id,
+        Lecture.is_deleted == False,
+        Lecture.lecture_status == "completed",
+    ]
+    if from_dt is not None:
+        att_filters.append(Lecture.scheduled_start >= from_dt)
+    if to_dt is not None:
+        att_filters.append(Lecture.scheduled_start <= to_dt)
+
+    att_stmt = (
+        select(
+            LectureAttendanceMapping.student_id.label("sid"),
+            func.count().label("total"),
+            func.count()
+            .filter(LectureAttendanceMapping.attendance_status == "PRESENT")
+            .label("present"),
+        )
+        .join(Lecture, Lecture.id == LectureAttendanceMapping.lecture_id)
+        .where(
+            LectureAttendanceMapping.is_deleted == False,
+            and_(*att_filters),
+        )
+        .group_by(LectureAttendanceMapping.student_id)
+    )
+    att_rows = (await session.execute(att_stmt)).all()
+
+    # Avg score per student.
+    score_filters = [
+        StudentMark.branch_id == branch_id,
+        StudentMark.is_deleted == False,
+        StudentMark.is_absent == False,
+    ]
+    if from_dt is not None or to_dt is not None:
+        score_filters_test = [
+            Test.is_deleted == False,
+            Test.branch_id == branch_id,
+        ]
+        if from_dt is not None:
+            score_filters_test.append(Test.scheduled_at >= from_dt)
+        if to_dt is not None:
+            score_filters_test.append(Test.scheduled_at <= to_dt)
+        score_stmt = (
+            select(
+                StudentMark.student_id.label("sid"),
+                func.avg(StudentMark.percentage).label("avg_pct"),
+            )
+            .join(Test, Test.id == StudentMark.test_id)
+            .where(and_(*score_filters), and_(*score_filters_test))
+            .group_by(StudentMark.student_id)
+        )
+    else:
+        score_stmt = (
+            select(
+                StudentMark.student_id.label("sid"),
+                func.avg(StudentMark.percentage).label("avg_pct"),
+            )
+            .where(and_(*score_filters))
+            .group_by(StudentMark.student_id)
+        )
+
+    score_rows = (await session.execute(score_stmt)).all()
+
+    att_by_sid = {
+        r.sid: round(100.0 * r.present / r.total, 1) if r.total > 0 else 0.0
+        for r in att_rows
+    }
+    score_by_sid = {r.sid: round(float(r.avg_pct or 0.0), 1) for r in score_rows}
+
+    # Inner join — students with both signals.
+    pairs: list[dict] = []
+    for sid, att_pct in att_by_sid.items():
+        if sid not in score_by_sid:
+            continue
+        pairs.append(
+            {
+                "student_id": sid,
+                "attendance_pct": att_pct,
+                "avg_test_pct": score_by_sid[sid],
+            }
+        )
+    return pairs
+
+
+async def branch_test_summary(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+) -> dict:
+    """Branch-wide test summary in window."""
+    test_filters = [Test.branch_id == branch_id, Test.is_deleted == False]
+    if from_dt is not None:
+        test_filters.append(Test.scheduled_at >= from_dt)
+    if to_dt is not None:
+        test_filters.append(Test.scheduled_at <= to_dt)
+    tests_count = (
+        await session.execute(
+            select(func.count(Test.id)).where(and_(*test_filters))
+        )
+    ).scalar_one()
+
+    marks_stmt = select(
+        func.count(func.distinct(StudentMark.student_id)),
+        func.avg(StudentMark.percentage),
+    ).where(
+        StudentMark.branch_id == branch_id,
+        StudentMark.is_deleted == False,
+        StudentMark.is_absent == False,
+    )
+    if from_dt is not None or to_dt is not None:
+        marks_stmt = marks_stmt.join(Test, Test.id == StudentMark.test_id).where(
+            and_(*test_filters)
+        )
+    row = (await session.execute(marks_stmt)).one()
+    return {
+        "tests_evaluated": int(tests_count or 0),
+        "students_with_marks": int(row[0] or 0),
+        "branch_avg_score": round(float(row[1] or 0.0), 1),
+    }

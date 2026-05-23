@@ -272,6 +272,38 @@ class RosterResponse(BaseModel):
     idle_teachers: list[RosterIdleTeacher]
 
 
+class OutcomeSummary(BaseModel):
+    tests_evaluated: int
+    students_with_marks: int
+    branch_avg_score: float
+
+
+class OutcomeTeacherRow(BaseModel):
+    teacher_id: uuid.UUID
+    first_name: str
+    last_name: str
+    subject_id: uuid.UUID
+    subject_name: str
+    tests_count: int
+    students_count: int
+    avg_score_pct: float
+    delta_vs_branch_pct: float
+
+
+class OutcomeAttendanceBucket(BaseModel):
+    bucket: str  # ">=80%" | "50-80%" | "<50%"
+    students: int
+    avg_score: float
+
+
+class OutcomeResponse(BaseModel):
+    from_date: datetime | None = None
+    to_date: datetime | None = None
+    summary: OutcomeSummary
+    by_teacher: list[OutcomeTeacherRow]
+    attendance_buckets: list[OutcomeAttendanceBucket]
+
+
 class AttendanceMark(BaseModel):
     student_id: uuid.UUID
     attendance_status: str = "PRESENT"

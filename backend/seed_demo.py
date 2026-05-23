@@ -49,10 +49,16 @@ from app.modules.classroom.models.classroom_models import Classroom
 from app.modules.teacher.models.teacher_models import Teacher
 from app.modules.lectures.models.lecture_models import (
     Lecture,
+    LectureAttendanceMapping,
     LectureSession,
     LectureSessionBatch,
     LectureSessionPlan,
 )
+from app.modules.student.models.student_models import (
+    Student,
+    StudentBatchMapping,
+)
+from app.modules.tests.models.test_models import StudentMark, Test
 
 DEMO_TAG = "[seed-demo]"
 
@@ -586,6 +592,99 @@ async def seed():
                 is_deleted=False,
             )
         )
+
+        # ---- Students, attendance, tests, marks (Tier 9 outcome data)
+        # 4 students per batch. Top 2 attend everything, bottom 2 don't —
+        # creates a clean attendance↔score correlation in the demo.
+        students_by_batch: dict[uuid.UUID, list] = {}
+        for batch_obj in (neet_a, neet_b):
+            roster = []
+            for i in range(1, 5):
+                stu, _ = await _find_or_create(
+                    session,
+                    Student,
+                    defaults={
+                        "academic_year_id": ay.id,
+                        "course_id": course.id,
+                        "status": "active",
+                        "is_deleted": False,
+                    },
+                    branch_id=branch.id,
+                    first_name=f"Student{i}",
+                    last_name=batch_obj.code,
+                )
+                await _find_or_create(
+                    session,
+                    StudentBatchMapping,
+                    defaults={"status": "active", "is_deleted": False},
+                    branch_id=branch.id,
+                    student_id=stu.id,
+                    batch_id=batch_obj.id,
+                )
+                roster.append(stu)
+            students_by_batch[batch_obj.id] = roster
+
+        await session.flush()
+
+        # Attendance on the two completed NEET-A lectures (Scenarios 1, 2).
+        for lec in (s1, s2):
+            for i, stu in enumerate(students_by_batch.get(lec.batch_id, [])):
+                marker = lec.actual_start or lec.scheduled_start
+                session.add(
+                    LectureAttendanceMapping(
+                        lecture_id=lec.id,
+                        student_id=stu.id,
+                        attendance_status="PRESENT" if i < 2 else "ABSENT",
+                        marked_at=marker,
+                        branch_id=branch.id,
+                        status="active",
+                        is_deleted=False,
+                    )
+                )
+
+        # One published Physics test per batch, recent. Marks correlate
+        # with attendance pattern above — top 2 score high, bottom 2 low.
+        for batch_obj, score_curve in [
+            (neet_a, [88, 75, 52, 38]),
+            (neet_b, [82, 70, 48, 35]),
+        ]:
+            t, created = await _find_or_create(
+                session,
+                Test,
+                defaults={
+                    "description": f"{DEMO_TAG} Physics mid-chapter test",
+                    "scheduled_at": _at(now, -1, 10),
+                    "duration_minutes": 60,
+                    "total_marks": 100.0,
+                    "test_status": "PUBLISHED",
+                    "academic_year_id": ay.id,
+                    "status": "active",
+                    "is_deleted": False,
+                },
+                branch_id=branch.id,
+                name=f"Physics MCT — {batch_obj.code}",
+                batch_id=batch_obj.id,
+                subject_id=physics.id,
+            )
+            if not created:
+                continue
+            roster = students_by_batch.get(batch_obj.id, [])
+            for stu, score in zip(roster, score_curve):
+                session.add(
+                    StudentMark(
+                        student_id=stu.id,
+                        test_id=t.id,
+                        marks_obtained=float(score),
+                        max_marks=100.0,
+                        percentage=float(score),
+                        is_absent=False,
+                        marked_at=t.scheduled_at + timedelta(hours=2),
+                        branch_id=branch.id,
+                        academic_year_id=ay.id,
+                        status="active",
+                        is_deleted=False,
+                    )
+                )
 
         await session.commit()
 
