@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from pydantic import BaseModel
 
@@ -10,12 +11,14 @@ class BatchCreate(BaseModel):
     name: str
     code: str
     capacity: int = 30
+    target_exam_date: date | None = None
 
 
 class BatchUpdate(BaseModel):
     name: str | None = None
     code: str | None = None
     capacity: int | None = None
+    target_exam_date: date | None = None
 
 
 class BatchResponse(BaseModel):
@@ -28,5 +31,6 @@ class BatchResponse(BaseModel):
     code: str
     capacity: int
     duration_years: int
+    target_exam_date: date | None = None
     status: str
     model_config = {"from_attributes": True}

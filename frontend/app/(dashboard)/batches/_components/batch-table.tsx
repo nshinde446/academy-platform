@@ -50,6 +50,7 @@ export function BatchTable({
               Academic Years
             </TableHead>
             <TableHead className="hidden xl:table-cell">Capacity</TableHead>
+            <TableHead className="hidden lg:table-cell">Exam date</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -73,6 +74,14 @@ export function BatchTable({
                 <TableCell className="hidden lg:table-cell">{range}</TableCell>
                 <TableCell className="hidden xl:table-cell">
                   {b.capacity}
+                </TableCell>
+                <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
+                  {b.target_exam_date
+                    ? new Date(b.target_exam_date).toLocaleDateString(
+                        undefined,
+                        { month: "short", day: "2-digit", year: "numeric" },
+                      )
+                    : "—"}
                 </TableCell>
                 <TableCell>
                   <Badge

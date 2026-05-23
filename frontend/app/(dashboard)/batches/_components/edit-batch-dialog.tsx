@@ -26,6 +26,7 @@ function buildForm(b: BatchResponse | null) {
     name: b?.name ?? "",
     code: b?.code ?? "",
     capacity: b ? String(b.capacity) : "30",
+    target_exam_date: b?.target_exam_date ?? "",
   };
 }
 
@@ -63,6 +64,7 @@ export function EditBatchDialog({
         name: form.name,
         code: form.code,
         capacity,
+        target_exam_date: form.target_exam_date || null,
       });
       onOpenChange(false);
     } catch (err: any) {
@@ -102,15 +104,35 @@ export function EditBatchDialog({
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5 sm:max-w-[calc(50%-0.375rem)]">
-            <Label htmlFor="edit_batch_capacity">Capacity</Label>
-            <Input
-              id="edit_batch_capacity"
-              type="number"
-              min={1}
-              value={form.capacity}
-              onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-            />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edit_batch_capacity">Capacity</Label>
+              <Input
+                id="edit_batch_capacity"
+                type="number"
+                min={1}
+                value={form.capacity}
+                onChange={(e) =>
+                  setForm({ ...form, capacity: e.target.value })
+                }
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edit_batch_target_exam_date">
+                Target exam date
+              </Label>
+              <Input
+                id="edit_batch_target_exam_date"
+                type="date"
+                value={form.target_exam_date}
+                onChange={(e) =>
+                  setForm({ ...form, target_exam_date: e.target.value })
+                }
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Drives time-weighted syllabus pace.
+              </p>
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

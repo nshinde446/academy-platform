@@ -10,6 +10,7 @@ export interface BatchResponse {
   code: string;
   capacity: number;
   duration_years: number;
+  target_exam_date: string | null;
   status: string;
 }
 
@@ -20,12 +21,14 @@ export interface BatchCreate {
   name: string;
   code: string;
   capacity?: number;
+  target_exam_date?: string | null;
 }
 
 export interface BatchUpdate {
   name?: string | null;
   code?: string | null;
   capacity?: number | null;
+  target_exam_date?: string | null;
 }
 
 export interface CourseResponse {

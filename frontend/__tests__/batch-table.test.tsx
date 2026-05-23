@@ -59,6 +59,7 @@ const MOCK_BATCHES: BatchResponse[] = [
     code: "NEET-A",
     capacity: 30,
     duration_years: 2,
+    target_exam_date: null,
     status: "active",
   },
   {
@@ -71,6 +72,7 @@ const MOCK_BATCHES: BatchResponse[] = [
     code: "C9-A",
     capacity: 25,
     duration_years: 1,
+    target_exam_date: null,
     status: "inactive",
   },
 ];
