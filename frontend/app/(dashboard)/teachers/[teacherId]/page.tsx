@@ -2,7 +2,7 @@
 
 import { use, useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
 import { useUserStore } from "@/store/user-store";
 import { Input } from "@/components/ui/input";
@@ -17,13 +17,19 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import {
+  subjectKeys,
+  topicKeys,
+  useBatchesForLectures,
   useLectures,
   useLectureSessions,
 } from "../../lectures/_hooks/use-lectures";
 import { useAdherenceInsights } from "../../insights/_hooks/use-adherence";
+import { SyllabusCoverage } from "../../insights/_components/syllabus-coverage";
 import type {
   LectureResponse,
   LectureSessionResponse,
+  SubjectSummary,
+  TopicSummary,
 } from "../../lectures/_schemas/lecture";
 import type { TeacherResponse } from "../_schemas/teacher";
 
@@ -127,10 +133,12 @@ export default function TeacherDetailPage({
   const lecturesQuery = useLectures(branchId);
   const sessionsQuery = useLectureSessions(branchId);
   const insightsQuery = useAdherenceInsights(branchId, fromDate, toDate);
+  const batchesQuery = useBatchesForLectures(branchId);
 
   const teacher = teacherQuery.data;
   const allLectures = lecturesQuery.data ?? [];
   const allSessions = sessionsQuery.data ?? [];
+  const batches = batchesQuery.data ?? [];
 
   // Lectures where this teacher is either the planner or the actual.
   const myLectures = useMemo(() => {
@@ -174,6 +182,95 @@ export default function TeacherDetailPage({
     for (const s of allSessions) for (const lid of s.lecture_ids) set.add(lid);
     return set;
   }, [allSessions]);
+
+  // Lookup data: subjects + topics referenced by the visible lectures or
+  // sessions. Subjects come per course, topics per subject.
+  const uniqueCourseIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of myLectures) {
+      const b = batches.find((x) => x.id === l.batch_id);
+      if (b) set.add(b.course_id);
+    }
+    return Array.from(set);
+  }, [myLectures, batches]);
+
+  const uniqueSubjectIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of myLectures) set.add(l.subject_id);
+    for (const s of mySessions) set.add(s.subject_id);
+    return Array.from(set);
+  }, [myLectures, mySessions]);
+
+  const subjectQueries = useQueries({
+    queries: uniqueCourseIds.map((cid) => ({
+      queryKey: subjectKeys.byCourse(branchId ?? "", cid),
+      queryFn: async () => {
+        const res = await apiClient.get<SubjectSummary[]>(
+          "/api/v1/academic/subjects",
+          { params: { branch_id: branchId, course_id: cid } },
+        );
+        return res.data;
+      },
+      enabled: !!branchId && !!cid,
+    })),
+  });
+
+  const topicQueries = useQueries({
+    queries: uniqueSubjectIds.map((sid) => ({
+      queryKey: topicKeys.bySubject(branchId ?? "", sid),
+      queryFn: async () => {
+        const res = await apiClient.get<TopicSummary[]>(
+          "/api/v1/academic/topics",
+          { params: { branch_id: branchId, subject_id: sid } },
+        );
+        return res.data;
+      },
+      enabled: !!branchId && !!sid,
+    })),
+  });
+
+  const subjectName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const q of subjectQueries) {
+      for (const s of (q.data as SubjectSummary[] | undefined) ?? [])
+        map.set(s.id, s.name);
+    }
+    return map;
+  }, [subjectQueries]);
+
+  const topicName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const q of topicQueries) {
+      for (const t of (q.data as TopicSummary[] | undefined) ?? [])
+        map.set(t.id, t.name);
+    }
+    return map;
+  }, [topicQueries]);
+
+  const batchName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of batches) map.set(b.id, b.name);
+    return map;
+  }, [batches]);
+
+  // "This teacher's batches" = any batch they've taught at least once in
+  // the whole branch's history (not just date-filtered). Drives the
+  // syllabus rollup so it reflects the teacher's responsibility.
+  const teacherBatchIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of allLectures) {
+      if (l.teacher_id === teacherId || l.actual_teacher_id === teacherId) {
+        set.add(l.batch_id);
+      }
+    }
+    return set;
+  }, [allLectures, teacherId]);
+
+  const teacherSyllabusRows = useMemo(() => {
+    return (insightsQuery.data?.by_batch_syllabus ?? []).filter((b) =>
+      teacherBatchIds.has(b.batch_id),
+    );
+  }, [insightsQuery.data, teacherBatchIds]);
 
   const insightsRow = useMemo(
     () =>
@@ -315,18 +412,22 @@ export default function TeacherDetailPage({
                         {formatDateTime(l.scheduled_start)}
                       </TableCell>
                       <TableCell>
-                        <span className="text-xs">
+                        <div className="flex items-center gap-1.5 text-xs">
                           {isCover && (
-                            <span className="mr-1 inline-block rounded bg-emerald-500/10 px-1 text-[10px] text-emerald-700 dark:text-emerald-400">
+                            <span className="inline-block rounded bg-emerald-500/10 px-1 text-[10px] text-emerald-700 dark:text-emerald-400">
                               COVERED
                             </span>
                           )}
-                          subject {l.subject_id.slice(0, 6)}… · batch{" "}
-                          {l.batch_id.slice(0, 6)}…
-                        </span>
+                          <span className="font-medium">
+                            {subjectName.get(l.subject_id) ?? "—"}
+                          </span>
+                          <span className="text-muted-foreground">
+                            · {batchName.get(l.batch_id) ?? "—"}
+                          </span>
+                        </div>
                       </TableCell>
                       <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
-                        {l.topic_id ? `${l.topic_id.slice(0, 6)}…` : "—"}
+                        {l.topic_id ? (topicName.get(l.topic_id) ?? "—") : "—"}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col items-start gap-0.5">
@@ -359,30 +460,56 @@ export default function TeacherDetailPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>When</TableHead>
+                  <TableHead>Subject · Batches</TableHead>
                   <TableHead>Origin</TableHead>
                   <TableHead className="hidden sm:table-cell">Notes</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {mySessions.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="whitespace-nowrap">
-                      {formatDateTime(s.actual_start)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={ORIGIN_TONE[s.origin] ?? "default"}>
-                        {s.origin}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell text-xs text-muted-foreground max-w-md truncate">
-                      {s.notes ?? "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {mySessions.map((s) => {
+                  const batches = s.batch_ids
+                    .map((bid) => batchName.get(bid) ?? "?")
+                    .join(", ");
+                  return (
+                    <TableRow key={s.id}>
+                      <TableCell className="whitespace-nowrap">
+                        {formatDateTime(s.actual_start)}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <span className="font-medium">
+                          {subjectName.get(s.subject_id) ?? "—"}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · {batches || "—"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={ORIGIN_TONE[s.origin] ?? "default"}>
+                          {s.origin}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell text-xs text-muted-foreground max-w-md truncate">
+                        {s.notes ?? "—"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
         )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h3 className="text-lg font-semibold">Syllabus coverage</h3>
+        <p className="text-sm text-muted-foreground">
+          Coverage for batches this teacher has taught at least once.
+          Reflects all completed lectures + sessions across the branch,
+          regardless of who delivered — answers &quot;how is each of my
+          batches doing overall.&quot;
+        </p>
+        <SyllabusCoverage rows={teacherSyllabusRows} />
       </div>
     </div>
   );
