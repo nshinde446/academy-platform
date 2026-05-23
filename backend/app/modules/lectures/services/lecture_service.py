@@ -25,7 +25,9 @@ VALID_TRANSITIONS = {
     "paused": ["started", "completed", "cancelled"],
     "completed": [],
     "cancelled": [],
-    "no_show": [],
+    # no_show → completed is reachable only via mark_substitute (admin
+    # corrects "nobody came" → "actually someone covered it").
+    "no_show": ["completed"],
     # rescheduled is a legacy/transient status — new reschedules now write
     # back to "scheduled" with the new times (see reschedule_lecture). Kept
     # here so any pre-existing rescheduled rows still have a lifecycle.
@@ -429,7 +431,20 @@ async def mark_substitute(
         "actual_teacher_id": str(lecture.actual_teacher_id) if lecture.actual_teacher_id else None,
         "change_reason": lecture.change_reason,
         "change_notes": lecture.change_notes,
+        "lecture_status": lecture.lecture_status,
+        "no_show_reason": lecture.no_show_reason,
     }
+
+    # Mutual exclusion: recording a substitute on a no-show lecture means
+    # "actually someone DID cover it" — transition status to completed and
+    # clear the no_show_reason so the lecture's state is internally consistent.
+    transition_from_no_show = (
+        data.actual_teacher_id is not None
+        and lecture.lecture_status == "no_show"
+    )
+    if transition_from_no_show:
+        lecture.no_show_reason = None
+        lecture.lecture_status = "completed"
 
     lecture = await lecture_repository.update(
         session,
@@ -450,6 +465,8 @@ async def mark_substitute(
             "actual_teacher_id": str(data.actual_teacher_id) if data.actual_teacher_id else None,
             "change_reason": reason,
             "change_notes": data.change_notes,
+            "lecture_status": lecture.lecture_status,
+            "no_show_reason": lecture.no_show_reason,
         },
         ip_address=ip_address,
         branch_id=lecture.branch_id,
@@ -496,6 +513,18 @@ async def mark_no_show(
     _validate_transition(lecture.lecture_status, "no_show")
 
     old_status = lecture.lecture_status
+    old_actual_teacher = lecture.actual_teacher_id
+    old_change_reason = lecture.change_reason
+
+    # No-show means nobody actually taught the class. Clear any substitute
+    # info that may have been left over from earlier admin edits — the two
+    # states are mutually exclusive (someone taught vs nobody taught).
+    # The repo update() guard skips None values, so we use the model
+    # attribute directly to force-clear.
+    lecture.actual_teacher_id = None
+    lecture.change_reason = None
+    lecture.change_notes = None
+
     lecture = await lecture_repository.update(
         session,
         lecture,
@@ -510,10 +539,17 @@ async def mark_no_show(
         action="UPDATE",
         table_name="lectures",
         record_id=lecture.id,
-        old_values={"lecture_status": old_status, "no_show_reason": None},
+        old_values={
+            "lecture_status": old_status,
+            "no_show_reason": None,
+            "actual_teacher_id": str(old_actual_teacher) if old_actual_teacher else None,
+            "change_reason": old_change_reason,
+        },
         new_values={
             "lecture_status": "no_show",
             "no_show_reason": data.no_show_reason,
+            "actual_teacher_id": None,
+            "change_reason": None,
         },
         ip_address=ip_address,
         branch_id=lecture.branch_id,

@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import type {
   BatchSummary,
   LectureResponse,
-  LectureStatus,
   SubjectSummary,
   TeacherSummary,
   TopicSummary,
@@ -37,25 +36,75 @@ interface LectureTableProps {
   onNoShow: (lecture: LectureResponse) => void;
 }
 
-const NO_SHOW_REASON_LABEL: Record<string, string> = {
+// Status pill derivation. Inspired by Google Classroom's mutually-exclusive
+// state model — one pill per row, color tied to MEANING (teacher
+// reliability problem vs. intentional decision vs. clean outcome), not raw
+// severity. See docs/lectures-and-insights.md for the rationale.
+type StatusTone = "success" | "secondary" | "default" | "destructive";
+
+const NO_SHOW_REASON_PILL_LABEL: Record<string, string> = {
   TEACHER_NO_SHOW: "teacher",
   STUDENT_NO_SHOW: "students",
   EXTERNAL: "external",
   OTHER: "other",
 };
 
-const STATUS_VARIANTS: Record<
-  LectureStatus,
-  "success" | "secondary" | "default" | "destructive"
-> = {
-  scheduled: "default",
-  started: "success",
-  paused: "secondary",
-  completed: "secondary",
-  cancelled: "destructive",
-  no_show: "destructive",
-  rescheduled: "default",
-};
+function deriveStatus(
+  l: LectureResponse,
+  isCovered: boolean
+): { label: string; tone: StatusTone; subLabel?: string } {
+  const hasSub = !!l.actual_teacher_id;
+
+  // A makeup session covered this missed lecture — overrides cancel/no-show.
+  if (isCovered && (l.lecture_status === "cancelled" || l.lecture_status === "no_show")) {
+    return {
+      label: "Made up",
+      tone: "success",
+      subLabel: l.lecture_status === "cancelled" ? "was cancelled" : "was no-show",
+    };
+  }
+
+  if (l.lecture_status === "no_show") {
+    const reason = (l.no_show_reason ?? "OTHER").toUpperCase();
+    const reasonLabel = NO_SHOW_REASON_PILL_LABEL[reason] ?? "other";
+    return {
+      label: `No-show · ${reasonLabel}`,
+      // Only teacher-attributable no-shows surface as red — others are
+      // disruptions but not teacher reliability problems.
+      tone: reason === "TEACHER_NO_SHOW" ? "destructive" : "secondary",
+    };
+  }
+
+  if (l.lecture_status === "cancelled") {
+    // Intentional cancellation. Grey, not red — admin chose this.
+    return { label: "Cancelled", tone: "secondary" };
+  }
+
+  if (l.lecture_status === "started") {
+    return {
+      label: "In progress",
+      tone: "default",
+      subLabel: hasSub ? "with substitute" : undefined,
+    };
+  }
+
+  if (l.lecture_status === "paused") {
+    return { label: "Paused", tone: "secondary" };
+  }
+
+  if (l.lecture_status === "completed") {
+    return hasSub
+      ? { label: "Completed", tone: "default", subLabel: "by substitute" }
+      : { label: "Completed", tone: "success" };
+  }
+
+  if (l.lecture_status === "rescheduled") {
+    return { label: "Rescheduled", tone: "secondary" };
+  }
+
+  // Default: scheduled (future / not yet started)
+  return { label: "Scheduled", tone: "default" };
+}
 
 function lookup<T extends { id: string }>(list: T[], id: string | null): T | undefined {
   if (!id) return undefined;
@@ -162,25 +211,22 @@ export function LectureTable({
                 </TableCell>
                 <TableCell>{formatDateTime(l.scheduled_start)}</TableCell>
                 <TableCell>
-                  <div className="flex flex-col gap-1 items-start">
-                    <Badge variant={STATUS_VARIANTS[l.lecture_status]}>
-                      {l.lecture_status}
-                    </Badge>
-                    {l.lecture_status === "no_show" && l.no_show_reason && (
-                      <Badge
-                        variant="secondary"
-                        className="text-[10px] uppercase"
-                      >
-                        {NO_SHOW_REASON_LABEL[l.no_show_reason] ??
-                          l.no_show_reason}
-                      </Badge>
-                    )}
-                    {coveredLectureIds?.has(l.id) && (
-                      <Badge variant="success" className="text-[10px]">
-                        MADE UP
-                      </Badge>
-                    )}
-                  </div>
+                  {(() => {
+                    const s = deriveStatus(
+                      l,
+                      coveredLectureIds?.has(l.id) ?? false
+                    );
+                    return (
+                      <div className="flex flex-col items-start gap-0.5">
+                        <Badge variant={s.tone}>{s.label}</Badge>
+                        {s.subLabel && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {s.subLabel}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex flex-wrap justify-end gap-1">

@@ -85,9 +85,13 @@ def _at(base: datetime, days: int, hour: int) -> datetime:
 
 async def seed():
     async with async_session_factory() as session:
-        # ---- Idempotency guard
+        # ---- Idempotency guard. Skip if a tagged, non-deleted row exists —
+        # soft-deleted rows (from --reset) shouldn't block re-seeding.
         existing = await session.execute(
-            select(Lecture).where(Lecture.notes.like(f"%{DEMO_TAG}%"))
+            select(Lecture).where(
+                Lecture.notes.like(f"%{DEMO_TAG}%"),
+                Lecture.is_deleted == False,
+            )
         )
         if existing.scalars().first() is not None:
             print(
