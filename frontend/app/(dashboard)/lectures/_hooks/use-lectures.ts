@@ -5,6 +5,8 @@ import type {
   ClassroomSummary,
   LectureCreate,
   LectureResponse,
+  LectureSessionCreate,
+  LectureSessionResponse,
   LectureSubstitute,
   SubjectSummary,
   TeacherSummary,
@@ -14,6 +16,11 @@ import type {
 export const lectureKeys = {
   all: ["lectures"] as const,
   list: (branchId: string) => [...lectureKeys.all, "list", branchId] as const,
+};
+
+export const sessionKeys = {
+  all: ["lecture-sessions"] as const,
+  list: (branchId: string) => [...sessionKeys.all, "list", branchId] as const,
 };
 
 export const teacherKeys = {
@@ -232,6 +239,44 @@ export function useSubjectsByCourse(
       return res.data;
     },
     enabled: !!branchId && !!courseId,
+  });
+}
+
+export function useLectureSessions(branchId: string | undefined) {
+  return useQuery<LectureSessionResponse[]>({
+    queryKey: sessionKeys.list(branchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<LectureSessionResponse[]>(
+        "/api/v1/lectures/sessions",
+        { params: { branch_id: branchId, limit: 200 } }
+      );
+      return res.data;
+    },
+    enabled: !!branchId,
+  });
+}
+
+export function useCreateLectureSession(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: LectureSessionCreate) => {
+      const res = await apiClient.post<LectureSessionResponse>(
+        "/api/v1/lectures/sessions",
+        data,
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({
+          queryKey: sessionKeys.list(branchId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: lectureKeys.list(branchId),
+        });
+      }
+    },
   });
 }
 

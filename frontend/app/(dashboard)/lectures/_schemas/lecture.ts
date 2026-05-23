@@ -56,6 +56,42 @@ export interface LectureCreate {
   notes?: string | null;
 }
 
+export type SessionOrigin = "planned" | "makeup" | "ad_hoc";
+export type SessionStatus = "in_progress" | "completed" | "aborted";
+
+export interface LectureSessionCreate {
+  teacher_id: string;
+  subject_id: string;
+  batch_ids: string[];
+  lecture_ids?: string[];
+  classroom_id?: string | null;
+  topic_id?: string | null;
+  actual_start: string;
+  actual_end?: string | null;
+  delivery_mode?: string;
+  origin?: SessionOrigin;
+  notes?: string | null;
+}
+
+export interface LectureSessionResponse {
+  id: string;
+  teacher_id: string;
+  subject_id: string;
+  topic_id: string | null;
+  classroom_id: string | null;
+  actual_start: string;
+  actual_end: string | null;
+  delivery_mode: string;
+  session_status: SessionStatus;
+  origin: SessionOrigin;
+  notes: string | null;
+  branch_id: string;
+  academic_year_id: string;
+  batch_ids: string[];
+  lecture_ids: string[];
+  status: string;
+}
+
 // Minimal related-entity shapes used by this page.
 
 export interface BatchSummary {

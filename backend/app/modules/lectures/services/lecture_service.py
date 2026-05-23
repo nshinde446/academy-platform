@@ -12,6 +12,7 @@ from app.modules.lectures.schemas.lecture_schemas import (
     AttendanceMark,
     LectureCreate,
     LectureReschedule,
+    LectureSessionCreate,
     LectureSubstitute,
 )
 
@@ -25,6 +26,8 @@ VALID_TRANSITIONS = {
 }
 
 VALID_DELIVERY_MODES = {"offline", "online", "hybrid"}
+VALID_SESSION_ORIGINS = {"planned", "makeup", "ad_hoc"}
+VALID_SESSION_STATUSES = {"in_progress", "completed", "aborted"}
 VALID_ATTENDANCE_STATUSES = {"PRESENT", "ABSENT", "LATE", "PARTIAL", "EXCUSED", "MANUAL_OVERRIDE"}
 VALID_CHANGE_REASONS = {
     "SUBSTITUTE",
@@ -452,6 +455,197 @@ async def mark_substitute(
             },
         )
     return lecture
+
+
+async def _build_session_response(session: AsyncSession, sess) -> dict:
+    """Hydrate a LectureSession row with its batch_ids and lecture_ids joins."""
+    batches = await lecture_repository.list_session_batches(session, sess.id)
+    plans = await lecture_repository.list_session_plans(session, sess.id)
+    return {
+        "id": sess.id,
+        "teacher_id": sess.teacher_id,
+        "subject_id": sess.subject_id,
+        "topic_id": sess.topic_id,
+        "classroom_id": sess.classroom_id,
+        "actual_start": sess.actual_start,
+        "actual_end": sess.actual_end,
+        "delivery_mode": sess.delivery_mode,
+        "session_status": sess.session_status,
+        "origin": sess.origin,
+        "notes": sess.notes,
+        "branch_id": sess.branch_id,
+        "academic_year_id": sess.academic_year_id,
+        "batch_ids": [b.batch_id for b in batches],
+        "lecture_ids": [p.lecture_id for p in plans],
+        "status": sess.status,
+    }
+
+
+async def create_lecture_session(
+    session: AsyncSession,
+    data: LectureSessionCreate,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    if data.delivery_mode not in VALID_DELIVERY_MODES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid delivery mode: {data.delivery_mode}",
+        )
+    if data.origin not in VALID_SESSION_ORIGINS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid origin: {data.origin}",
+        )
+    if not data.batch_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one batch must be linked to the session",
+        )
+    if data.delivery_mode == "offline" and not data.classroom_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Offline sessions require a classroom_id",
+        )
+    if data.actual_end is not None and data.actual_end <= data.actual_start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="actual_end must be after actual_start",
+        )
+
+    # Validate every batch belongs to this branch and pick an academic year.
+    academic_year_id: uuid.UUID | None = None
+    for bid in data.batch_ids:
+        batch = await batch_repository.get_by_id(session, bid)
+        if not batch:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Batch {bid} not found",
+            )
+        if batch.branch_id != branch_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Batch {bid} is not in this branch",
+            )
+        if academic_year_id is None:
+            academic_year_id = batch.start_academic_year_id
+
+    # Validate every linked plan belongs to this branch.
+    for lid in data.lecture_ids:
+        plan = await lecture_repository.get_by_id(session, lid)
+        if not plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Lecture plan {lid} not found",
+            )
+        if plan.branch_id != branch_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Lecture plan {lid} is not in this branch",
+            )
+
+    session_status_val = "in_progress" if data.actual_end is None else "completed"
+
+    sess = await lecture_repository.create_session(
+        session,
+        teacher_id=data.teacher_id,
+        subject_id=data.subject_id,
+        topic_id=data.topic_id,
+        classroom_id=data.classroom_id,
+        actual_start=data.actual_start,
+        actual_end=data.actual_end,
+        delivery_mode=data.delivery_mode,
+        session_status=session_status_val,
+        origin=data.origin,
+        notes=data.notes,
+        branch_id=branch_id,
+        academic_year_id=academic_year_id,
+    )
+
+    for bid in data.batch_ids:
+        await lecture_repository.link_session_batch(session, sess.id, bid, branch_id)
+    for lid in data.lecture_ids:
+        await lecture_repository.link_session_plan(session, sess.id, lid, branch_id)
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="CREATE",
+        table_name="lecture_sessions",
+        record_id=sess.id,
+        new_values={
+            **data.model_dump(mode="json"),
+            "session_status": session_status_val,
+        },
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+
+    await event_service.emit_event(
+        session,
+        event_type="LECTURE_SESSION_RECORDED",
+        teacher_id=sess.teacher_id,
+        batch_id=data.batch_ids[0],
+        subject_id=sess.subject_id,
+        branch_id=branch_id,
+        metadata={
+            "session_id": str(sess.id),
+            "origin": sess.origin,
+            "batch_count": len(data.batch_ids),
+            "linked_plan_count": len(data.lecture_ids),
+        },
+    )
+
+    return await _build_session_response(session, sess)
+
+
+async def list_lecture_sessions(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    offset: int = 0,
+    limit: int = 50,
+) -> list[dict]:
+    sessions = await lecture_repository.list_sessions_by_branch(
+        session, branch_id, offset, limit
+    )
+    if not sessions:
+        return []
+    session_ids = [s.id for s in sessions]
+    batches = await lecture_repository.list_session_batches_for_sessions(
+        session, session_ids
+    )
+    plans = await lecture_repository.list_session_plans_for_sessions(
+        session, session_ids
+    )
+    batches_by_session: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for b in batches:
+        batches_by_session.setdefault(b.session_id, []).append(b.batch_id)
+    plans_by_session: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for p in plans:
+        plans_by_session.setdefault(p.session_id, []).append(p.lecture_id)
+
+    return [
+        {
+            "id": s.id,
+            "teacher_id": s.teacher_id,
+            "subject_id": s.subject_id,
+            "topic_id": s.topic_id,
+            "classroom_id": s.classroom_id,
+            "actual_start": s.actual_start,
+            "actual_end": s.actual_end,
+            "delivery_mode": s.delivery_mode,
+            "session_status": s.session_status,
+            "origin": s.origin,
+            "notes": s.notes,
+            "branch_id": s.branch_id,
+            "academic_year_id": s.academic_year_id,
+            "batch_ids": batches_by_session.get(s.id, []),
+            "lecture_ids": plans_by_session.get(s.id, []),
+            "status": s.status,
+        }
+        for s in sessions
+    ]
 
 
 async def delete_lecture(

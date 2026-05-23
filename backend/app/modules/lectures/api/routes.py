@@ -11,6 +11,8 @@ from app.modules.lectures.schemas.lecture_schemas import (
     LectureCreate,
     LectureReschedule,
     LectureResponse,
+    LectureSessionCreate,
+    LectureSessionResponse,
     LectureSubstitute,
 )
 from app.modules.lectures.services import lecture_service
@@ -40,6 +42,36 @@ async def list_lectures(
     session: AsyncSession = Depends(get_db),
 ):
     return await lecture_service.list_lectures(session, branch_id, offset, limit)
+
+
+@router.post("/sessions", response_model=LectureSessionResponse)
+async def create_lecture_session(
+    body: LectureSessionCreate,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Record a session that actually happened.
+
+    Supports ad-hoc makeup classes (zero linked plans), normal completions
+    (one linked plan), and merged-batch sessions (one plan per batch).
+    """
+    return await lecture_service.create_lecture_session(
+        session, body, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.get("/sessions", response_model=list[LectureSessionResponse])
+async def list_lecture_sessions(
+    branch_id: uuid.UUID = Query(...),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    return await lecture_service.list_lecture_sessions(session, branch_id, offset, limit)
 
 
 @router.get("/{lecture_id}", response_model=LectureResponse)

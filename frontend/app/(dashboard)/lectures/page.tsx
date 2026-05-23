@@ -14,8 +14,10 @@ import {
   useCancelLecture,
   useCompleteLecture,
   useCreateLecture,
+  useCreateLectureSession,
   useDeleteLecture,
   useLectures,
+  useLectureSessions,
   useMarkSubstitute,
   useStartLecture,
   useClassrooms,
@@ -24,6 +26,7 @@ import {
 import type {
   LectureCreate,
   LectureResponse,
+  LectureSessionCreate,
   LectureStatus,
   LectureSubstitute,
   SubjectSummary,
@@ -33,6 +36,8 @@ import { LectureTable } from "./_components/lecture-table";
 import { LectureEmptyState } from "./_components/lecture-empty-state";
 import { CreateLectureDialog } from "./_components/create-lecture-dialog";
 import { MarkSubstituteDialog } from "./_components/mark-substitute-dialog";
+import { RecordMakeupDialog } from "./_components/record-makeup-dialog";
+import { SessionList } from "./_components/session-list";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
@@ -111,6 +116,7 @@ export default function LecturesPage() {
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
   const lecturesQuery = useLectures(branchId);
+  const sessionsQuery = useLectureSessions(branchId);
   const batchesQuery = useBatchesForLectures(branchId);
   const teachersQuery = useTeachers(branchId);
   const classroomsQuery = useClassrooms(branchId);
@@ -121,11 +127,13 @@ export default function LecturesPage() {
   const cancelMutation = useCancelLecture(branchId);
   const deleteMutation = useDeleteLecture(branchId);
   const substituteMutation = useMarkSubstitute(branchId);
+  const sessionMutation = useCreateLectureSession(branchId);
 
   const batches = batchesQuery.data ?? [];
   const teachers = teachersQuery.data ?? [];
   const classrooms = classroomsQuery.data ?? [];
   const lectures = lecturesQuery.data ?? [];
+  const sessions = sessionsQuery.data ?? [];
 
   // Resolve all subjects/topics referenced by the visible lectures so the
   // table can render their names. Group lectures by the (batch.course_id,
@@ -137,14 +145,21 @@ export default function LecturesPage() {
       const b = batches.find((x) => x.id === l.batch_id);
       if (b) set.add(b.course_id);
     }
+    for (const s of sessions) {
+      for (const bid of s.batch_ids) {
+        const b = batches.find((x) => x.id === bid);
+        if (b) set.add(b.course_id);
+      }
+    }
     return Array.from(set);
-  }, [lectures, batches]);
+  }, [lectures, sessions, batches]);
 
   const uniqueSubjectIds = useMemo(() => {
     const set = new Set<string>();
     for (const l of lectures) set.add(l.subject_id);
+    for (const s of sessions) set.add(s.subject_id);
     return Array.from(set);
-  }, [lectures]);
+  }, [lectures, sessions]);
 
   // useQueries lets the count vary with the data without breaking the
   // Rules of Hooks. React Query dedupes by queryKey across the page.
@@ -231,6 +246,10 @@ export default function LecturesPage() {
     await createMutation.mutateAsync(data);
   }
 
+  async function handleRecordSession(data: LectureSessionCreate) {
+    await sessionMutation.mutateAsync(data);
+  }
+
   async function withErrorAlert<T>(p: Promise<T>) {
     try {
       await p;
@@ -291,14 +310,25 @@ export default function LecturesPage() {
             classroom conflicts at create time.
           </p>
         </div>
-        <CreateLectureDialog
-          branchId={branchId}
-          batches={batches}
-          teachers={teachers}
-          classrooms={classrooms}
-          onSubmit={handleCreate}
-          isPending={createMutation.isPending}
-        />
+        <div className="flex flex-wrap gap-2">
+          <RecordMakeupDialog
+            branchId={branchId}
+            batches={batches}
+            teachers={teachers}
+            classrooms={classrooms}
+            lectures={lectures}
+            onSubmit={handleRecordSession}
+            isPending={sessionMutation.isPending}
+          />
+          <CreateLectureDialog
+            branchId={branchId}
+            batches={batches}
+            teachers={teachers}
+            classrooms={classrooms}
+            onSubmit={handleCreate}
+            isPending={createMutation.isPending}
+          />
+        </div>
       </div>
 
       {/* Filters */}
@@ -390,6 +420,13 @@ export default function LecturesPage() {
           onSubstitute={handleSubstitute}
         />
       )}
+
+      <SessionList
+        sessions={sessions}
+        batches={batches}
+        teachers={teachers}
+        subjects={allSubjects}
+      />
 
       <MarkSubstituteDialog
         lecture={substituteTarget}
