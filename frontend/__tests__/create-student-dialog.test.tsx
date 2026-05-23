@@ -78,6 +78,9 @@ describe("CreateStudentDialog", () => {
     await user.type(screen.getByLabelText(/last name/i), "Kumar");
     await user.type(screen.getByLabelText(/parent mobile/i), "9988776655");
     await user.type(screen.getByLabelText(/rfid number/i), "RFID-XYZ-9");
+    // standard + target_exam are required at enrolment.
+    await user.selectOptions(screen.getByLabelText(/standard/i), "11");
+    await user.selectOptions(screen.getByLabelText(/target exam/i), "NEET");
 
     await user.click(screen.getByRole("button", { name: /^create$/i }));
 
@@ -88,6 +91,8 @@ describe("CreateStudentDialog", () => {
           last_name: "Kumar",
           parent_mobile: "9988776655",
           rfid_number: "RFID-XYZ-9",
+          standard: "11",
+          target_exam: "NEET",
         })
       );
     });
@@ -113,6 +118,8 @@ describe("CreateStudentDialog", () => {
     await user.type(screen.getByLabelText(/first name/i), "Test");
     await user.type(screen.getByLabelText(/last name/i), "Student");
     await user.type(screen.getByLabelText(/email/i), "test@example.com");
+    await user.selectOptions(screen.getByLabelText(/standard/i), "12");
+    await user.selectOptions(screen.getByLabelText(/target exam/i), "JEE-Main");
 
     await user.click(screen.getByRole("button", { name: /^create$/i }));
 
@@ -123,6 +130,8 @@ describe("CreateStudentDialog", () => {
           last_name: "Student",
           email: "test@example.com",
           academic_year_id: "ay1",
+          standard: "12",
+          target_exam: "JEE-Main",
         })
       );
     });

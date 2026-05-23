@@ -7,6 +7,37 @@ from app.modules.audit.services import audit_service
 from app.modules.student.repositories import student_repository
 from app.modules.student.schemas.student_schemas import StudentCreate, StudentUpdate
 
+# Enrolment validations. Drives the /students/[id] cohort segmentation
+# and the future at-risk / topic-mastery analytics.
+VALID_STANDARDS = {"9", "10", "11", "12", "Dropper"}
+VALID_TARGET_EXAMS = {
+    "NEET",
+    "JEE-Main",
+    "JEE-Advanced",
+    "Both",       # NEET + JEE dual-prep
+    "Foundation", # Class 9/10 foundation programs
+    "Other",
+}
+
+
+def _validate_enrolment_fields(standard: str | None, target_exam: str | None):
+    if standard is not None and standard not in VALID_STANDARDS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Invalid standard '{standard}'. "
+                f"Allowed: {sorted(VALID_STANDARDS)}"
+            ),
+        )
+    if target_exam is not None and target_exam not in VALID_TARGET_EXAMS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Invalid target_exam '{target_exam}'. "
+                f"Allowed: {sorted(VALID_TARGET_EXAMS)}"
+            ),
+        )
+
 
 async def create_student(
     session: AsyncSession,
@@ -14,6 +45,7 @@ async def create_student(
     current_user_id: uuid.UUID,
     ip_address: str | None = None,
 ):
+    _validate_enrolment_fields(data.standard, data.target_exam)
     student = await student_repository.create(session, **data.model_dump())
 
     await audit_service.log_action(
@@ -66,6 +98,9 @@ async def update_student(
     }
 
     update_data = data.model_dump(exclude_unset=True)
+    _validate_enrolment_fields(
+        update_data.get("standard"), update_data.get("target_exam")
+    )
     student = await student_repository.update(session, student, **update_data)
 
     await audit_service.log_action(

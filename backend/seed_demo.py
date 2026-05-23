@@ -606,6 +606,9 @@ async def seed():
                     defaults={
                         "academic_year_id": ay.id,
                         "course_id": course.id,
+                        # NEET 2-year course → Class 11 cohort by convention.
+                        "standard": "11",
+                        "target_exam": "NEET",
                         "status": "active",
                         "is_deleted": False,
                     },
@@ -613,6 +616,12 @@ async def seed():
                     first_name=f"Student{i}",
                     last_name=batch_obj.code,
                 )
+                # Backfill on existing demo rows from before this column existed.
+                if stu.standard is None:
+                    stu.standard = "11"
+                if stu.target_exam is None:
+                    stu.target_exam = "NEET"
+                await session.flush()
                 await _find_or_create(
                     session,
                     StudentBatchMapping,

@@ -111,7 +111,17 @@ async def import_students(
     branch_id: uuid.UUID,
     current_user_id: uuid.UUID,
     ip_address: str | None = None,
+    *,
+    standard: str | None = None,
+    target_exam: str | None = None,
 ) -> dict[str, Any]:
+    # Defer to the student service's enrolment-field validator so the
+    # error messages match what the create endpoint returns.
+    from app.modules.student.services.student_service import (
+        _validate_enrolment_fields,
+    )
+    _validate_enrolment_fields(standard, target_exam)
+
     content = await file.read()
     filename = (file.filename or "").lower()
 
@@ -143,6 +153,11 @@ async def import_students(
             skipped += 1
             errors.append(f"Row {idx}: missing required 'Name'")
             continue
+        # Apply the per-import standard + target_exam to every row.
+        if standard is not None:
+            kwargs["standard"] = standard
+        if target_exam is not None:
+            kwargs["target_exam"] = target_exam
         try:
             await student_repository.create(session, **kwargs)
             imported += 1

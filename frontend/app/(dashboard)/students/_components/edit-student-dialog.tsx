@@ -11,7 +11,13 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
-import type { StudentResponse, StudentUpdate } from "../_schemas/student";
+import type {
+  Standard,
+  StudentResponse,
+  StudentUpdate,
+  TargetExam,
+} from "../_schemas/student";
+import { STANDARDS, TARGET_EXAMS } from "../_schemas/student";
 
 interface EditStudentDialogProps {
   student: StudentResponse | null;
@@ -32,6 +38,8 @@ function buildForm(s: StudentResponse | null) {
     parent_mobile: s?.parent_mobile ?? "",
     rfid_number: s?.rfid_number ?? "",
     gender: s?.gender ?? "",
+    standard: (s?.standard ?? "") as Standard | "",
+    target_exam: (s?.target_exam ?? "") as TargetExam | "",
   };
 }
 
@@ -69,6 +77,8 @@ export function EditStudentDialog({
         parent_mobile: form.parent_mobile || null,
         rfid_number: form.rfid_number || null,
         gender: form.gender || null,
+        standard: form.standard || null,
+        target_exam: form.target_exam || null,
       });
       onOpenChange(false);
     } catch (err: any) {
@@ -174,6 +184,48 @@ export function EditStudentDialog({
                   setForm({ ...form, rfid_number: e.target.value })
                 }
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edit_standard">Standard</Label>
+              <select
+                id="edit_standard"
+                value={form.standard}
+                onChange={(e) =>
+                  setForm({ ...form, standard: e.target.value as Standard })
+                }
+                className="flex h-8 w-full rounded-lg border border-input bg-background px-3 text-sm"
+              >
+                <option value="">—</option>
+                {STANDARDS.map((s) => (
+                  <option key={s} value={s}>
+                    {s === "Dropper" ? "Dropper" : `Class ${s}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edit_target_exam">Target exam</Label>
+              <select
+                id="edit_target_exam"
+                value={form.target_exam}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    target_exam: e.target.value as TargetExam,
+                  })
+                }
+                className="flex h-8 w-full rounded-lg border border-input bg-background px-3 text-sm"
+              >
+                <option value="">—</option>
+                {TARGET_EXAMS.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

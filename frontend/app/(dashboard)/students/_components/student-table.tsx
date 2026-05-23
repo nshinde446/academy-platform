@@ -25,12 +25,14 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead className="hidden sm:table-cell">Roll No</TableHead>
+            <TableHead className="hidden sm:table-cell">Class</TableHead>
+            <TableHead className="hidden sm:table-cell">Target</TableHead>
+            <TableHead className="hidden md:table-cell">Roll No</TableHead>
             <TableHead className="hidden xl:table-cell">Gender</TableHead>
             <TableHead className="hidden lg:table-cell">Email</TableHead>
-            <TableHead className="hidden md:table-cell">Phone</TableHead>
-            <TableHead className="hidden md:table-cell">Parent Mobile</TableHead>
-            <TableHead className="hidden lg:table-cell">RFID</TableHead>
+            <TableHead className="hidden lg:table-cell">Phone</TableHead>
+            <TableHead className="hidden xl:table-cell">Parent Mobile</TableHead>
+            <TableHead className="hidden xl:table-cell">RFID</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -42,6 +44,20 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
                 {s.first_name} {s.last_name}
               </TableCell>
               <TableCell className="hidden sm:table-cell">
+                {s.standard
+                  ? s.standard === "Dropper"
+                    ? "Dropper"
+                    : `Class ${s.standard}`
+                  : "—"}
+              </TableCell>
+              <TableCell className="hidden sm:table-cell">
+                {s.target_exam ? (
+                  <Badge variant="secondary">{s.target_exam}</Badge>
+                ) : (
+                  "—"
+                )}
+              </TableCell>
+              <TableCell className="hidden md:table-cell">
                 {s.enrollment_number ?? "—"}
               </TableCell>
               <TableCell className="hidden xl:table-cell">
@@ -50,13 +66,13 @@ export function StudentTable({ students, onEdit, onDelete }: StudentTableProps) 
               <TableCell className="hidden lg:table-cell">
                 {s.email ?? "—"}
               </TableCell>
-              <TableCell className="hidden md:table-cell">
+              <TableCell className="hidden lg:table-cell">
                 {s.phone ?? "—"}
               </TableCell>
-              <TableCell className="hidden md:table-cell">
+              <TableCell className="hidden xl:table-cell">
                 {s.parent_mobile ?? "—"}
               </TableCell>
-              <TableCell className="hidden lg:table-cell font-mono text-xs">
+              <TableCell className="hidden xl:table-cell font-mono text-xs">
                 {s.rfid_number ?? "—"}
               </TableCell>
               <TableCell>

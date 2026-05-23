@@ -29,6 +29,8 @@ const MOCK_STUDENTS: StudentResponse[] = [
     caste: null,
     username: null,
     course_id: null,
+    standard: null,
+    target_exam: null,
     status: "active",
   },
   {
@@ -48,6 +50,8 @@ const MOCK_STUDENTS: StudentResponse[] = [
     caste: null,
     username: null,
     course_id: null,
+    standard: null,
+    target_exam: null,
     status: "inactive",
   },
 ];

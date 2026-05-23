@@ -12,7 +12,13 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
-import type { AcademicYearResponse, StudentCreate } from "../_schemas/student";
+import type {
+  AcademicYearResponse,
+  Standard,
+  StudentCreate,
+  TargetExam,
+} from "../_schemas/student";
+import { STANDARDS, TARGET_EXAMS } from "../_schemas/student";
 
 interface CreateStudentDialogProps {
   academicYears: AcademicYearResponse[];
@@ -30,6 +36,8 @@ const EMPTY_FORM = {
   parent_mobile: "",
   rfid_number: "",
   gender: "",
+  standard: "" as Standard | "",
+  target_exam: "" as TargetExam | "",
 };
 
 export function CreateStudentDialog({
@@ -52,6 +60,14 @@ export function CreateStudentDialog({
       setError("First name and last name are required");
       return;
     }
+    if (!form.standard) {
+      setError("Pick the student's standard / class");
+      return;
+    }
+    if (!form.target_exam) {
+      setError("Pick the student's target exam");
+      return;
+    }
     const yearId = academicYears[0]?.id;
     if (!yearId) {
       setError("No academic year available. Create one first via the API.");
@@ -63,6 +79,8 @@ export function CreateStudentDialog({
         academic_year_id: yearId,
         first_name: form.first_name,
         last_name: form.last_name,
+        standard: form.standard as Standard,
+        target_exam: form.target_exam as TargetExam,
         email: form.email || undefined,
         phone: form.phone || undefined,
         date_of_birth: form.date_of_birth || undefined,
@@ -201,6 +219,50 @@ export function CreateStudentDialog({
                   setForm({ ...form, rfid_number: e.target.value })
                 }
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="create_standard">Standard *</Label>
+              <select
+                id="create_standard"
+                value={form.standard}
+                onChange={(e) =>
+                  setForm({ ...form, standard: e.target.value as Standard })
+                }
+                className="flex h-8 w-full rounded-lg border border-input bg-background px-3 text-sm"
+                required
+              >
+                <option value="">Pick standard…</option>
+                {STANDARDS.map((s) => (
+                  <option key={s} value={s}>
+                    {s === "Dropper" ? "Dropper" : `Class ${s}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="create_target_exam">Target exam *</Label>
+              <select
+                id="create_target_exam"
+                value={form.target_exam}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    target_exam: e.target.value as TargetExam,
+                  })
+                }
+                className="flex h-8 w-full rounded-lg border border-input bg-background px-3 text-sm"
+                required
+              >
+                <option value="">Pick target exam…</option>
+                {TARGET_EXAMS.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

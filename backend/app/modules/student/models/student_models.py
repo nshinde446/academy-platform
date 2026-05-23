@@ -33,6 +33,12 @@ class Student(BaseModel):
     course_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("courses.id"), nullable=True
     )
+    # Standard / class level the student is in.
+    # Allowed: "9" | "10" | "11" | "12" | "Dropper"
+    standard: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Target exam track.
+    # Allowed: NEET | JEE-Main | JEE-Advanced | Both | Foundation | Other
+    target_exam: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class StudentIdentity(BaseModel):

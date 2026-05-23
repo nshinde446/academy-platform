@@ -21,6 +21,8 @@ class TestStudentCRUD:
                 "last_name": "Doe",
                 "email": "john@test.com",
                 "phone": "9876543210",
+                "standard": "11",
+                "target_exam": "NEET",
             },
             cookies={"access_token": token},
         )
@@ -44,6 +46,8 @@ class TestStudentCRUD:
                 "academic_year_id": "00000000-0000-0000-0000-000000000030",
                 "first_name": "Jane",
                 "last_name": "Smith",
+                "standard": "11",
+                "target_exam": "NEET",
             },
             cookies={"access_token": token},
         )
@@ -70,6 +74,8 @@ class TestStudentCRUD:
                 "academic_year_id": "00000000-0000-0000-0000-000000000030",
                 "first_name": "Update",
                 "last_name": "Me",
+                "standard": "11",
+                "target_exam": "NEET",
             },
             cookies={"access_token": token},
         )
@@ -98,6 +104,8 @@ class TestStudentCRUD:
                 "academic_year_id": "00000000-0000-0000-0000-000000000030",
                 "first_name": "Delete",
                 "last_name": "Me",
+                "standard": "11",
+                "target_exam": "NEET",
             },
             cookies={"access_token": token},
         )
@@ -130,6 +138,8 @@ class TestStudentCRUD:
                 "academic_year_id": "00000000-0000-0000-0000-000000000030",
                 "first_name": "Branch",
                 "last_name": "A",
+                "standard": "11",
+                "target_exam": "NEET",
             },
             cookies={"access_token": token},
         )
@@ -688,6 +698,8 @@ class TestAuditOnStudentOperations:
                 "academic_year_id": "00000000-0000-0000-0000-000000000030",
                 "first_name": "Audited",
                 "last_name": "Student",
+                "standard": "11",
+                "target_exam": "NEET",
             },
             cookies={"access_token": token},
         )
