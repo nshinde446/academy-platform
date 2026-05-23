@@ -480,6 +480,7 @@ export default function LecturesPage() {
       <MarkSubstituteDialog
         lecture={substituteTarget}
         teachers={teachers}
+        allLectures={lectures}
         open={substituteOpen}
         onOpenChange={(o) => {
           setSubstituteOpen(o);

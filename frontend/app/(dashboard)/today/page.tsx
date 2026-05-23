@@ -230,6 +230,7 @@ export default function TodayPage() {
       <MarkSubstituteDialog
         lecture={substituteTarget}
         teachers={teachers}
+        allLectures={allLectures}
         open={substituteOpen}
         onOpenChange={(o) => {
           setSubstituteOpen(o);
