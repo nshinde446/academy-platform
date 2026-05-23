@@ -1,0 +1,156 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { useUserStore } from "@/store/user-store";
+import { useAdherenceInsights } from "./_hooks/use-adherence";
+import { KpiCard } from "./_components/kpi-card";
+import { SessionsBreakdown } from "./_components/sessions-breakdown";
+import { TeacherLeaderboard } from "./_components/teacher-leaderboard";
+
+function isoDateNDaysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+function isoToday(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function rateTone(pct: number): "success" | "default" | "warning" | "destructive" {
+  if (pct >= 80) return "success";
+  if (pct >= 60) return "default";
+  if (pct >= 40) return "warning";
+  return "destructive";
+}
+
+function subRateTone(pct: number): "success" | "default" | "warning" | "destructive" {
+  if (pct >= 30) return "destructive";
+  if (pct >= 15) return "warning";
+  if (pct > 0) return "default";
+  return "success";
+}
+
+export default function InsightsPage() {
+  const user = useUserStore((s) => s.user);
+  const branchId = user?.branch_roles?.[0]?.branch_id;
+
+  const [fromDate, setFromDate] = useState(isoDateNDaysAgo(30));
+  const [toDate, setToDate] = useState(isoToday());
+
+  const insightsQuery = useAdherenceInsights(branchId, fromDate, toDate);
+  const data = insightsQuery.data;
+
+  const totals = data?.totals;
+  const sessions = data?.sessions;
+  const rates = data?.rates;
+  const byTeacher = data?.by_teacher ?? [];
+
+  const dateValid = useMemo(() => {
+    if (!fromDate || !toDate) return true;
+    return new Date(fromDate) <= new Date(toDate);
+  }, [fromDate, toDate]);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold">Insights</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Plan-vs-Actual adherence: how much of what you scheduled actually
+            happened, and which teachers drive the deviations.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 items-center">
+          <Input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            aria-label="From date"
+            className="w-40"
+          />
+          <span className="text-muted-foreground text-sm">to</span>
+          <Input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            aria-label="To date"
+            className="w-40"
+          />
+        </div>
+      </div>
+
+      {!dateValid && (
+        <p className="text-sm text-destructive">
+          From date must be on or before To date.
+        </p>
+      )}
+
+      {insightsQuery.isLoading && (
+        <p className="text-muted-foreground text-sm">Loading insights...</p>
+      )}
+
+      {insightsQuery.isError && (
+        <p className="text-destructive text-sm">
+          Failed to load insights. Make sure the backend is running.
+        </p>
+      )}
+
+      {!insightsQuery.isLoading && !insightsQuery.isError && data && (
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard
+              label="Adherence"
+              value={rates ? `${rates.adherence_pct.toFixed(1)}%` : "—"}
+              hint={
+                totals
+                  ? `${totals.completed_as_planned} of ${totals.planned} planned`
+                  : undefined
+              }
+              tone={rates ? rateTone(rates.adherence_pct) : "default"}
+            />
+            <KpiCard
+              label="Substitute rate"
+              value={rates ? `${rates.substitute_pct.toFixed(1)}%` : "—"}
+              hint={totals ? `${totals.substituted} substituted` : undefined}
+              tone={rates ? subRateTone(rates.substitute_pct) : "default"}
+            />
+            <KpiCard
+              label="Cancellation rate"
+              value={rates ? `${rates.cancellation_pct.toFixed(1)}%` : "—"}
+              hint={totals ? `${totals.cancelled} cancelled` : undefined}
+              tone={rates && rates.cancellation_pct >= 15 ? "destructive" : "default"}
+            />
+            <KpiCard
+              label="Ad-hoc sessions"
+              value={sessions ? String(sessions.ad_hoc) : "—"}
+              hint={
+                sessions
+                  ? `+${sessions.makeup} makeup, ${sessions.merged} merged`
+                  : undefined
+              }
+              tone="default"
+            />
+          </div>
+
+          {sessions && <SessionsBreakdown sessions={sessions} />}
+
+          <div className="flex flex-col gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">
+                Teachers — substitute leaderboard
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Top by substitute-out rate (i.e. their scheduled lectures most
+                often delivered by someone else). Higher = bigger plan-vs-actual
+                gap.
+              </p>
+            </div>
+            <TeacherLeaderboard rows={byTeacher} limit={10} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

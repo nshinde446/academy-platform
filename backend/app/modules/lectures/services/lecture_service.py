@@ -2,12 +2,14 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.services import audit_service
 from app.modules.batch.repositories import batch_repository
 from app.modules.events.services import event_service
 from app.modules.lectures.repositories import lecture_repository
+from app.modules.teacher.models.teacher_models import Teacher
 from app.modules.lectures.schemas.lecture_schemas import (
     AttendanceMark,
     LectureCreate,
@@ -646,6 +648,81 @@ async def list_lecture_sessions(
         }
         for s in sessions
     ]
+
+
+def _safe_pct(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round((numerator * 100) / denominator, 1)
+
+
+async def get_adherence_insights(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+) -> dict:
+    """Build the adherence dashboard payload in a single round-trip.
+
+    Aggregations run in parallel-friendly sequence (each is one SQL query).
+    Rates derive from totals so the frontend doesn't need to recompute.
+    """
+    totals = await lecture_repository.lecture_totals_in_range(
+        session, branch_id, from_dt, to_dt
+    )
+    sessions = await lecture_repository.session_origin_totals_in_range(
+        session, branch_id, from_dt, to_dt
+    )
+    per_teacher = await lecture_repository.per_teacher_adherence_in_range(
+        session, branch_id, from_dt, to_dt
+    )
+
+    rates = {
+        "adherence_pct": _safe_pct(totals["completed_as_planned"], totals["planned"]),
+        "substitute_pct": _safe_pct(totals["substituted"], totals["planned"]),
+        "cancellation_pct": _safe_pct(totals["cancelled"], totals["planned"]),
+    }
+
+    # Enrich per-teacher rows with names and substitute rate.
+    teacher_ids = [row["teacher_id"] for row in per_teacher]
+    teacher_rows: list[dict] = []
+    if teacher_ids:
+        result = await session.execute(
+            select(Teacher).where(
+                Teacher.id.in_(teacher_ids),
+                Teacher.branch_id == branch_id,
+                Teacher.is_deleted == False,
+            )
+        )
+        teachers_by_id = {t.id: t for t in result.scalars().all()}
+        for row in per_teacher:
+            t = teachers_by_id.get(row["teacher_id"])
+            if t is None:
+                continue
+            teacher_rows.append(
+                {
+                    "teacher_id": row["teacher_id"],
+                    "first_name": t.first_name,
+                    "last_name": t.last_name,
+                    "planned": row["planned"],
+                    "substituted_out": row["substituted_out"],
+                    "substituted_in": row["substituted_in"],
+                    "cancelled": row["cancelled"],
+                    "substitute_rate_pct": _safe_pct(
+                        row["substituted_out"], row["planned"]
+                    ),
+                }
+            )
+    teacher_rows.sort(key=lambda r: r["substitute_rate_pct"], reverse=True)
+
+    return {
+        "from_date": from_dt,
+        "to_date": to_dt,
+        "totals": totals,
+        "sessions": sessions,
+        "rates": rates,
+        "by_teacher": teacher_rows,
+    }
 
 
 async def delete_lecture(

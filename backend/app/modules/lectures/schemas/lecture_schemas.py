@@ -103,6 +103,47 @@ class LectureSessionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdherenceTotals(BaseModel):
+    planned: int
+    completed_as_planned: int
+    substituted: int
+    cancelled: int
+    rescheduled: int
+
+
+class AdherenceSessions(BaseModel):
+    planned: int
+    makeup: int
+    ad_hoc: int
+    merged: int
+
+
+class AdherenceRates(BaseModel):
+    adherence_pct: float
+    substitute_pct: float
+    cancellation_pct: float
+
+
+class AdherenceTeacherRow(BaseModel):
+    teacher_id: uuid.UUID
+    first_name: str
+    last_name: str
+    planned: int
+    substituted_out: int
+    substituted_in: int
+    cancelled: int
+    substitute_rate_pct: float
+
+
+class AdherenceResponse(BaseModel):
+    from_date: datetime | None = None
+    to_date: datetime | None = None
+    totals: AdherenceTotals
+    sessions: AdherenceSessions
+    rates: AdherenceRates
+    by_teacher: list[AdherenceTeacherRow]
+
+
 class AttendanceMark(BaseModel):
     student_id: uuid.UUID
     attendance_status: str = "PRESENT"

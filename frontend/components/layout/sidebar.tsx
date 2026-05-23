@@ -19,6 +19,7 @@ const TOP_LEVEL: NavItem[] = [
   { label: "Students", href: "/students" },
   { label: "Teachers", href: "/teachers" },
   { label: "Lectures", href: "/lectures" },
+  { label: "Insights", href: "/insights" },
 ];
 
 const ACADEMICS: NavGroup = {

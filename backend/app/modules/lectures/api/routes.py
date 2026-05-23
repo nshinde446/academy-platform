@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.lectures.schemas.lecture_schemas import (
+    AdherenceResponse,
     AttendanceMark,
     AttendanceResponse,
     LectureCreate,
@@ -72,6 +74,25 @@ async def list_lecture_sessions(
     session: AsyncSession = Depends(get_db),
 ):
     return await lecture_service.list_lecture_sessions(session, branch_id, offset, limit)
+
+
+@router.get("/insights/adherence", response_model=AdherenceResponse)
+async def get_adherence_insights(
+    branch_id: uuid.UUID = Query(...),
+    from_date: datetime | None = Query(None),
+    to_date: datetime | None = Query(None),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Plan-vs-Actual adherence dashboard payload.
+
+    Aggregates lectures + lecture_sessions in the given window into KPI
+    totals, rates, session-origin breakdown, and a per-teacher leaderboard
+    sorted by substitute_rate_pct desc.
+    """
+    return await lecture_service.get_adherence_insights(
+        session, branch_id, from_date, to_date
+    )
 
 
 @router.get("/{lecture_id}", response_model=LectureResponse)
