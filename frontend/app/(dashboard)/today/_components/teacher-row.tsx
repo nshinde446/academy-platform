@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { EventPill } from "./event-pill";
 import type { RosterEvent, RosterTeacherRow } from "../_schemas/roster";
 
@@ -38,9 +39,12 @@ export function TeacherRow({ teacher, onEventClick }: TeacherRowProps) {
         <span className={`text-base ${priorityTone(s)}`} aria-hidden>
           {priorityIcon(s)}
         </span>
-        <span className="font-medium">
+        <Link
+          href={`/teachers/${teacher.teacher_id}`}
+          className="font-medium hover:underline"
+        >
           {teacher.first_name} {teacher.last_name}
-        </span>
+        </Link>
         <span className="text-xs text-muted-foreground">
           {summaryParts.join(" · ") || "no activity today"}
         </span>

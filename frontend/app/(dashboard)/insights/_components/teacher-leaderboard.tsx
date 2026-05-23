@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Table,
   TableHeader,
@@ -54,7 +55,12 @@ export function TeacherLeaderboard({ rows, limit = 10 }: TeacherLeaderboardProps
           {top.map((r) => (
             <TableRow key={r.teacher_id}>
               <TableCell className="font-medium">
-                {r.first_name} {r.last_name}
+                <Link
+                  href={`/teachers/${r.teacher_id}`}
+                  className="hover:underline"
+                >
+                  {r.first_name} {r.last_name}
+                </Link>
               </TableCell>
               <TableCell className="text-right">{r.planned}</TableCell>
               <TableCell className="text-right">{r.substituted_out}</TableCell>
