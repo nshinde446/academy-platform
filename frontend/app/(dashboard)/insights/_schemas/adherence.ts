@@ -3,6 +3,7 @@ export interface AdherenceTotals {
   completed_as_planned: number;
   substituted: number;
   cancelled: number;
+  no_show: number;
   rescheduled: number;
 }
 
@@ -17,6 +18,17 @@ export interface AdherenceRates {
   adherence_pct: number;
   substitute_pct: number;
   cancellation_pct: number;
+  no_show_pct: number;
+}
+
+export interface SyllabusBatchRow {
+  batch_id: string;
+  batch_name: string;
+  batch_code: string;
+  course_id: string;
+  total_topics: number;
+  delivered_topics: number;
+  coverage_pct: number;
 }
 
 export interface AdherenceTeacherRow {
@@ -37,4 +49,5 @@ export interface AdherenceResponse {
   sessions: AdherenceSessions;
   rates: AdherenceRates;
   by_teacher: AdherenceTeacherRow[];
+  by_batch_syllabus: SyllabusBatchRow[];
 }

@@ -4,6 +4,8 @@ from datetime import datetime
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.academic.models.academic_models import Chapter, Topic
+from app.modules.batch.models.batch_models import Batch, BatchSubjectMapping
 from app.modules.lectures.models.lecture_models import (
     Lecture,
     LectureAttendanceMapping,
@@ -248,6 +250,7 @@ async def lecture_totals_in_range(
     completed = Lecture.lecture_status == "completed"
     substituted = Lecture.actual_teacher_id.is_not(None)
     cancelled = Lecture.lecture_status == "cancelled"
+    no_show = Lecture.lecture_status == "no_show"
     rescheduled = Lecture.lecture_status == "rescheduled"
 
     stmt = select(
@@ -255,6 +258,7 @@ async def lecture_totals_in_range(
         func.count().filter(completed & ~substituted).label("completed_as_planned"),
         func.count().filter(substituted).label("substituted"),
         func.count().filter(cancelled).label("cancelled"),
+        func.count().filter(no_show).label("no_show"),
         func.count().filter(rescheduled).label("rescheduled"),
     ).where(Lecture.branch_id == branch_id, Lecture.is_deleted == False)
     if from_dt is not None:
@@ -268,6 +272,7 @@ async def lecture_totals_in_range(
         "completed_as_planned": int(row.completed_as_planned or 0),
         "substituted": int(row.substituted or 0),
         "cancelled": int(row.cancelled or 0),
+        "no_show": int(row.no_show or 0),
         "rescheduled": int(row.rescheduled or 0),
     }
 
@@ -386,6 +391,131 @@ async def per_teacher_adherence_in_range(
         )
         bucket["substituted_in"] = int(r.substituted_in or 0)
     return list(by_id.values())
+
+
+async def batch_syllabus_coverage(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+) -> list[dict]:
+    """Per-batch syllabus coverage.
+
+    total_topics    = topics whose subject is mapped to the batch via
+                      batch_subject_mappings (this branch only).
+    delivered_topics = distinct topic_ids actually taught — completed
+                      lectures + recorded sessions tied to the batch.
+
+    Returned shape per batch:
+        {
+          "batch_id": UUID, "batch_name": str, "batch_code": str,
+          "total_topics": int, "delivered_topics": int, "coverage_pct": float,
+        }
+    """
+    # All active batches in this branch.
+    batch_rows = (
+        await session.execute(
+            select(Batch).where(
+                Batch.branch_id == branch_id, Batch.is_deleted == False
+            )
+        )
+    ).scalars().all()
+    if not batch_rows:
+        return []
+
+    batch_ids = [b.id for b in batch_rows]
+
+    # Step 1: subject_ids per batch via batch_subject_mappings.
+    msm_rows = (
+        await session.execute(
+            select(BatchSubjectMapping.batch_id, BatchSubjectMapping.subject_id).where(
+                BatchSubjectMapping.batch_id.in_(batch_ids),
+                BatchSubjectMapping.is_deleted == False,
+            )
+        )
+    ).all()
+    subjects_by_batch: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for r in msm_rows:
+        subjects_by_batch.setdefault(r.batch_id, []).append(r.subject_id)
+
+    # Step 2: total topics per batch = SUM of topics whose chapter.subject_id is
+    # in the batch's mapped subjects.
+    total_by_batch: dict[uuid.UUID, int] = {bid: 0 for bid in batch_ids}
+    all_subject_ids = {sid for ids in subjects_by_batch.values() for sid in ids}
+    topic_count_by_subject: dict[uuid.UUID, int] = {}
+    if all_subject_ids:
+        topic_rows = (
+            await session.execute(
+                select(Chapter.subject_id, func.count(Topic.id))
+                .join(Topic, Topic.chapter_id == Chapter.id)
+                .where(
+                    Chapter.subject_id.in_(all_subject_ids),
+                    Chapter.is_deleted == False,
+                    Topic.is_deleted == False,
+                )
+                .group_by(Chapter.subject_id)
+            )
+        ).all()
+        topic_count_by_subject = {r[0]: int(r[1]) for r in topic_rows}
+    for bid, sids in subjects_by_batch.items():
+        total_by_batch[bid] = sum(topic_count_by_subject.get(sid, 0) for sid in sids)
+
+    # Step 3: delivered topic_ids per batch.
+    #   a) completed lectures with topic_id
+    completed_topic_rows = (
+        await session.execute(
+            select(Lecture.batch_id, Lecture.topic_id).where(
+                Lecture.batch_id.in_(batch_ids),
+                Lecture.is_deleted == False,
+                Lecture.lecture_status == "completed",
+                Lecture.topic_id.is_not(None),
+            )
+        )
+    ).all()
+    delivered_topic_ids_by_batch: dict[uuid.UUID, set[uuid.UUID]] = {
+        bid: set() for bid in batch_ids
+    }
+    for r in completed_topic_rows:
+        delivered_topic_ids_by_batch[r.batch_id].add(r.topic_id)
+
+    #   b) sessions linked to batch with topic_id set
+    session_topic_rows = (
+        await session.execute(
+            select(LectureSessionBatch.batch_id, LectureSession.topic_id)
+            .join(
+                LectureSession,
+                LectureSession.id == LectureSessionBatch.session_id,
+            )
+            .where(
+                LectureSessionBatch.batch_id.in_(batch_ids),
+                LectureSessionBatch.is_deleted == False,
+                LectureSession.is_deleted == False,
+                LectureSession.topic_id.is_not(None),
+            )
+        )
+    ).all()
+    for r in session_topic_rows:
+        delivered_topic_ids_by_batch.setdefault(r.batch_id, set()).add(
+            r.topic_id
+        )
+
+    # Assemble.
+    result: list[dict] = []
+    for b in batch_rows:
+        total = total_by_batch.get(b.id, 0)
+        delivered = len(delivered_topic_ids_by_batch.get(b.id, set()))
+        coverage = round((delivered * 100) / total, 1) if total > 0 else 0.0
+        result.append(
+            {
+                "batch_id": b.id,
+                "batch_name": b.name,
+                "batch_code": b.code,
+                "course_id": b.course_id,
+                "total_topics": total,
+                "delivered_topics": delivered,
+                "coverage_pct": coverage,
+            }
+        )
+    result.sort(key=lambda r: r["coverage_pct"])
+    return result
 
 
 async def list_session_plans_for_sessions(

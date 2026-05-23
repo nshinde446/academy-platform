@@ -52,6 +52,9 @@ class Lecture(BaseModel):
     )
     change_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
     change_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set together with lecture_status='no_show'. Reason buckets:
+    # TEACHER_NO_SHOW | STUDENT_NO_SHOW | EXTERNAL | OTHER
+    no_show_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
     branch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=False
     )

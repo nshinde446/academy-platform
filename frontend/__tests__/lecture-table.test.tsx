@@ -41,6 +41,7 @@ function makeLecture(over: Partial<LectureResponse> = {}): LectureResponse {
     actual_teacher_id: null,
     change_reason: null,
     change_notes: null,
+    no_show_reason: null,
     branch_id: "br1",
     academic_year_id: "ay1",
     status: "active",
@@ -54,6 +55,7 @@ const handlers = {
   onCancel: vi.fn(),
   onDelete: vi.fn(),
   onSubstitute: vi.fn(),
+  onNoShow: vi.fn(),
 };
 
 function renderTable(lectures: LectureResponse[]) {

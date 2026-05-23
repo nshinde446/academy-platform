@@ -31,6 +31,7 @@ interface LectureTableProps {
   onCancel: (lecture: LectureResponse) => void;
   onDelete: (lecture: LectureResponse) => void;
   onSubstitute: (lecture: LectureResponse) => void;
+  onNoShow: (lecture: LectureResponse) => void;
 }
 
 const STATUS_VARIANTS: Record<
@@ -42,6 +43,7 @@ const STATUS_VARIANTS: Record<
   paused: "secondary",
   completed: "secondary",
   cancelled: "destructive",
+  no_show: "destructive",
   rescheduled: "default",
 };
 
@@ -78,6 +80,7 @@ export function LectureTable({
   onCancel,
   onDelete,
   onSubstitute,
+  onNoShow,
 }: LectureTableProps) {
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
@@ -107,7 +110,10 @@ export function LectureTable({
               l.lecture_status === "scheduled" ||
               l.lecture_status === "started" ||
               l.lecture_status === "paused";
-            const canSubstitute = l.lecture_status !== "cancelled";
+            const canNoShow = l.lecture_status === "scheduled";
+            const canSubstitute =
+              l.lecture_status !== "cancelled" &&
+              l.lecture_status !== "no_show";
 
             return (
               <TableRow key={l.id}>
@@ -176,6 +182,17 @@ export function LectureTable({
                         aria-label={`Cancel lecture ${l.id}`}
                       >
                         Cancel
+                      </Button>
+                    )}
+                    {canNoShow && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onNoShow(l)}
+                        aria-label={`Mark no-show for lecture ${l.id}`}
+                      >
+                        No-Show
                       </Button>
                     )}
                     {canSubstitute && (

@@ -13,18 +13,26 @@ from app.modules.teacher.models.teacher_models import Teacher
 from app.modules.lectures.schemas.lecture_schemas import (
     AttendanceMark,
     LectureCreate,
+    LectureNoShow,
     LectureReschedule,
     LectureSessionCreate,
     LectureSubstitute,
 )
 
 VALID_TRANSITIONS = {
-    "scheduled": ["started", "cancelled", "rescheduled"],
+    "scheduled": ["started", "cancelled", "no_show", "rescheduled"],
     "started": ["paused", "completed", "cancelled"],
     "paused": ["started", "completed", "cancelled"],
     "completed": [],
     "cancelled": [],
+    "no_show": [],
     "rescheduled": ["scheduled"],
+}
+VALID_NO_SHOW_REASONS = {
+    "TEACHER_NO_SHOW",
+    "STUDENT_NO_SHOW",
+    "EXTERNAL",
+    "OTHER",
 }
 
 VALID_DELIVERY_MODES = {"offline", "online", "hybrid"}
@@ -459,6 +467,65 @@ async def mark_substitute(
     return lecture
 
 
+async def mark_no_show(
+    session: AsyncSession,
+    lecture_id: uuid.UUID,
+    data: LectureNoShow,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+):
+    lecture = await lecture_repository.get_by_id(session, lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture not found")
+    if lecture.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    if data.no_show_reason not in VALID_NO_SHOW_REASONS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid no_show_reason: {data.no_show_reason}",
+        )
+
+    _validate_transition(lecture.lecture_status, "no_show")
+
+    old_status = lecture.lecture_status
+    lecture = await lecture_repository.update(
+        session,
+        lecture,
+        lecture_status="no_show",
+        no_show_reason=data.no_show_reason,
+        notes=(data.notes if data.notes is not None else lecture.notes),
+    )
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="UPDATE",
+        table_name="lectures",
+        record_id=lecture.id,
+        old_values={"lecture_status": old_status, "no_show_reason": None},
+        new_values={
+            "lecture_status": "no_show",
+            "no_show_reason": data.no_show_reason,
+        },
+        ip_address=ip_address,
+        branch_id=lecture.branch_id,
+    )
+
+    await event_service.emit_event(
+        session,
+        event_type="LECTURE_NO_SHOW",
+        lecture_id=lecture.id,
+        teacher_id=lecture.teacher_id,
+        batch_id=lecture.batch_id,
+        subject_id=lecture.subject_id,
+        branch_id=lecture.branch_id,
+        metadata={"no_show_reason": data.no_show_reason},
+    )
+    return lecture
+
+
 async def _build_session_response(session: AsyncSession, sess) -> dict:
     """Hydrate a LectureSession row with its batch_ids and lecture_ids joins."""
     batches = await lecture_repository.list_session_batches(session, sess.id)
@@ -681,6 +748,7 @@ async def get_adherence_insights(
         "adherence_pct": _safe_pct(totals["completed_as_planned"], totals["planned"]),
         "substitute_pct": _safe_pct(totals["substituted"], totals["planned"]),
         "cancellation_pct": _safe_pct(totals["cancelled"], totals["planned"]),
+        "no_show_pct": _safe_pct(totals["no_show"], totals["planned"]),
     }
 
     # Enrich per-teacher rows with names and substitute rate.
@@ -715,6 +783,10 @@ async def get_adherence_insights(
             )
     teacher_rows.sort(key=lambda r: r["substitute_rate_pct"], reverse=True)
 
+    syllabus_rows = await lecture_repository.batch_syllabus_coverage(
+        session, branch_id
+    )
+
     return {
         "from_date": from_dt,
         "to_date": to_dt,
@@ -722,6 +794,7 @@ async def get_adherence_insights(
         "sessions": sessions,
         "rates": rates,
         "by_teacher": teacher_rows,
+        "by_batch_syllabus": syllabus_rows,
     }
 
 

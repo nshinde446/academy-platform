@@ -7,7 +7,14 @@ export type LectureStatus =
   | "paused"
   | "completed"
   | "cancelled"
+  | "no_show"
   | "rescheduled";
+
+export type NoShowReason =
+  | "TEACHER_NO_SHOW"
+  | "STUDENT_NO_SHOW"
+  | "EXTERNAL"
+  | "OTHER";
 
 export type ChangeReason =
   | "SUBSTITUTE"
@@ -33,6 +40,7 @@ export interface LectureResponse {
   actual_teacher_id: string | null;
   change_reason: ChangeReason | null;
   change_notes: string | null;
+  no_show_reason: NoShowReason | null;
   branch_id: string;
   academic_year_id: string;
   status: string;
@@ -42,6 +50,11 @@ export interface LectureSubstitute {
   actual_teacher_id: string | null;
   change_reason?: ChangeReason | null;
   change_notes?: string | null;
+}
+
+export interface LectureNoShow {
+  no_show_reason: NoShowReason;
+  notes?: string | null;
 }
 
 export interface LectureCreate {

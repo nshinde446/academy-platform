@@ -4,6 +4,7 @@ import type {
   BatchSummary,
   ClassroomSummary,
   LectureCreate,
+  LectureNoShow,
   LectureResponse,
   LectureSessionCreate,
   LectureSessionResponse,
@@ -130,6 +131,33 @@ export function useCompleteLecture(branchId: string | undefined) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: statusMutation(branchId, "complete"),
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({
+          queryKey: lectureKeys.list(branchId),
+        });
+      }
+    },
+  });
+}
+
+export function useMarkNoShow(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      lectureId,
+      data,
+    }: {
+      lectureId: string;
+      data: LectureNoShow;
+    }) => {
+      const res = await apiClient.patch<LectureResponse>(
+        `/api/v1/lectures/${lectureId}/no-show`,
+        data,
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
     onSuccess: () => {
       if (branchId) {
         queryClient.invalidateQueries({

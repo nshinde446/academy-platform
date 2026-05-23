@@ -18,6 +18,7 @@ import {
   useDeleteLecture,
   useLectures,
   useLectureSessions,
+  useMarkNoShow,
   useMarkSubstitute,
   useStartLecture,
   useClassrooms,
@@ -25,6 +26,7 @@ import {
 } from "./_hooks/use-lectures";
 import type {
   LectureCreate,
+  LectureNoShow,
   LectureResponse,
   LectureSessionCreate,
   LectureStatus,
@@ -36,6 +38,7 @@ import { LectureTable } from "./_components/lecture-table";
 import { LectureEmptyState } from "./_components/lecture-empty-state";
 import { CreateLectureDialog } from "./_components/create-lecture-dialog";
 import { MarkSubstituteDialog } from "./_components/mark-substitute-dialog";
+import { MarkNoShowDialog } from "./_components/mark-no-show-dialog";
 import { RecordMakeupDialog } from "./_components/record-makeup-dialog";
 import { MergeLecturesDialog } from "./_components/merge-lectures-dialog";
 import { SessionList } from "./_components/session-list";
@@ -114,6 +117,10 @@ export default function LecturesPage() {
   const [substituteTarget, setSubstituteTarget] =
     useState<LectureResponse | null>(null);
   const [substituteOpen, setSubstituteOpen] = useState(false);
+  const [noShowTarget, setNoShowTarget] = useState<LectureResponse | null>(
+    null
+  );
+  const [noShowOpen, setNoShowOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
   const lecturesQuery = useLectures(branchId);
@@ -128,6 +135,7 @@ export default function LecturesPage() {
   const cancelMutation = useCancelLecture(branchId);
   const deleteMutation = useDeleteLecture(branchId);
   const substituteMutation = useMarkSubstitute(branchId);
+  const noShowMutation = useMarkNoShow(branchId);
   const sessionMutation = useCreateLectureSession(branchId);
 
   const batches = batchesQuery.data ?? [];
@@ -290,6 +298,17 @@ export default function LecturesPage() {
       data,
     });
   }
+  function handleNoShow(l: LectureResponse) {
+    setNoShowTarget(l);
+    setNoShowOpen(true);
+  }
+  async function handleNoShowSubmit(data: LectureNoShow) {
+    if (!noShowTarget) return;
+    await noShowMutation.mutateAsync({
+      lectureId: noShowTarget.id,
+      data,
+    });
+  }
 
   const hasFilter = !!(
     debouncedSearch ||
@@ -427,6 +446,7 @@ export default function LecturesPage() {
           onCancel={handleCancel}
           onDelete={handleDeleteClick}
           onSubstitute={handleSubstitute}
+          onNoShow={handleNoShow}
         />
       )}
 
@@ -435,6 +455,17 @@ export default function LecturesPage() {
         batches={batches}
         teachers={teachers}
         subjects={allSubjects}
+      />
+
+      <MarkNoShowDialog
+        lecture={noShowTarget}
+        open={noShowOpen}
+        onOpenChange={(o) => {
+          setNoShowOpen(o);
+          if (!o) setNoShowTarget(null);
+        }}
+        onSubmit={handleNoShowSubmit}
+        isPending={noShowMutation.isPending}
       />
 
       <MarkSubstituteDialog

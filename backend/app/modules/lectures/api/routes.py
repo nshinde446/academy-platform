@@ -11,6 +11,7 @@ from app.modules.lectures.schemas.lecture_schemas import (
     AttendanceMark,
     AttendanceResponse,
     LectureCreate,
+    LectureNoShow,
     LectureReschedule,
     LectureResponse,
     LectureSessionCreate,
@@ -157,6 +158,27 @@ async def mark_substitute(
     session: AsyncSession = Depends(get_db),
 ):
     return await lecture_service.mark_substitute(
+        session, lecture_id, body, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.patch("/{lecture_id}/no-show", response_model=LectureResponse)
+async def mark_no_show(
+    lecture_id: uuid.UUID,
+    body: LectureNoShow,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Mark a scheduled lecture as no-show (distinct from cancel).
+
+    Captures teacher / student / external / other no-show reason. Only
+    valid from 'scheduled' status. Cancel is for intentional, no-show is
+    for unplanned absence.
+    """
+    return await lecture_service.mark_no_show(
         session, lecture_id, body, branch_id, current_user["user_id"],
         request.client.host if request.client else None,
     )

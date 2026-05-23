@@ -7,6 +7,7 @@ import { useAdherenceInsights } from "./_hooks/use-adherence";
 import { KpiCard } from "./_components/kpi-card";
 import { SessionsBreakdown } from "./_components/sessions-breakdown";
 import { TeacherLeaderboard } from "./_components/teacher-leaderboard";
+import { SyllabusCoverage } from "./_components/syllabus-coverage";
 
 function isoDateNDaysAgo(n: number): string {
   const d = new Date();
@@ -46,6 +47,7 @@ export default function InsightsPage() {
   const sessions = data?.sessions;
   const rates = data?.rates;
   const byTeacher = data?.by_teacher ?? [];
+  const bySyllabus = data?.by_batch_syllabus ?? [];
 
   const dateValid = useMemo(() => {
     if (!fromDate || !toDate) return true;
@@ -117,20 +119,16 @@ export default function InsightsPage() {
               tone={rates ? subRateTone(rates.substitute_pct) : "default"}
             />
             <KpiCard
+              label="No-show rate"
+              value={rates ? `${rates.no_show_pct.toFixed(1)}%` : "—"}
+              hint={totals ? `${totals.no_show} no-show` : undefined}
+              tone={rates && rates.no_show_pct >= 10 ? "destructive" : rates && rates.no_show_pct > 0 ? "warning" : "default"}
+            />
+            <KpiCard
               label="Cancellation rate"
               value={rates ? `${rates.cancellation_pct.toFixed(1)}%` : "—"}
               hint={totals ? `${totals.cancelled} cancelled` : undefined}
               tone={rates && rates.cancellation_pct >= 15 ? "destructive" : "default"}
-            />
-            <KpiCard
-              label="Ad-hoc sessions"
-              value={sessions ? String(sessions.ad_hoc) : "—"}
-              hint={
-                sessions
-                  ? `+${sessions.makeup} makeup, ${sessions.merged} merged`
-                  : undefined
-              }
-              tone="default"
             />
           </div>
 
@@ -148,6 +146,18 @@ export default function InsightsPage() {
               </p>
             </div>
             <TeacherLeaderboard rows={byTeacher} limit={10} />
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">Syllabus coverage</h3>
+              <p className="text-sm text-muted-foreground">
+                Distinct topics actually delivered (completed lectures +
+                sessions) vs. total topics in each batch&apos;s syllabus.
+                Sorted lowest-first to surface batches falling behind.
+              </p>
+            </div>
+            <SyllabusCoverage rows={bySyllabus} />
           </div>
         </>
       )}

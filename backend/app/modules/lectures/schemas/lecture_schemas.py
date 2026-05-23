@@ -27,6 +27,16 @@ class LectureReschedule(BaseModel):
     classroom_id: uuid.UUID | None = None
 
 
+class LectureNoShow(BaseModel):
+    """Mark a lecture as no-show (didn't happen — distinct from cancel).
+
+    Reason buckets: TEACHER_NO_SHOW | STUDENT_NO_SHOW | EXTERNAL | OTHER.
+    """
+
+    no_show_reason: str = "TEACHER_NO_SHOW"
+    notes: str | None = None
+
+
 class LectureSubstitute(BaseModel):
     """Mark a lecture as taught by someone other than the scheduled teacher.
     Set actual_teacher_id to null to clear the substitution."""
@@ -53,6 +63,7 @@ class LectureResponse(BaseModel):
     actual_teacher_id: uuid.UUID | None = None
     change_reason: str | None = None
     change_notes: str | None = None
+    no_show_reason: str | None = None
     branch_id: uuid.UUID
     academic_year_id: uuid.UUID
     status: str
@@ -108,6 +119,7 @@ class AdherenceTotals(BaseModel):
     completed_as_planned: int
     substituted: int
     cancelled: int
+    no_show: int
     rescheduled: int
 
 
@@ -122,6 +134,7 @@ class AdherenceRates(BaseModel):
     adherence_pct: float
     substitute_pct: float
     cancellation_pct: float
+    no_show_pct: float
 
 
 class AdherenceTeacherRow(BaseModel):
@@ -135,6 +148,16 @@ class AdherenceTeacherRow(BaseModel):
     substitute_rate_pct: float
 
 
+class SyllabusBatchRow(BaseModel):
+    batch_id: uuid.UUID
+    batch_name: str
+    batch_code: str
+    course_id: uuid.UUID
+    total_topics: int
+    delivered_topics: int
+    coverage_pct: float
+
+
 class AdherenceResponse(BaseModel):
     from_date: datetime | None = None
     to_date: datetime | None = None
@@ -142,6 +165,7 @@ class AdherenceResponse(BaseModel):
     sessions: AdherenceSessions
     rates: AdherenceRates
     by_teacher: list[AdherenceTeacherRow]
+    by_batch_syllabus: list[SyllabusBatchRow] = []
 
 
 class AttendanceMark(BaseModel):
