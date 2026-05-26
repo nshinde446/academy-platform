@@ -196,12 +196,20 @@ DONE — Plan-vs-Actual half (lecture management)
   Tier 8   Smart substitute suggestions
   Tier 9   Outcome correlation
   Tier 10  /home polish (existing endpoints)
+  Tier 11  StudentResponse + Question extensions + seed   ✅ shipped
 
-NEXT — Coaching test loop (this roadmap)
-  Tier 11  StudentResponse + bulk upload   ← start here
-  Tier 12  Question bank UI + composer
-  Tier 13  /students/[id] detail page
-  Tier 14  Item analysis + topic mastery on /insights
-  Tier 15  OMR scan import
-  Tier 16  Notifications
+NEXT
+  Tier 11.6  Productivity refinements (from Copilot review)
+              ├─ Weighted subtopic completion
+              ├─ correlation_id in audit logs
+              ├─ Extended reason_code enums
+              └─ Composite productivity score on /teachers/[id]
+              See docs/copilot-review-and-refinements.md
+  Tier 12    Question bank UI + composer
+  Tier 13    /students/[id] detail page
+  Tier 14    Item analysis + topic mastery on /insights
+  Tier 15    OMR scan import
+  Tier 16    Notifications
+  Tier 18+   Lecture segments (multi-substitute mid-handover)
+              Deferred until real institute need surfaces.
 ```

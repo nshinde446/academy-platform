@@ -705,6 +705,7 @@ recording these things, it's *correlating* them.
 |---|---|---|---|
 | **11** | E foundation | `student_responses` table + bulk CSV upload + auto-rollup to `student_marks` | 1 day |
 | **11.5** | A.5 | Question table extensions (source, diagram_ref, review_status, quality_score) + migration | half day |
+| **11.6** | — | Productivity refinements (Copilot review): weighted subtopic completion, correlation_id, reason_code enums, composite teacher score. See `docs/copilot-review-and-refinements.md` | 3.5 days |
 | **12** | A | Question bank ingest scripts (JEEBench, JEE Mains PYQ DB, NCERT Exemplar parser) | 2–3 days |
 | **12.5** | A | Generation pipeline (DeepSeek + Gemini providers, 3 tracks, quality gates) | 3–4 days |
 | **12.7** | A | Admin UI: question bank browser + review queue + generation launcher | 2 days |
