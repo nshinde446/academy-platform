@@ -7,6 +7,7 @@ from app.modules.tests.models.test_models import (
     Question,
     QuestionTopic,
     StudentMark,
+    StudentResponse,
     Test,
     TestQuestion,
 )
@@ -232,3 +233,144 @@ async def count_absent(session: AsyncSession, test_id: uuid.UUID) -> int:
         )
     )
     return result.scalar() or 0
+
+
+# ─── StudentResponse Repository (Tier 11) ────────────────────────────────────
+
+async def get_response(
+    session: AsyncSession,
+    student_id: uuid.UUID,
+    test_id: uuid.UUID,
+    question_id: uuid.UUID,
+) -> StudentResponse | None:
+    result = await session.execute(
+        select(StudentResponse).where(
+            StudentResponse.student_id == student_id,
+            StudentResponse.test_id == test_id,
+            StudentResponse.question_id == question_id,
+            StudentResponse.is_deleted == False,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def upsert_response(
+    session: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    test_id: uuid.UUID,
+    question_id: uuid.UUID,
+    selected_answer: str | None,
+    is_correct: bool,
+    marks_obtained: float,
+    submitted_at,
+    branch_id: uuid.UUID,
+    academic_year_id: uuid.UUID,
+) -> tuple[StudentResponse, bool]:
+    """Insert-or-update by (student_id, test_id, question_id).
+
+    Returns (row, created_bool) so the service can count inserts vs updates.
+    """
+    existing = await get_response(session, student_id, test_id, question_id)
+    if existing is not None:
+        existing.selected_answer = selected_answer
+        existing.is_correct = is_correct
+        existing.marks_obtained = marks_obtained
+        existing.submitted_at = submitted_at
+        await session.flush()
+        return existing, False
+    row = StudentResponse(
+        student_id=student_id,
+        test_id=test_id,
+        question_id=question_id,
+        selected_answer=selected_answer,
+        is_correct=is_correct,
+        marks_obtained=marks_obtained,
+        submitted_at=submitted_at,
+        branch_id=branch_id,
+        academic_year_id=academic_year_id,
+        status="active",
+        is_deleted=False,
+    )
+    session.add(row)
+    await session.flush()
+    return row, True
+
+
+async def list_responses_by_test(
+    session: AsyncSession, test_id: uuid.UUID
+) -> list[StudentResponse]:
+    result = await session.execute(
+        select(StudentResponse).where(
+            StudentResponse.test_id == test_id,
+            StudentResponse.is_deleted == False,
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def sum_correct_marks_for_student(
+    session: AsyncSession, student_id: uuid.UUID, test_id: uuid.UUID
+) -> float:
+    """Total marks earned by a student on a test (sum of correct responses)."""
+    result = await session.execute(
+        select(func.sum(StudentResponse.marks_obtained)).where(
+            StudentResponse.student_id == student_id,
+            StudentResponse.test_id == test_id,
+            StudentResponse.is_deleted == False,
+        )
+    )
+    return float(result.scalar() or 0.0)
+
+
+async def get_student_mark(
+    session: AsyncSession, student_id: uuid.UUID, test_id: uuid.UUID
+) -> StudentMark | None:
+    result = await session.execute(
+        select(StudentMark).where(
+            StudentMark.student_id == student_id,
+            StudentMark.test_id == test_id,
+            StudentMark.is_deleted == False,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def upsert_student_mark(
+    session: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    test_id: uuid.UUID,
+    marks_obtained: float,
+    max_marks: float,
+    branch_id: uuid.UUID,
+    academic_year_id: uuid.UUID,
+    marked_at,
+) -> StudentMark:
+    """Refresh the aggregate mark row from response totals."""
+    existing = await get_student_mark(session, student_id, test_id)
+    percentage = (marks_obtained / max_marks * 100.0) if max_marks > 0 else 0.0
+    if existing is not None:
+        existing.marks_obtained = marks_obtained
+        existing.max_marks = max_marks
+        existing.percentage = round(percentage, 2)
+        existing.is_absent = False
+        existing.marked_at = marked_at
+        await session.flush()
+        return existing
+    row = StudentMark(
+        student_id=student_id,
+        test_id=test_id,
+        marks_obtained=marks_obtained,
+        max_marks=max_marks,
+        percentage=round(percentage, 2),
+        is_absent=False,
+        marked_at=marked_at,
+        branch_id=branch_id,
+        academic_year_id=academic_year_id,
+        status="active",
+        is_deleted=False,
+    )
+    session.add(row)
+    await session.flush()
+    return row

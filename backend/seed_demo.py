@@ -58,7 +58,13 @@ from app.modules.student.models.student_models import (
     Student,
     StudentBatchMapping,
 )
-from app.modules.tests.models.test_models import StudentMark, Test
+from app.modules.tests.models.test_models import (
+    Question,
+    StudentMark,
+    StudentResponse,
+    Test,
+    TestQuestion,
+)
 
 DEMO_TAG = "[seed-demo]"
 
@@ -651,11 +657,17 @@ async def seed():
                     )
                 )
 
-        # One published Physics test per batch, recent. Marks correlate
-        # with attendance pattern above — top 2 score high, bottom 2 low.
-        for batch_obj, score_curve in [
-            (neet_a, [88, 75, 52, 38]),
-            (neet_b, [82, 70, 48, 35]),
+        # One published Physics test per batch, recent. Mid-chapter test
+        # with 5 questions × 20 marks = 100 total. Per-question responses
+        # populate student_responses for Tier 11 analytics; the aggregate
+        # StudentMark rolls up from those (rounded correctness pattern
+        # below produces the same totals as the previous hand-coded scores).
+        #
+        #   responses_curve[i] = how many of 5 questions student i got right
+        #                        → marks = right × 20
+        for batch_obj, responses_curve in [
+            (neet_a, [5, 4, 3, 2]),   # → 100, 80, 60, 40
+            (neet_b, [4, 4, 2, 2]),   # → 80, 80, 40, 40
         ]:
             t, created = await _find_or_create(
                 session,
@@ -677,15 +689,81 @@ async def seed():
             )
             if not created:
                 continue
+
+            # 5 question stubs covering the 5 Physics topics seeded above.
+            test_question_topics = [
+                "Newton's Laws",
+                "Work and Energy",
+                "Rotational Motion",
+                "Reflection",
+                "Wave Optics",
+            ]
+            test_questions: list[Question] = []
+            for order, topic_name in enumerate(test_question_topics, start=1):
+                q = Question(
+                    content=f"{DEMO_TAG} Physics MCT Q{order} ({topic_name})",
+                    options='{"A":"option A","B":"option B","C":"option C","D":"option D"}',
+                    correct_answer="A",
+                    explanation=f"{DEMO_TAG} canonical answer for {topic_name}",
+                    subject_id=physics.id,
+                    topic_id=topics[topic_name].id,
+                    difficulty="MEDIUM",
+                    blooms_taxonomy="APPLY",
+                    source="HUMAN",
+                    source_ref=f"seed-demo-mct-{batch_obj.code.lower()}-q{order}",
+                    review_status="approved",
+                    branch_id=branch.id,
+                    academic_year_id=ay.id,
+                    status="active",
+                    is_deleted=False,
+                )
+                session.add(q)
+                test_questions.append(q)
+            await session.flush()
+
+            for order, q in enumerate(test_questions, start=1):
+                session.add(
+                    TestQuestion(
+                        test_id=t.id,
+                        question_id=q.id,
+                        marks_allocated=20.0,
+                        order=order,
+                        status="active",
+                        is_deleted=False,
+                    )
+                )
+            await session.flush()
+
             roster = students_by_batch.get(batch_obj.id, [])
-            for stu, score in zip(roster, score_curve):
+            for stu, n_correct in zip(roster, responses_curve):
+                # First n_correct questions answered correctly ("A"),
+                # the rest a deliberately wrong "B".
+                for order, q in enumerate(test_questions, start=1):
+                    is_correct = order <= n_correct
+                    selected = "A" if is_correct else "B"
+                    session.add(
+                        StudentResponse(
+                            student_id=stu.id,
+                            test_id=t.id,
+                            question_id=q.id,
+                            selected_answer=selected,
+                            is_correct=is_correct,
+                            marks_obtained=20.0 if is_correct else 0.0,
+                            submitted_at=t.scheduled_at + timedelta(hours=2),
+                            branch_id=branch.id,
+                            academic_year_id=ay.id,
+                            status="active",
+                            is_deleted=False,
+                        )
+                    )
+                total = n_correct * 20.0
                 session.add(
                     StudentMark(
                         student_id=stu.id,
                         test_id=t.id,
-                        marks_obtained=float(score),
+                        marks_obtained=total,
                         max_marks=100.0,
-                        percentage=float(score),
+                        percentage=total,
                         is_absent=False,
                         marked_at=t.scheduled_at + timedelta(hours=2),
                         branch_id=branch.id,
@@ -741,8 +819,27 @@ async def reset():
         )
         sess_count = sess_result.rowcount or 0
 
+        # Questions tagged with DEMO_TAG in content (Tier 11 demo MCQs)
+        q_result = await session.execute(
+            update(Question)
+            .where(Question.content.like(f"%{DEMO_TAG}%"))
+            .values(is_deleted=True)
+        )
+        q_count = q_result.rowcount or 0
+
+        # Tests tagged with DEMO_TAG in description
+        t_result = await session.execute(
+            update(Test)
+            .where(Test.description.like(f"%{DEMO_TAG}%"))
+            .values(is_deleted=True)
+        )
+        t_count = t_result.rowcount or 0
+
         await session.commit()
-        print(f"Reset: soft-deleted {lec_count} lectures, {sess_count} sessions.")
+        print(
+            f"Reset: soft-deleted {lec_count} lectures, {sess_count} sessions, "
+            f"{q_count} questions, {t_count} tests."
+        )
         print("You can now re-run `python seed_demo.py`.")
 
 

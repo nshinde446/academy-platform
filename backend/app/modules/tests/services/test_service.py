@@ -481,3 +481,146 @@ async def generate_report(session: AsyncSession, test_id: uuid.UUID, branch_id: 
         "pass_count": pass_count,
         "fail_count": fail_count,
     }
+
+
+# ─── StudentResponse Service (Tier 11) ───────────────────────────────────────
+
+async def submit_responses(
+    session: AsyncSession,
+    test_id: uuid.UUID,
+    payload,  # ResponseBulkSubmit
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    """Bulk-submit per-question student responses.
+
+    Algorithm:
+      1. Validate test exists in this branch and is loaded.
+      2. Load the test's questions (TestQuestion rows) — defines which
+         question_ids are valid for this test and their per-question
+         marks_allocated.
+      3. Load the underlying Question rows so we know correct_answer.
+      4. For each submitted response:
+         - reject if question_id isn't in this test's question set
+         - mark is_correct by comparing selected_answer to question's
+           correct_answer (case-insensitive trim)
+         - marks_obtained = TestQuestion.marks_allocated if correct else 0
+         - upsert into student_responses (replaces any earlier answer
+           for the same (student, test, question) triple)
+      5. For each unique student touched, recompute their StudentMark
+         row from the sum of correct marks.
+
+    Returns counts of inserts/updates/students-marked plus any row-level
+    errors so the admin upload UI can show feedback.
+    """
+    test = await test_repository.get_test_by_id(session, test_id)
+    if test is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Test not found"
+        )
+    if test.branch_id != branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No access to this branch",
+        )
+
+    test_questions = await test_repository.get_test_questions(session, test_id)
+    if not test_questions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Test has no questions configured yet",
+        )
+
+    # Map question_id → (correct_answer, marks_allocated)
+    marks_by_qid: dict[uuid.UUID, float] = {
+        tq.question_id: float(tq.marks_allocated) for tq in test_questions
+    }
+    valid_qids = set(marks_by_qid.keys())
+
+    # Pull correct answers once.
+    answers_by_qid: dict[uuid.UUID, str] = {}
+    for qid in valid_qids:
+        q = await test_repository.get_question_by_id(session, qid)
+        if q is not None:
+            answers_by_qid[qid] = (q.correct_answer or "").strip().upper()
+
+    max_marks = sum(marks_by_qid.values())
+    now = datetime.now(timezone.utc)
+
+    inserted = 0
+    updated = 0
+    errors: list[str] = []
+    touched_students: set[uuid.UUID] = set()
+
+    for idx, r in enumerate(payload.responses):
+        if r.question_id not in valid_qids:
+            errors.append(
+                f"row {idx}: question {r.question_id} is not part of this test"
+            )
+            continue
+        selected = (r.selected_answer or "").strip()
+        is_correct = (
+            selected.upper() == answers_by_qid.get(r.question_id, "")
+            if selected
+            else False
+        )
+        marks = marks_by_qid[r.question_id] if is_correct else 0.0
+        _, created = await test_repository.upsert_response(
+            session,
+            student_id=r.student_id,
+            test_id=test_id,
+            question_id=r.question_id,
+            selected_answer=selected or None,
+            is_correct=is_correct,
+            marks_obtained=marks,
+            submitted_at=now,
+            branch_id=branch_id,
+            academic_year_id=test.academic_year_id,
+        )
+        if created:
+            inserted += 1
+        else:
+            updated += 1
+        touched_students.add(r.student_id)
+
+    # Refresh StudentMark for every student we touched.
+    for student_id in touched_students:
+        total = await test_repository.sum_correct_marks_for_student(
+            session, student_id, test_id
+        )
+        await test_repository.upsert_student_mark(
+            session,
+            student_id=student_id,
+            test_id=test_id,
+            marks_obtained=total,
+            max_marks=max_marks,
+            branch_id=branch_id,
+            academic_year_id=test.academic_year_id,
+            marked_at=now,
+        )
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="CREATE",
+        table_name="student_responses",
+        record_id=test_id,
+        new_values={
+            "test_id": str(test_id),
+            "inserted": inserted,
+            "updated": updated,
+            "students_marked": len(touched_students),
+            "errors": errors[:10],
+        },
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+
+    return {
+        "test_id": test_id,
+        "inserted": inserted,
+        "updated": updated,
+        "students_marked": len(touched_students),
+        "errors": errors,
+    }

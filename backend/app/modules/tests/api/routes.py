@@ -11,6 +11,8 @@ from app.modules.tests.schemas.test_schemas import (
     QuestionCreate,
     QuestionResponse,
     QuestionUpdate,
+    ResponseBulkResult,
+    ResponseBulkSubmit,
     TestCreate,
     TestQuestionsAdd,
     TestReportResponse,
@@ -185,6 +187,33 @@ async def get_test_report(
     session: AsyncSession = Depends(get_db),
 ):
     return await test_service.generate_report(session, test_id, branch_id)
+
+
+@tests_router.post("/{test_id}/responses", response_model=ResponseBulkResult)
+async def submit_responses(
+    test_id: uuid.UUID,
+    body: ResponseBulkSubmit,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])
+    ),
+    session: AsyncSession = Depends(get_db),
+):
+    """Bulk-submit per-question student responses for a test (Tier 11).
+
+    Auto-marks each response against the question's correct_answer and
+    rolls up totals into the existing StudentMark aggregate. Idempotent
+    on (student, test, question) — re-submissions overwrite.
+    """
+    return await test_service.submit_responses(
+        session,
+        test_id,
+        body,
+        branch_id,
+        current_user["user_id"],
+        request.client.host if request.client else None,
+    )
 
 
 # ─── Marks Endpoints ──────────────────────────────────────────────────────────

@@ -200,9 +200,23 @@ async def test_roster_shape(client: AsyncClient, seed_data):
     lecture should appear inside the right teacher's events with derived
     status fields populated."""
     await _login_admin(client)
-    # Schedule a lecture today so it shows up.
-    lecture = await _create_lecture(client)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Pin the lecture to 09:00 UTC of today — using `now+1hr` was flaky
+    # near UTC midnight (rolled into tomorrow's window).
+    now = datetime.now(timezone.utc)
+    today_morning = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    lecture = await _create_lecture(
+        client,
+        payload={
+            "teacher_id": TEACHER_ID,
+            "batch_id": BATCH_ID,
+            "classroom_id": CLASSROOM_ID,
+            "subject_id": SUBJECT_ID,
+            "scheduled_start": today_morning.isoformat(),
+            "scheduled_end": (today_morning + timedelta(hours=1)).isoformat(),
+            "delivery_mode": "offline",
+        },
+    )
+    today = now.strftime("%Y-%m-%d")
     resp = await client.get(
         "/api/v1/lectures/roster",
         params={"branch_id": BRANCH_A_ID, "date": today},

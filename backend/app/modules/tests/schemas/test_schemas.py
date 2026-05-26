@@ -106,6 +106,48 @@ class MarkResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ResponseSubmit(BaseModel):
+    """One student's answer to one question on a test."""
+
+    student_id: uuid.UUID
+    question_id: uuid.UUID
+    selected_answer: str | None = None
+
+
+class ResponseBulkSubmit(BaseModel):
+    """Bulk submit per-question responses (Tier 11).
+
+    Auto-rolls up to StudentMark on the server. Replaces existing
+    responses for the same (student, test, question) triple (so re-runs
+    are idempotent).
+    """
+
+    responses: list[ResponseSubmit]
+
+
+class ResponseBulkResult(BaseModel):
+    test_id: uuid.UUID
+    inserted: int
+    updated: int
+    students_marked: int
+    errors: list[str] = []
+
+
+class StudentResponseRow(BaseModel):
+    id: uuid.UUID
+    student_id: uuid.UUID
+    test_id: uuid.UUID
+    question_id: uuid.UUID
+    selected_answer: str | None = None
+    is_correct: bool
+    marks_obtained: float
+    submitted_at: datetime | None = None
+    branch_id: uuid.UUID
+    academic_year_id: uuid.UUID
+    status: str
+    model_config = {"from_attributes": True}
+
+
 class TestReportResponse(BaseModel):
     test_id: uuid.UUID
     total_students: int
