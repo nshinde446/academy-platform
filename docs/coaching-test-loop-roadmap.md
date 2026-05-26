@@ -196,7 +196,9 @@ DONE — Plan-vs-Actual half (lecture management)
   Tier 8   Smart substitute suggestions
   Tier 9   Outcome correlation
   Tier 10  /home polish (existing endpoints)
-  Tier 11  StudentResponse + Question extensions + seed   ✅ shipped
+  Tier 11   StudentResponse + Question extensions + seed   ✅ shipped
+  Tier 12   Study material ingest (organize + Gemini Vision) ✅ shipped
+  Tier 12.7 Question Bank review queue UI                    ✅ shipped
 
 NEXT
   Tier 11.6  Productivity refinements (from Copilot review)
@@ -205,7 +207,8 @@ NEXT
               ├─ Extended reason_code enums
               └─ Composite productivity score on /teachers/[id]
               See docs/copilot-review-and-refinements.md
-  Tier 12    Question bank UI + composer
+  Tier 12.5  AI generation pipeline (DeepSeek + Gemini variants)
+  Tier 12.x  Question bank UI + composer (DPP/CPP creation)
   Tier 13    /students/[id] detail page
   Tier 14    Item analysis + topic mastery on /insights
   Tier 15    OMR scan import
