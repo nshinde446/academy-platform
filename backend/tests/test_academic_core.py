@@ -713,3 +713,91 @@ class TestAuditOnStudentOperations:
         assert data["total"] >= 1
         assert data["items"][0]["table_name"] == "students"
         assert data["items"][0]["action"] == "CREATE"
+
+
+class TestPhaseAStatsEndpoints:
+    """Phase A — MSA_Design alignment: /students/with-stats and
+    /teachers/with-stats power the redesigned roster tables. Each row
+    must round-trip the new columns (fees_status, years_experience) and
+    surface the computed analytics fields."""
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_students_with_stats_shape(self, client, seed_data):
+        login_resp = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@test.com", "password": "Admin123!"},
+        )
+        token = login_resp.cookies["access_token"]
+
+        await client.post(
+            "/api/v1/students",
+            json={
+                "branch_id": "00000000-0000-0000-0000-000000000001",
+                "academic_year_id": "00000000-0000-0000-0000-000000000030",
+                "first_name": "Stats",
+                "last_name": "Student",
+                "standard": "11",
+                "target_exam": "NEET",
+                "fees_status": "paid",
+            },
+            cookies={"access_token": token},
+        )
+
+        resp = await client.get(
+            "/api/v1/students/with-stats?branch_id=00000000-0000-0000-0000-000000000001",
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200
+        rows = resp.json()
+        assert len(rows) >= 1
+        row = next(r for r in rows if r["first_name"] == "Stats")
+        # All MSA_Design table columns must be present, even when zero.
+        for key in (
+            "fees_status",
+            "avg_score_pct",
+            "attendance_pct",
+            "dpp_completion_pct",
+            "batch_rank",
+            "batch_size",
+            "tests_taken",
+        ):
+            assert key in row
+        assert row["fees_status"] == "paid"
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_teachers_with_stats_shape(self, client, seed_data):
+        login_resp = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "admin@test.com", "password": "Admin123!"},
+        )
+        token = login_resp.cookies["access_token"]
+
+        await client.post(
+            "/api/v1/teachers",
+            json={
+                "branch_id": "00000000-0000-0000-0000-000000000001",
+                "first_name": "Stats",
+                "last_name": "Teacher",
+                "qualification": "PhD",
+                "years_experience": 7,
+            },
+            cookies={"access_token": token},
+        )
+
+        resp = await client.get(
+            "/api/v1/teachers/with-stats?branch_id=00000000-0000-0000-0000-000000000001",
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200
+        rows = resp.json()
+        row = next(r for r in rows if r["first_name"] == "Stats")
+        for key in (
+            "years_experience",
+            "subject_id",
+            "subject_name",
+            "lectures_30d",
+            "sub_rate_pct",
+            "avg_outcome_delta_pp",
+        ):
+            assert key in row
+        assert row["years_experience"] == 7

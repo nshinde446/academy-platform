@@ -41,6 +41,10 @@ async def list_teachers(session: AsyncSession, branch_id: uuid.UUID, offset: int
     return await teacher_repository.list_by_branch(session, branch_id, offset, limit)
 
 
+async def list_teachers_with_stats(session: AsyncSession, branch_id: uuid.UUID):
+    return await teacher_repository.list_with_stats(session, branch_id)
+
+
 async def update_teacher(
     session: AsyncSession,
     teacher_id: uuid.UUID,

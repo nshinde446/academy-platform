@@ -243,16 +243,18 @@ async def seed():
 
         # ---- Teachers
         teachers = {}
-        for first, last in [
-            ("Rahul", "Sharma"),
-            ("Priya", "Nair"),
-            ("Asha", "Kulkarni"),
-        ]:
-            t, _ = await _find_or_create(
+        teacher_seed = [
+            ("Rahul", "Sharma", "M.Sc Physics, IIT Bombay", 8),
+            ("Priya", "Nair", "M.Sc Chemistry, TIFR", 5),
+            ("Asha", "Kulkarni", "M.Sc Biology, Pune Uni.", 12),
+        ]
+        for first, last, qual, years in teacher_seed:
+            t, created = await _find_or_create(
                 session,
                 Teacher,
                 defaults={
-                    "qualification": "M.Sc demo",
+                    "qualification": qual,
+                    "years_experience": years,
                     "status": "active",
                     "is_deleted": False,
                 },
@@ -260,6 +262,9 @@ async def seed():
                 first_name=first,
                 last_name=last,
             )
+            if not created:
+                t.qualification = qual
+                t.years_experience = years
             teachers[first] = t
         rahul = teachers["Rahul"]
         priya = teachers["Priya"]
@@ -603,6 +608,9 @@ async def seed():
         # 4 students per batch. Top 2 attend everything, bottom 2 don't —
         # creates a clean attendance↔score correlation in the demo.
         students_by_batch: dict[uuid.UUID, list] = {}
+        # Spread fees across paid/due/overdue so the table's badge column
+        # shows variety; rank 1 in each batch is paid for visual clarity.
+        fees_cycle = ["paid", "due", "paid", "overdue"]
         for batch_obj in (neet_a, neet_b):
             roster = []
             for i in range(1, 5):
@@ -615,6 +623,7 @@ async def seed():
                         # NEET 2-year course → Class 11 cohort by convention.
                         "standard": "11",
                         "target_exam": "NEET",
+                        "fees_status": fees_cycle[(i - 1) % len(fees_cycle)],
                         "status": "active",
                         "is_deleted": False,
                     },
@@ -627,6 +636,8 @@ async def seed():
                     stu.standard = "11"
                 if stu.target_exam is None:
                     stu.target_exam = "NEET"
+                if stu.fees_status is None:
+                    stu.fees_status = fees_cycle[(i - 1) % len(fees_cycle)]
                 await session.flush()
                 await _find_or_create(
                     session,

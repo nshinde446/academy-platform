@@ -10,6 +10,7 @@ from app.modules.teacher.schemas.teacher_schemas import (
     TeacherCreate,
     TeacherResponse,
     TeacherUpdate,
+    TeacherWithStats,
 )
 from app.modules.teacher.services import import_service, teacher_service
 
@@ -38,6 +39,17 @@ async def list_teachers(
     session: AsyncSession = Depends(get_db),
 ):
     return await teacher_service.list_teachers(session, branch_id, offset, limit)
+
+
+@router.get("/with-stats", response_model=list[TeacherWithStats])
+async def list_teachers_with_stats(
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Roster with last-30-day adherence + outcome metrics — powers the
+    MSA_Design teachers table (Lectures, Sub rate, Avg outcome)."""
+    return await teacher_service.list_teachers_with_stats(session, branch_id)
 
 
 @router.get("/{teacher_id}", response_model=TeacherResponse)

@@ -10,6 +10,7 @@ from app.modules.student.schemas.student_schemas import (
     StudentCreate,
     StudentResponse,
     StudentUpdate,
+    StudentWithStats,
 )
 from app.modules.student.services import import_service, student_service
 
@@ -38,6 +39,17 @@ async def list_students(
     session: AsyncSession = Depends(get_db),
 ):
     return await student_service.list_students(session, branch_id, offset, limit)
+
+
+@router.get("/with-stats", response_model=list[StudentWithStats])
+async def list_students_with_stats(
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Roster with per-student analytics (avg score, attendance %, DPP
+    completion %, batch rank) — powers the MSA_Design students table."""
+    return await student_service.list_students_with_stats(session, branch_id)
 
 
 @router.get("/{student_id}", response_model=StudentResponse)

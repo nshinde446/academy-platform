@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, String, Uuid
+from sqlalchemy import ForeignKey, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database.base import BaseModel
@@ -20,6 +20,8 @@ class Teacher(BaseModel):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     qualification: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Years of teaching experience — surfaced on the teachers list.
+    years_experience: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class TeacherSubjectMapping(BaseModel):

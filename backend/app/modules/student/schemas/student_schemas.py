@@ -25,6 +25,7 @@ class StudentCreate(BaseModel):
     caste: str | None = None
     username: str | None = None
     course_id: uuid.UUID | None = None
+    fees_status: str | None = None
 
 
 class StudentUpdate(BaseModel):
@@ -43,6 +44,7 @@ class StudentUpdate(BaseModel):
     course_id: uuid.UUID | None = None
     standard: str | None = None
     target_exam: str | None = None
+    fees_status: str | None = None
 
 
 class StudentResponse(BaseModel):
@@ -64,8 +66,35 @@ class StudentResponse(BaseModel):
     course_id: uuid.UUID | None = None
     standard: str | None = None
     target_exam: str | None = None
+    fees_status: str | None = None
     status: str
     model_config = {"from_attributes": True}
+
+
+class StudentWithStats(BaseModel):
+    """Student row enriched with computed analytics for the table view.
+
+    Powers the MSA_Design students list (Rank, Avg score, Attendance,
+    DPP completion, Fees). Aggregations join through student_marks,
+    lecture_attendance_mappings, and student_responses respectively.
+    """
+
+    id: uuid.UUID
+    first_name: str
+    last_name: str
+    enrollment_number: str | None = None
+    standard: str | None = None
+    target_exam: str | None = None
+    batch_id: uuid.UUID | None = None
+    batch_name: str | None = None
+    fees_status: str | None = None
+    # Computed
+    avg_score_pct: float
+    attendance_pct: float
+    dpp_completion_pct: float
+    batch_rank: int | None = None  # rank within their batch by avg_score
+    batch_size: int = 0
+    tests_taken: int = 0
 
 
 class ImportSummary(BaseModel):

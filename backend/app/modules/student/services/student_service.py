@@ -76,6 +76,10 @@ async def list_students(session: AsyncSession, branch_id: uuid.UUID, offset: int
     return await student_repository.list_by_branch(session, branch_id, offset, limit)
 
 
+async def list_students_with_stats(session: AsyncSession, branch_id: uuid.UUID):
+    return await student_repository.list_with_stats(session, branch_id)
+
+
 async def update_student(
     session: AsyncSession,
     student_id: uuid.UUID,

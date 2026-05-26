@@ -10,6 +10,7 @@ class TeacherCreate(BaseModel):
     email: str | None = None
     phone: str | None = None
     qualification: str | None = None
+    years_experience: int | None = None
     user_id: uuid.UUID | None = None
 
 
@@ -19,6 +20,7 @@ class TeacherUpdate(BaseModel):
     email: str | None = None
     phone: str | None = None
     qualification: str | None = None
+    years_experience: int | None = None
 
 
 class TeacherResponse(BaseModel):
@@ -30,8 +32,27 @@ class TeacherResponse(BaseModel):
     email: str | None = None
     phone: str | None = None
     qualification: str | None = None
+    years_experience: int | None = None
     status: str
     model_config = {"from_attributes": True}
+
+
+class TeacherWithStats(BaseModel):
+    """Teacher row enriched with adherence + outcome metrics for the
+    MSA_Design teachers list. Lectures count is over the last 30 days;
+    sub rate and outcome delta align with /insights data."""
+
+    id: uuid.UUID
+    first_name: str
+    last_name: str
+    qualification: str | None = None
+    years_experience: int | None = None
+    subject_id: uuid.UUID | None = None
+    subject_name: str | None = None
+    # Computed
+    lectures_30d: int
+    sub_rate_pct: float
+    avg_outcome_delta_pp: float | None = None
 
 
 class ImportSummary(BaseModel):
