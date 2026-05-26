@@ -29,6 +29,34 @@ async def get_question_by_id(session: AsyncSession, question_id: uuid.UUID) -> Q
     return result.scalar_one_or_none()
 
 
+def _question_filter_clauses(
+    branch_id: uuid.UUID,
+    subject_id: uuid.UUID | None,
+    topic_id: uuid.UUID | None,
+    difficulty: str | None,
+    blooms_taxonomy: str | None,
+    review_status: str | None,
+    source_prefix: str | None,
+    search: str | None,
+):
+    clauses = [Question.branch_id == branch_id, Question.is_deleted == False]
+    if subject_id:
+        clauses.append(Question.subject_id == subject_id)
+    if topic_id:
+        clauses.append(Question.topic_id == topic_id)
+    if difficulty:
+        clauses.append(Question.difficulty == difficulty)
+    if blooms_taxonomy:
+        clauses.append(Question.blooms_taxonomy == blooms_taxonomy)
+    if review_status:
+        clauses.append(Question.review_status == review_status)
+    if source_prefix:
+        clauses.append(Question.source.like(f"{source_prefix}%"))
+    if search:
+        clauses.append(Question.content.ilike(f"%{search}%"))
+    return clauses
+
+
 async def list_questions(
     session: AsyncSession,
     branch_id: uuid.UUID,
@@ -36,23 +64,71 @@ async def list_questions(
     topic_id: uuid.UUID | None = None,
     difficulty: str | None = None,
     blooms_taxonomy: str | None = None,
+    review_status: str | None = None,
+    source_prefix: str | None = None,
+    search: str | None = None,
     offset: int = 0,
     limit: int = 50,
 ) -> list[Question]:
-    query = select(Question).where(
-        Question.branch_id == branch_id, Question.is_deleted == False
+    clauses = _question_filter_clauses(
+        branch_id, subject_id, topic_id, difficulty, blooms_taxonomy,
+        review_status, source_prefix, search,
     )
-    if subject_id:
-        query = query.where(Question.subject_id == subject_id)
-    if topic_id:
-        query = query.where(Question.topic_id == topic_id)
-    if difficulty:
-        query = query.where(Question.difficulty == difficulty)
-    if blooms_taxonomy:
-        query = query.where(Question.blooms_taxonomy == blooms_taxonomy)
-    query = query.order_by(Question.created_at.desc()).offset(offset).limit(limit)
+    query = (
+        select(Question)
+        .where(*clauses)
+        .order_by(Question.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     result = await session.execute(query)
     return list(result.scalars().all())
+
+
+async def count_questions(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    subject_id: uuid.UUID | None = None,
+    topic_id: uuid.UUID | None = None,
+    difficulty: str | None = None,
+    blooms_taxonomy: str | None = None,
+    review_status: str | None = None,
+    source_prefix: str | None = None,
+    search: str | None = None,
+) -> int:
+    clauses = _question_filter_clauses(
+        branch_id, subject_id, topic_id, difficulty, blooms_taxonomy,
+        review_status, source_prefix, search,
+    )
+    result = await session.execute(
+        select(func.count(Question.id)).where(*clauses)
+    )
+    return int(result.scalar() or 0)
+
+
+async def bulk_update_review_status(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    question_ids: list[uuid.UUID],
+    new_status: str,
+) -> tuple[int, list[uuid.UUID]]:
+    """Bulk approve / reject. Returns (updated_count, skipped_ids)."""
+    if not question_ids:
+        return 0, []
+    result = await session.execute(
+        select(Question).where(
+            Question.id.in_(question_ids),
+            Question.branch_id == branch_id,
+            Question.is_deleted == False,
+        )
+    )
+    rows = list(result.scalars().all())
+    found_ids = {q.id for q in rows}
+    skipped = [qid for qid in question_ids if qid not in found_ids]
+    for q in rows:
+        q.review_status = new_status
+    await session.flush()
+    return len(rows), skipped
 
 
 async def update_question(session: AsyncSession, question: Question, **kwargs) -> Question:

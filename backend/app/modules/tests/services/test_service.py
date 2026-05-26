@@ -93,6 +93,9 @@ async def get_question(session: AsyncSession, question_id: uuid.UUID, branch_id:
     return _format_question(question)
 
 
+VALID_REVIEW_STATUSES = {"pending_review", "approved", "rejected"}
+
+
 async def list_questions(
     session: AsyncSession,
     branch_id: uuid.UUID,
@@ -100,13 +103,66 @@ async def list_questions(
     topic_id: uuid.UUID | None = None,
     difficulty: str | None = None,
     blooms_taxonomy: str | None = None,
+    review_status: str | None = None,
+    source_prefix: str | None = None,
+    search: str | None = None,
     offset: int = 0,
     limit: int = 50,
 ):
     questions = await test_repository.list_questions(
-        session, branch_id, subject_id, topic_id, difficulty, blooms_taxonomy, offset, limit
+        session, branch_id,
+        subject_id=subject_id,
+        topic_id=topic_id,
+        difficulty=difficulty,
+        blooms_taxonomy=blooms_taxonomy,
+        review_status=review_status,
+        source_prefix=source_prefix,
+        search=search,
+        offset=offset,
+        limit=limit,
     )
     return [_format_question(q) for q in questions]
+
+
+async def count_questions(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    **filters,
+) -> int:
+    return await test_repository.count_questions(session, branch_id, **filters)
+
+
+async def bulk_set_review_status(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    question_ids: list[uuid.UUID],
+    new_status: str,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    if new_status not in VALID_REVIEW_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid review_status '{new_status}'. Allowed: {sorted(VALID_REVIEW_STATUSES)}",
+        )
+    updated, skipped = await test_repository.bulk_update_review_status(
+        session, branch_id, question_ids, new_status
+    )
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="BULK_UPDATE",
+        table_name="questions",
+        record_id=uuid.uuid4(),
+        new_values={
+            "review_status": new_status,
+            "updated_count": updated,
+            "skipped_count": len(skipped),
+        },
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return {"updated": updated, "skipped": skipped}
 
 
 async def update_question(
@@ -150,6 +206,15 @@ async def update_question(
         update_kwargs["options"] = json.dumps(data["options"]) if data["options"] else None
     if "concept_tags" in data:
         update_kwargs["concept_tags"] = json.dumps(data["concept_tags"]) if data["concept_tags"] else None
+    if "subject_id" in data and data["subject_id"] is not None:
+        update_kwargs["subject_id"] = data["subject_id"]
+    if "review_status" in data and data["review_status"] is not None:
+        if data["review_status"] not in VALID_REVIEW_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid review_status: {data['review_status']}",
+            )
+        update_kwargs["review_status"] = data["review_status"]
 
     question = await test_repository.update_question(session, question, **update_kwargs)
 
@@ -194,6 +259,14 @@ async def delete_question(
 
 
 def _format_question(question):
+    # concept_tags is stored as JSON text. Tolerate both JSON-encoded
+    # lists and plain comma-separated strings (older inserts).
+    tags = None
+    if question.concept_tags:
+        try:
+            tags = json.loads(question.concept_tags)
+        except (ValueError, TypeError):
+            tags = [t.strip() for t in question.concept_tags.split(",") if t.strip()]
     return {
         "id": question.id,
         "content": question.content,
@@ -204,7 +277,12 @@ def _format_question(question):
         "topic_id": question.topic_id,
         "difficulty": question.difficulty,
         "blooms_taxonomy": question.blooms_taxonomy,
-        "concept_tags": json.loads(question.concept_tags) if question.concept_tags else None,
+        "concept_tags": tags,
+        "source": question.source,
+        "source_ref": question.source_ref,
+        "diagram_ref": question.diagram_ref,
+        "review_status": question.review_status,
+        "quality_score": question.quality_score,
         "branch_id": question.branch_id,
         "academic_year_id": question.academic_year_id,
         "status": question.status,

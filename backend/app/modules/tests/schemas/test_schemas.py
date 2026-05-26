@@ -21,10 +21,12 @@ class QuestionUpdate(BaseModel):
     options: dict | None = None
     correct_answer: str | None = None
     explanation: str | None = None
+    subject_id: uuid.UUID | None = None
     topic_id: uuid.UUID | None = None
     difficulty: str | None = None
     blooms_taxonomy: str | None = None
     concept_tags: list[str] | None = None
+    review_status: str | None = None
 
 
 class QuestionResponse(BaseModel):
@@ -38,10 +40,25 @@ class QuestionResponse(BaseModel):
     difficulty: str
     blooms_taxonomy: str
     concept_tags: list[str] | None = None
+    source: str | None = None
+    source_ref: str | None = None
+    diagram_ref: str | None = None
+    review_status: str
+    quality_score: float | None = None
     branch_id: uuid.UUID
     academic_year_id: uuid.UUID
     status: str
     model_config = {"from_attributes": True}
+
+
+class QuestionBulkAction(BaseModel):
+    """Bulk approve / reject payload."""
+    question_ids: list[uuid.UUID]
+
+
+class QuestionBulkResult(BaseModel):
+    updated: int
+    skipped: list[uuid.UUID] = []
 
 
 class TestCreate(BaseModel):

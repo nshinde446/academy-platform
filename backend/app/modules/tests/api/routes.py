@@ -8,6 +8,8 @@ from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.tests.schemas.test_schemas import (
     MarkBatchSubmit,
     MarkResponse,
+    QuestionBulkAction,
+    QuestionBulkResult,
     QuestionCreate,
     QuestionResponse,
     QuestionUpdate,
@@ -50,13 +52,89 @@ async def list_questions(
     topic_id: uuid.UUID | None = Query(None),
     difficulty: str | None = Query(None),
     blooms_taxonomy: str | None = Query(None),
+    review_status: str | None = Query(None),
+    source_prefix: str | None = Query(
+        None,
+        description="Filter by Question.source prefix (e.g. 'studymat:')",
+    ),
+    search: str | None = Query(None, description="ILIKE on question content"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])),
     session: AsyncSession = Depends(get_db),
 ):
     return await test_service.list_questions(
-        session, branch_id, subject_id, topic_id, difficulty, blooms_taxonomy, offset, limit
+        session, branch_id,
+        subject_id=subject_id,
+        topic_id=topic_id,
+        difficulty=difficulty,
+        blooms_taxonomy=blooms_taxonomy,
+        review_status=review_status,
+        source_prefix=source_prefix,
+        search=search,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/count")
+async def count_questions(
+    branch_id: uuid.UUID = Query(...),
+    subject_id: uuid.UUID | None = Query(None),
+    topic_id: uuid.UUID | None = Query(None),
+    difficulty: str | None = Query(None),
+    blooms_taxonomy: str | None = Query(None),
+    review_status: str | None = Query(None),
+    source_prefix: str | None = Query(None),
+    search: str | None = Query(None),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Total matching questions — drives the tab counts on /question-bank."""
+    n = await test_service.count_questions(
+        session, branch_id,
+        subject_id=subject_id,
+        topic_id=topic_id,
+        difficulty=difficulty,
+        blooms_taxonomy=blooms_taxonomy,
+        review_status=review_status,
+        source_prefix=source_prefix,
+        search=search,
+    )
+    return {"count": n}
+
+
+@router.post("/bulk-approve", response_model=QuestionBulkResult)
+async def bulk_approve_questions(
+    body: QuestionBulkAction,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "academic_head"])
+    ),
+    session: AsyncSession = Depends(get_db),
+):
+    return await test_service.bulk_set_review_status(
+        session, branch_id, body.question_ids, "approved",
+        current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.post("/bulk-reject", response_model=QuestionBulkResult)
+async def bulk_reject_questions(
+    body: QuestionBulkAction,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "academic_head"])
+    ),
+    session: AsyncSession = Depends(get_db),
+):
+    return await test_service.bulk_set_review_status(
+        session, branch_id, body.question_ids, "rejected",
+        current_user["user_id"],
+        request.client.host if request.client else None,
     )
 
 

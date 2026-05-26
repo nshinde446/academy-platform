@@ -20,6 +20,7 @@ const TOP_LEVEL: NavItem[] = [
   { label: "Students", href: "/students" },
   { label: "Teachers", href: "/teachers" },
   { label: "Lectures", href: "/lectures" },
+  { label: "Question Bank", href: "/question-bank" },
   { label: "Insights", href: "/insights" },
 ];
 
