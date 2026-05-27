@@ -56,13 +56,19 @@ describe("Sidebar (MSA_Design section layout)", () => {
     }
   });
 
-  it("renders Content section with Question Bank flagged NEW", () => {
+  it("renders Content section with Materials + Question Bank", () => {
     render(<Sidebar />);
     expect(screen.getByText("Content")).toBeInTheDocument();
+
+    // Materials is the new addition (M2) — flagged NEW.
+    const materials = screen.getByRole("link", { name: /materials/i });
+    expect(materials).toHaveAttribute("href", "/materials");
+    expect(materials.textContent).toMatch(/NEW/);
+
+    // Question Bank stays in Content but no longer carries the NEW chip.
     const qb = screen.getByRole("link", { name: /question bank/i });
     expect(qb).toHaveAttribute("href", "/question-bank");
-    // NEW badge is rendered next to it.
-    expect(qb.textContent).toMatch(/NEW/);
+    expect(qb.textContent).not.toMatch(/NEW/);
   });
 
   it("renders Academics section with every config surface", () => {

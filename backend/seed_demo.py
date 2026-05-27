@@ -177,12 +177,29 @@ async def seed():
             branch_id=branch.id,
             name="Chemistry",
         )
+        # Mathematics (added 2026-05-28 — was missing from earlier seed).
+        # JEE prep batches need it; NEET batches ignore it via batch→subject
+        # mapping rather than the subject existing or not.
+        mathematics, _ = await _find_or_create(
+            session,
+            Subject,
+            defaults={
+                "code": "MATH",
+                "academic_year_id": ay.id,
+                "course_id": course.id,
+                "status": "active",
+                "is_deleted": False,
+            },
+            branch_id=branch.id,
+            name="Mathematics",
+        )
 
         # ---- Chapters: 2 per subject
         chapters = {}
         for subj, ch_names in [
             (physics, ["Mechanics", "Optics"]),
             (chemistry, ["Atomic Structure", "Chemical Bonding"]),
+            (mathematics, ["Algebra", "Calculus"]),
         ]:
             for order, name in enumerate(ch_names, start=1):
                 ch, _ = await _find_or_create(

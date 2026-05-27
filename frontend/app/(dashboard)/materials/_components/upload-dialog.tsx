@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogPopup,
@@ -67,6 +67,26 @@ export function UploadDialog({
   const [examTypes, setExamTypes] = useState<ExamType[]>([]);
   const [batchIds, setBatchIds] = useState<string[]>([]);
   const [description, setDescription] = useState("");
+
+  // Scope subjects to the picked academic year, then dedupe by name.
+  // Dev DBs sometimes carry multiple Subject rows with the same name
+  // (different course_id per row); the user picks an abstract subject
+  // and we just bind to whichever specific row matches first.
+  const scopedSubjects = useMemo(() => {
+    const all = subjects.data ?? [];
+    if (!all.length) return [];
+    const inYear = academicYearId
+      ? all.filter((s) => s.academic_year_id === academicYearId)
+      : all;
+    const seen = new Set<string>();
+    const out: typeof all = [];
+    for (const s of inYear) {
+      if (seen.has(s.name)) continue;
+      seen.add(s.name);
+      out.push(s);
+    }
+    return out;
+  }, [subjects.data, academicYearId]);
 
   function reset() {
     setFiles([]);
@@ -252,7 +272,12 @@ export function UploadDialog({
               <select
                 className="rounded-md border bg-background px-2 py-1.5 text-sm"
                 value={academicYearId}
-                onChange={(e) => setAcademicYearId(e.target.value)}
+                onChange={(e) => {
+                  setAcademicYearId(e.target.value);
+                  // Reset subject — the prior pick belonged to a different
+                  // year's Subject row and would mis-tag the material.
+                  setSubjectId("");
+                }}
               >
                 <option value="">— select —</option>
                 {(academicYears.data ?? []).map((ay) => (
@@ -285,9 +310,13 @@ export function UploadDialog({
                 className="rounded-md border bg-background px-2 py-1.5 text-sm"
                 value={subjectId}
                 onChange={(e) => setSubjectId(e.target.value)}
+                disabled={!academicYearId}
+                title={!academicYearId ? "Pick an academic year first" : undefined}
               >
-                <option value="">— select —</option>
-                {(subjects.data ?? []).map((s) => (
+                <option value="">
+                  {academicYearId ? "— select —" : "— pick year first —"}
+                </option>
+                {scopedSubjects.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
                   </option>

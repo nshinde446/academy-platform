@@ -62,6 +62,20 @@ export default function MaterialsPage() {
   const ingestMutation = useIngestMaterial(branchId);
   const deleteMutation = useDeleteMaterial(branchId);
 
+  // The Subject table can carry multiple rows with the same name (one per
+  // course it's offered in). For the filter rail we just want one entry
+  // per subject name — clicking "Physics" should mean "all Physics rows".
+  const dedupedSubjects = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { id: string; name: string }[] = [];
+    for (const s of subjectsQuery.data ?? []) {
+      if (seen.has(s.name)) continue;
+      seen.add(s.name);
+      out.push({ id: s.id, name: s.name });
+    }
+    return out;
+  }, [subjectsQuery.data]);
+
   const items = listQuery.data?.items ?? [];
   const total = listQuery.data?.total ?? 0;
   // Falls back to first row whenever the explicit selection is stale
@@ -121,7 +135,7 @@ export default function MaterialsPage() {
             filters={filters}
             onChange={setFilters}
             facets={facetsQuery.data}
-            subjects={subjectsQuery.data ?? []}
+            subjects={dedupedSubjects}
             batches={batchesQuery.data ?? []}
           />
         </div>
