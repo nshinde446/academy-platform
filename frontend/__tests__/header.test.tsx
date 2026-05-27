@@ -32,12 +32,15 @@ describe("Header (breadcrumb)", () => {
     expect(screen.getByText("abc-123")).toBeInTheDocument();
   });
 
-  it("renders the ⌘K hint and today's date", () => {
+  it("renders the ⌘K hint", () => {
     render(<Header />);
     expect(screen.getByText("⌘K")).toBeInTheDocument();
-    // Today's date renders via toLocaleDateString — just check the
-    // year is on the page somewhere (more stable than the full string).
+  });
+
+  it("populates today's date after mount (no SSR hydration mismatch)", async () => {
+    render(<Header />);
     const year = new Date().getFullYear().toString();
-    expect(screen.getByText(new RegExp(year))).toBeInTheDocument();
+    // useEffect fires after mount → wait for the date to appear.
+    await screen.findByText(new RegExp(year));
   });
 });

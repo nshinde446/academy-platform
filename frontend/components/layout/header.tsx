@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 
 // First-segment slug → display label. Sub-segments (e.g.
@@ -26,12 +27,22 @@ export function Header() {
   const crumbs =
     segments.length === 0 ? ["Home"] : segments.map((s) => PATH_LABELS[s] ?? s);
 
-  const todayDate = new Date().toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  // Render the date only after mount. Locale-aware formatting can't
+  // be reproduced on the server (it doesn't know the browser's
+  // locale), so SSR'd HTML mismatches the client paint and React
+  // regenerates the subtree. Empty string until hydration → no
+  // mismatch, tiny single-frame delay.
+  const [todayDate, setTodayDate] = useState("");
+  useEffect(() => {
+    setTodayDate(
+      new Date().toLocaleDateString(undefined, {
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+    );
+  }, []);
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b bg-background px-6">
