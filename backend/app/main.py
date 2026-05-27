@@ -21,6 +21,7 @@ from app.modules.audit.api.routes import router as audit_router
 from app.modules.batch.api.routes import router as batch_router
 from app.modules.classroom.api.routes import router as classroom_router
 from app.modules.attendance.api.routes import router as attendance_router
+from app.modules.attendance.integrations.biomax.routes import router as biomax_router
 from app.modules.analytics.api.routes import router as analytics_router
 from app.modules.events.api.routes import router as events_router
 from app.modules.notifications.api.routes import router as notifications_router
@@ -77,6 +78,7 @@ app.include_router(classroom_router, prefix=settings.API_V1_PREFIX)
 app.include_router(lectures_router, prefix=settings.API_V1_PREFIX)
 app.include_router(materials_router, prefix=settings.API_V1_PREFIX)
 app.include_router(attendance_router, prefix=settings.API_V1_PREFIX)
+app.include_router(biomax_router, prefix=settings.API_V1_PREFIX)
 app.include_router(questions_router, prefix=settings.API_V1_PREFIX)
 app.include_router(tests_router, prefix=settings.API_V1_PREFIX)
 app.include_router(marks_router, prefix=settings.API_V1_PREFIX)
