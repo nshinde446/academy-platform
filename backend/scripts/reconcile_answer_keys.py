@@ -1,4 +1,14 @@
-"""Backfill empty correct_answer on study-material questions.
+"""DEPRECATED — kept as reference. Use scripts/extract_keys_ai.py instead.
+
+This regex-based harvester only handles inline answer keys of the form
+``<n>. (<letter>) ...`` and misses tabular/grid layouts where PyMuPDF
+flattens cells across columns. The AI-based replacement
+(extract_keys_ai.py) sends the whole PDF to Gemini and handles every
+layout uniformly.
+
+------------------------------------------------------------------------
+
+Backfill empty correct_answer on study-material questions.
 
 Reads source PDFs from study_material/extracted/, scans for answer-key
 blocks (typical format: ``<n>. (<letter>) <explanation>`` or
