@@ -11,17 +11,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const fetchUser = useUserStore((s) => s.fetchUser);
 
   useEffect(() => {
-    if (!user) {
-      fetchUser();
-    }
+    if (!user) fetchUser();
   }, [user, fetchUser]);
 
   return (
-    <div className="flex h-screen flex-col">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+    <div className="flex h-screen">
+      {/* Sidebar runs the full height on the left, brand mark up top. */}
+      <Sidebar />
+      {/* Right column: header on top of scrollable main. */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Header />
+        <main className="flex-1 overflow-y-auto px-8 py-6">{children}</main>
       </div>
     </div>
   );

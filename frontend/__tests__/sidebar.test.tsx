@@ -16,14 +16,30 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+// Sidebar reads from these stores; stub them to keep tests focused.
+vi.mock("@/store/user-store", () => ({
+  useUserStore: (selector: any) =>
+    selector({ user: null, fetchUser: vi.fn() }),
+}));
+vi.mock("@/store/auth-store", () => ({
+  useAuthStore: (selector: any) => selector({ logout: vi.fn() }),
+}));
+
 describe("Sidebar (MSA_Design section layout)", () => {
   beforeEach(() => {
     currentPathname = "/home";
   });
 
-  it("renders the navigation header", () => {
+  it("renders the brand mark + product name", () => {
     render(<Sidebar />);
-    expect(screen.getByText("Navigation")).toBeInTheDocument();
+    // "Academy" as the brand wordmark, "Platform" as the chip under it.
+    expect(screen.getByText("Academy")).toBeInTheDocument();
+    expect(screen.getByText("Platform")).toBeInTheDocument();
+  });
+
+  it("renders the user footer placeholder when not signed in", () => {
+    render(<Sidebar />);
+    expect(screen.getByText("Not signed in")).toBeInTheDocument();
   });
 
   it("renders the top (unlabeled) primary surfaces", () => {

@@ -2,72 +2,42 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Header } from "@/components/layout/header";
 
-const mockUseUserStore = vi.fn();
+let currentPathname = "/home";
 
-vi.mock("@/store/user-store", () => ({
-  useUserStore: (selector: any) => mockUseUserStore(selector),
+vi.mock("next/navigation", () => ({
+  usePathname: () => currentPathname,
 }));
 
-describe("Header", () => {
+describe("Header (breadcrumb)", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    currentPathname = "/home";
   });
 
-  it("renders platform title", () => {
-    mockUseUserStore.mockImplementation((selector: any) =>
-      selector({ user: null })
-    );
-
+  it("renders a Home breadcrumb on the root dashboard route", () => {
     render(<Header />);
-    expect(screen.getByText("Academy Platform")).toBeInTheDocument();
+    expect(screen.getByText("Home")).toBeInTheDocument();
   });
 
-  it("shows 'Not signed in' when no user", () => {
-    mockUseUserStore.mockImplementation((selector: any) =>
-      selector({ user: null })
-    );
-
+  it("maps known slug to label", () => {
+    currentPathname = "/question-bank";
     render(<Header />);
-    expect(screen.getByText("Not signed in")).toBeInTheDocument();
+    expect(screen.getByText("Question Bank")).toBeInTheDocument();
   });
 
-  it("shows user name and roles when signed in", () => {
-    const user = {
-      id: "1",
-      email: "admin@test.com",
-      first_name: "Admin",
-      last_name: "User",
-      status: "active",
-      roles: ["super_admin", "branch_admin"],
-      permissions: [],
-      branch_roles: [],
-    };
-
-    mockUseUserStore.mockImplementation((selector: any) =>
-      selector({ user })
-    );
-
+  it("builds a multi-segment breadcrumb for detail routes", () => {
+    currentPathname = "/teachers/abc-123";
     render(<Header />);
-    expect(screen.getByText("Admin User (super_admin, branch_admin)")).toBeInTheDocument();
+    expect(screen.getByText("Teachers")).toBeInTheDocument();
+    // The trailing slug is shown as-is so detail pages can override.
+    expect(screen.getByText("abc-123")).toBeInTheDocument();
   });
 
-  it("shows single role without comma", () => {
-    const user = {
-      id: "1",
-      email: "teacher@test.com",
-      first_name: "John",
-      last_name: "Doe",
-      status: "active",
-      roles: ["teacher"],
-      permissions: [],
-      branch_roles: [],
-    };
-
-    mockUseUserStore.mockImplementation((selector: any) =>
-      selector({ user })
-    );
-
+  it("renders the ⌘K hint and today's date", () => {
     render(<Header />);
-    expect(screen.getByText("John Doe (teacher)")).toBeInTheDocument();
+    expect(screen.getByText("⌘K")).toBeInTheDocument();
+    // Today's date renders via toLocaleDateString — just check the
+    // year is on the page somewhere (more stable than the full string).
+    const year = new Date().getFullYear().toString();
+    expect(screen.getByText(new RegExp(year))).toBeInTheDocument();
   });
 });

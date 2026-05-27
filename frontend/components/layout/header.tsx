@@ -1,31 +1,62 @@
 "use client";
 
-import { useUserStore } from "@/store/user-store";
-import { useAuthStore } from "@/store/auth-store";
+import { usePathname } from "next/navigation";
+
+// First-segment slug → display label. Sub-segments (e.g.
+// /teachers/abc-123) just show the slug — the detail page can render
+// its own breadcrumb if needed.
+const PATH_LABELS: Record<string, string> = {
+  home: "Home",
+  today: "Today",
+  students: "Students",
+  teachers: "Teachers",
+  lectures: "Lectures",
+  insights: "Insights",
+  "question-bank": "Question Bank",
+  courses: "Courses",
+  batches: "Batches",
+  classrooms: "Classrooms",
+  "academic-years": "Academic Years",
+  syllabus: "Syllabus",
+};
 
 export function Header() {
-  const user = useUserStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
+  const pathname = usePathname() ?? "";
+  const segments = pathname.split("/").filter(Boolean);
+  const crumbs =
+    segments.length === 0 ? ["Home"] : segments.map((s) => PATH_LABELS[s] ?? s);
+
+  const todayDate = new Date().toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b bg-background px-6">
-      <h1 className="text-lg font-semibold">Academy Platform</h1>
-      <div className="flex items-center gap-4">
-        {user ? (
-          <>
-            <span className="text-sm text-muted-foreground">
-              {user.first_name} {user.last_name} ({user.roles.join(", ")})
-            </span>
-            <button
-              onClick={logout}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+      <div className="flex items-center gap-2 text-[15px] font-semibold">
+        {crumbs.map((c, i) => (
+          <span key={i} className="flex items-center gap-2">
+            {i > 0 && <span className="text-muted-foreground/60">/</span>}
+            <span
+              className={
+                i === crumbs.length - 1
+                  ? ""
+                  : "font-normal text-muted-foreground"
+              }
             >
-              Sign out
-            </button>
-          </>
-        ) : (
-          <span className="text-sm text-muted-foreground">Not signed in</span>
-        )}
+              {c}
+            </span>
+          </span>
+        ))}
+      </div>
+      <div className="flex items-center gap-3 text-[12.5px] text-muted-foreground">
+        <span>{todayDate}</span>
+        <span className="h-4 w-px bg-border" />
+        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] font-medium">
+          ⌘K
+        </kbd>
       </div>
     </header>
   );
