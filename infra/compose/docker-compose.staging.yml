@@ -61,6 +61,12 @@ services:
     image: ${BACKEND_IMAGE}
     restart: unless-stopped
     env_file: .env.staging
+    environment:
+      # Separate path from prod so test uploads can't accidentally land
+      # in the prod tree on the same host.
+      STUDY_MATERIAL_ROOT: /study_material
+    volumes:
+      - /srv/academy/staging/study_material:/study_material
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -81,6 +87,10 @@ services:
     image: ${BACKEND_IMAGE}
     restart: unless-stopped
     env_file: .env.staging
+    environment:
+      STUDY_MATERIAL_ROOT: /study_material
+    volumes:
+      - /srv/academy/staging/study_material:/study_material
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }

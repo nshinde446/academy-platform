@@ -22,11 +22,13 @@ case "$ENV" in
         COMPOSE_FILE="docker-compose.prod.yml"
         ENV_FILE=".env.prod"
         PROJECT="academy-prod"
+        STUDY_MATERIAL_HOST_DIR="/srv/academy/study_material"
         ;;
     staging)
         COMPOSE_FILE="docker-compose.staging.yml"
         ENV_FILE=".env.staging"
         PROJECT="academy-staging"
+        STUDY_MATERIAL_HOST_DIR="/srv/academy/staging/study_material"
         ;;
     *)
         echo "Unknown env: $ENV (want prod|staging)" >&2
@@ -36,6 +38,17 @@ esac
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT/infra/compose"
+
+# Ensure the host directory exists and is writable by the backend container
+# (runs as UID 1000 per backend/Dockerfile). Idempotent.
+if [[ ! -d "$STUDY_MATERIAL_HOST_DIR" ]]; then
+    echo "==> creating $STUDY_MATERIAL_HOST_DIR (owner 1000:1000)"
+    sudo mkdir -p "$STUDY_MATERIAL_HOST_DIR"
+    sudo chown -R 1000:1000 "$STUDY_MATERIAL_HOST_DIR"
+elif [[ "$(stat -c '%u' "$STUDY_MATERIAL_HOST_DIR")" != "1000" ]]; then
+    echo "==> fixing ownership of $STUDY_MATERIAL_HOST_DIR to 1000:1000"
+    sudo chown -R 1000:1000 "$STUDY_MATERIAL_HOST_DIR"
+fi
 
 if [[ ! -f "$ENV_FILE" ]]; then
     echo "Missing $REPO_ROOT/infra/compose/$ENV_FILE — create it from ${ENV_FILE}.example" >&2
