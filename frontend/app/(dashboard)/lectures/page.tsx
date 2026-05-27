@@ -40,7 +40,6 @@ import { CreateLectureDialog } from "./_components/create-lecture-dialog";
 import { MarkSubstituteDialog } from "./_components/mark-substitute-dialog";
 import { MarkNoShowDialog } from "./_components/mark-no-show-dialog";
 import { RecordMakeupDialog } from "./_components/record-makeup-dialog";
-import { MergeLecturesDialog } from "./_components/merge-lectures-dialog";
 import { SessionList } from "./_components/session-list";
 
 const SELECT_CLASS =
@@ -339,14 +338,6 @@ export default function LecturesPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <MergeLecturesDialog
-            batches={batches}
-            teachers={teachers}
-            classrooms={classrooms}
-            lectures={lectures}
-            onSubmit={handleRecordSession}
-            isPending={sessionMutation.isPending}
-          />
           <RecordMakeupDialog
             branchId={branchId}
             batches={batches}

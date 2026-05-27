@@ -122,7 +122,6 @@ const REASONS: { value: ChangeReason; label: string }[] = [
   { value: "SUBSTITUTE", label: "Substitute (scheduled teacher absent)" },
   { value: "SUBJECT_SWAP", label: "Subject swap (different subject taught)" },
   { value: "TOPIC_CHANGE", label: "Topic change (different topic taught)" },
-  { value: "COMBINED_BATCH", label: "Combined batch (merged with another)" },
   { value: "OTHER", label: "Other (see notes)" },
 ];
 
