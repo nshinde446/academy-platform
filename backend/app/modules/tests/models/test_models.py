@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database.base import BaseModel
@@ -38,6 +39,18 @@ class Question(BaseModel):
         String(20), nullable=False, default="approved", server_default="approved"
     )
     quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # M1 — link back to the source material (PDF/doc/etc.) this question
+    # was extracted from. Nullable so legacy rows pre-backfill stay valid.
+    material_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("materials.id"), nullable=True
+    )
+    # Inherited from material.exam_types at ingest; per-question override
+    # allowed for PYQ datasets that span exams. ARRAY in Postgres prod;
+    # JSON variant on SQLite (test suite) — SQLAlchemy converts list↔both.
+    exam_types: Mapped[list[str]] = mapped_column(
+        ARRAY(Text).with_variant(JSON(), "sqlite"),
+        nullable=False, default=list,
+    )
     branch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=False
     )

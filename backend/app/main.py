@@ -28,6 +28,7 @@ from app.modules.reports.api.routes import router as reports_router
 from app.modules.plugins.api.routes import router as plugins_router
 from app.modules.ai.api.routes import router as ai_router
 from app.modules.lectures.api.routes import router as lectures_router
+from app.modules.materials.api.routes import router as materials_router
 from app.modules.tests.api.routes import router as questions_router
 from app.modules.tests.api.routes import tests_router
 from app.modules.tests.api.routes import marks_router
@@ -74,6 +75,7 @@ app.include_router(teacher_router, prefix=settings.API_V1_PREFIX)
 app.include_router(batch_router, prefix=settings.API_V1_PREFIX)
 app.include_router(classroom_router, prefix=settings.API_V1_PREFIX)
 app.include_router(lectures_router, prefix=settings.API_V1_PREFIX)
+app.include_router(materials_router, prefix=settings.API_V1_PREFIX)
 app.include_router(attendance_router, prefix=settings.API_V1_PREFIX)
 app.include_router(questions_router, prefix=settings.API_V1_PREFIX)
 app.include_router(tests_router, prefix=settings.API_V1_PREFIX)

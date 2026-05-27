@@ -39,6 +39,9 @@ from app.modules.attendance.models.attendance_models import (  # noqa: F401
 from app.modules.tests.models.test_models import (  # noqa: F401
     Question, QuestionMetadata, QuestionTopic, StudentMark, Test, TestQuestion,
 )
+from app.modules.materials.models.material_models import (  # noqa: F401
+    Material, MaterialBatch,
+)
 from app.modules.events.models.event_models import (  # noqa: F401
     AcademicEvent, ProcessedEvent,
 )
