@@ -16,6 +16,12 @@ class LectureCreate(BaseModel):
     notes: str | None = None
 
 
+class ImportScheduleSummary(BaseModel):
+    imported: int
+    skipped: int
+    errors: list[str] = []
+
+
 class LectureUpdate(BaseModel):
     topic_id: uuid.UUID | None = None
     notes: str | None = None

@@ -244,15 +244,16 @@ async def seed():
         # ---- Teachers
         teachers = {}
         teacher_seed = [
-            ("Rahul", "Sharma", "M.Sc Physics, IIT Bombay", 8),
-            ("Priya", "Nair", "M.Sc Chemistry, TIFR", 5),
-            ("Asha", "Kulkarni", "M.Sc Biology, Pune Uni.", 12),
+            ("Rahul", "Sharma", "rahul.sharma@academy.com", "M.Sc Physics, IIT Bombay", 8),
+            ("Priya", "Nair", "priya.nair@academy.com", "M.Sc Chemistry, TIFR", 5),
+            ("Asha", "Kulkarni", "asha.kulkarni@academy.com", "M.Sc Biology, Pune Uni.", 12),
         ]
-        for first, last, qual, years in teacher_seed:
+        for first, last, email, qual, years in teacher_seed:
             t, created = await _find_or_create(
                 session,
                 Teacher,
                 defaults={
+                    "email": email,
                     "qualification": qual,
                     "years_experience": years,
                     "status": "active",
@@ -263,6 +264,7 @@ async def seed():
                 last_name=last,
             )
             if not created:
+                t.email = email
                 t.qualification = qual
                 t.years_experience = years
             teachers[first] = t

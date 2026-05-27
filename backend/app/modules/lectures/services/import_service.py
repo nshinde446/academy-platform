@@ -1,0 +1,312 @@
+"""CSV/Excel bulk import for the weekly lecture schedule.
+
+The institute admin uploads a sheet with columns:
+
+  date            (YYYY-MM-DD)
+  start_time      (HH:MM, 24h)
+  end_time        (HH:MM, 24h)
+  teacher_email   (matches users.email)
+  batch_code      (matches batches.code)
+  subject_code    (matches subjects.code)
+  topic           optional, free-text — ignored if no Topic row matches
+  classroom_code  optional, matches classrooms.code
+  delivery_mode   optional, "offline" (default) or "online"
+  notes           optional
+
+One row → one scheduled Lecture. We reuse schedule_lecture from
+lecture_service to keep conflict-detection consistent with single-row
+creates. Rows that conflict or reference unknown codes are skipped,
+not fatal — the response lists per-row errors so the admin can fix
+and re-upload.
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+import uuid
+from datetime import datetime, time as _time
+from typing import Any
+
+from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.modules.academic.models.academic_models import Subject
+from app.modules.audit.services import audit_service
+from app.modules.auth.models.auth_models import User
+from app.modules.batch.models.batch_models import Batch, BatchSubjectMapping
+from app.modules.classroom.models.classroom_models import Classroom
+from app.modules.lectures.schemas.lecture_schemas import LectureCreate
+from app.modules.lectures.services import lecture_service
+from app.modules.teacher.models.teacher_models import Teacher
+
+
+REQUIRED_COLUMNS = (
+    "date",
+    "start_time",
+    "end_time",
+    "teacher_email",
+    "batch_code",
+    "subject_code",
+)
+
+
+def _normalize(header: str) -> str:
+    return header.strip().lower().replace(" ", "_")
+
+
+def _parse_csv(content: bytes) -> list[dict[str, Any]]:
+    text = content.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+    return [dict(row) for row in reader]
+
+
+def _parse_xlsx(content: bytes) -> list[dict[str, Any]]:
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
+    ws = wb.active
+    if ws is None:
+        return []
+    rows = ws.iter_rows(values_only=True)
+    try:
+        headers = [str(h) if h is not None else "" for h in next(rows)]
+    except StopIteration:
+        return []
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        record = {
+            headers[i]: ("" if row[i] is None else row[i])
+            for i in range(min(len(headers), len(row)))
+        }
+        if any(v not in ("", None) for v in record.values()):
+            out.append(record)
+    return out
+
+
+def _parse_time(value: Any) -> _time:
+    """Accept '09:00', '9:00', '09:00:00', or an openpyxl time/datetime."""
+    if isinstance(value, _time):
+        return value
+    if isinstance(value, datetime):
+        return value.time()
+    s = str(value).strip()
+    for fmt in ("%H:%M", "%H:%M:%S"):
+        try:
+            return datetime.strptime(s, fmt).time()
+        except ValueError:
+            continue
+    raise ValueError(f"Bad time '{s}' (use HH:MM)")
+
+
+def _parse_date(value: Any) -> datetime:
+    """Accept 'YYYY-MM-DD' or a datetime cell from Excel."""
+    if isinstance(value, datetime):
+        return datetime(value.year, value.month, value.day)
+    s = str(value).strip()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"Bad date '{s}' (use YYYY-MM-DD)")
+
+
+async def _resolve_lookups(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    teacher_email: str,
+    batch_code: str,
+    subject_code: str,
+    classroom_code: str | None,
+) -> tuple[Teacher, Batch, Subject, Classroom | None]:
+    """Resolve human-readable codes to FK ids. Raises ValueError with a
+    user-friendly message if anything is missing — caller turns those
+    into per-row errors."""
+    # Teacher resolution tries two paths. Many teacher rows are linked
+    # to a User account (so we look up via Users.email → Teacher.user_id);
+    # some teachers — especially seeded / imported ones — have an email
+    # stored directly on the Teacher row instead. Either match is fine.
+    normalized = teacher_email.lower().strip()
+    teacher: Teacher | None = None
+
+    user = (
+        await session.execute(select(User).where(User.email == normalized))
+    ).scalar_one_or_none()
+    if user:
+        teacher = (
+            await session.execute(
+                select(Teacher).where(
+                    Teacher.user_id == user.id,
+                    Teacher.branch_id == branch_id,
+                    Teacher.is_deleted == False,
+                )
+            )
+        ).scalar_one_or_none()
+    if teacher is None:
+        teacher = (
+            await session.execute(
+                select(Teacher).where(
+                    Teacher.email == normalized,
+                    Teacher.branch_id == branch_id,
+                    Teacher.is_deleted == False,
+                )
+            )
+        ).scalar_one_or_none()
+    if teacher is None:
+        raise ValueError(f"no teacher in this branch matches: {teacher_email}")
+
+    batch = (
+        await session.execute(
+            select(Batch).where(
+                Batch.code == batch_code.strip(),
+                Batch.branch_id == branch_id,
+                Batch.is_deleted == False,
+            )
+        )
+    ).scalar_one_or_none()
+    if not batch:
+        raise ValueError(f"unknown batch_code: {batch_code}")
+
+    # Subject.code isn't globally unique. Scope to the subjects mapped
+    # to this batch via batch_subject_mappings — that's the
+    # authoritative "subjects this batch actually studies" set.
+    subject = (
+        await session.execute(
+            select(Subject)
+            .join(
+                BatchSubjectMapping,
+                BatchSubjectMapping.subject_id == Subject.id,
+            )
+            .where(
+                Subject.code == subject_code.strip(),
+                BatchSubjectMapping.batch_id == batch.id,
+                BatchSubjectMapping.is_deleted == False,
+                Subject.is_deleted == False,
+            )
+        )
+    ).scalar_one_or_none()
+    if not subject:
+        raise ValueError(
+            f"subject '{subject_code}' isn't mapped to batch '{batch.code}'"
+        )
+
+    classroom = None
+    if classroom_code:
+        classroom = (
+            await session.execute(
+                select(Classroom).where(
+                    Classroom.code == classroom_code.strip(),
+                    Classroom.branch_id == branch_id,
+                    Classroom.is_deleted == False,
+                )
+            )
+        ).scalar_one_or_none()
+        if not classroom:
+            raise ValueError(f"unknown classroom_code: {classroom_code}")
+
+    return teacher, batch, subject, classroom
+
+
+async def import_schedule(
+    session: AsyncSession,
+    file: UploadFile,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict[str, Any]:
+    content = await file.read()
+    filename = (file.filename or "").lower()
+
+    if filename.endswith(".csv"):
+        rows = _parse_csv(content)
+    elif filename.endswith((".xlsx", ".xls")):
+        rows = _parse_xlsx(content)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported file type. Use .csv or .xlsx",
+        )
+
+    # Validate required columns up front so admins get one clear error
+    # instead of N per-row complaints.
+    if rows:
+        present = {_normalize(k) for k in rows[0].keys() if k}
+        missing = [c for c in REQUIRED_COLUMNS if c not in present]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Missing required columns: {', '.join(missing)}",
+            )
+
+    imported = 0
+    skipped = 0
+    errors: list[str] = []
+
+    for idx, raw in enumerate(rows, start=2):  # row 1 is header
+        row = {_normalize(k): v for k, v in raw.items() if k}
+
+        try:
+            date_part = _parse_date(row.get("date"))
+            start_t = _parse_time(row.get("start_time"))
+            end_t = _parse_time(row.get("end_time"))
+            scheduled_start = datetime.combine(date_part.date(), start_t)
+            scheduled_end = datetime.combine(date_part.date(), end_t)
+            if scheduled_end <= scheduled_start:
+                raise ValueError("end_time must be after start_time")
+
+            teacher, batch, subject, classroom = await _resolve_lookups(
+                session,
+                branch_id,
+                str(row.get("teacher_email", "")),
+                str(row.get("batch_code", "")),
+                str(row.get("subject_code", "")),
+                (str(row.get("classroom_code")) if row.get("classroom_code") else None),
+            )
+
+            # Default delivery mode is offline only when a classroom is
+            # supplied; otherwise online (no-room schedules are valid).
+            raw_mode = str(row.get("delivery_mode") or "").strip().lower()
+            delivery_mode = raw_mode or ("offline" if classroom else "online")
+
+            await lecture_service.schedule_lecture(
+                session,
+                LectureCreate(
+                    teacher_id=teacher.id,
+                    batch_id=batch.id,
+                    classroom_id=classroom.id if classroom else None,
+                    subject_id=subject.id,
+                    topic_id=None,
+                    scheduled_start=scheduled_start,
+                    scheduled_end=scheduled_end,
+                    delivery_mode=delivery_mode,
+                    notes=(str(row.get("notes")) if row.get("notes") else None),
+                ),
+                current_user_id,
+                ip_address,
+            )
+            imported += 1
+        except HTTPException as exc:
+            # Conflict, validation, etc. — surface the message but keep going.
+            skipped += 1
+            errors.append(f"Row {idx}: {exc.detail}")
+        except ValueError as exc:
+            skipped += 1
+            errors.append(f"Row {idx}: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            skipped += 1
+            errors.append(f"Row {idx}: {exc}")
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="IMPORT",
+        table_name="lectures",
+        record_id=uuid.uuid4(),
+        new_values={"imported": imported, "skipped": skipped},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+
+    return {"imported": imported, "skipped": skipped, "errors": errors}

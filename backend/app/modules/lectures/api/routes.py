@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
@@ -10,6 +10,7 @@ from app.modules.lectures.schemas.lecture_schemas import (
     AdherenceResponse,
     AttendanceMark,
     AttendanceResponse,
+    ImportScheduleSummary,
     LectureCreate,
     LectureNoShow,
     LectureReschedule,
@@ -20,7 +21,7 @@ from app.modules.lectures.schemas.lecture_schemas import (
     OutcomeResponse,
     RosterResponse,
 )
-from app.modules.lectures.services import lecture_service
+from app.modules.lectures.services import import_service, lecture_service
 
 router = APIRouter(prefix="/lectures", tags=["lectures"])
 
@@ -34,6 +35,31 @@ async def schedule_lecture(
 ):
     return await lecture_service.schedule_lecture(
         session, body, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.post("/import", response_model=ImportScheduleSummary)
+async def import_schedule(
+    request: Request,
+    file: UploadFile = File(...),
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "academic_head"])
+    ),
+    session: AsyncSession = Depends(get_db),
+):
+    """Bulk-schedule lectures from a CSV/Excel file. Required columns:
+    date, start_time, end_time, teacher_email, batch_code, subject_code.
+    Optional: classroom_code, delivery_mode, notes, topic.
+
+    Returns {imported, skipped, errors[]} so the UI can show per-row
+    failures without the whole upload being lost."""
+    return await import_service.import_schedule(
+        session,
+        file,
+        branch_id,
+        current_user["user_id"],
         request.client.host if request.client else None,
     )
 
