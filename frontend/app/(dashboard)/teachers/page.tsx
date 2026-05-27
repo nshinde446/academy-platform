@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   useTeachers,
+  useTeachersWithStats,
   useCreateTeacher,
   useUpdateTeacher,
   useDeleteTeacher,
@@ -15,6 +16,7 @@ import type {
   TeacherCreate,
   TeacherResponse,
   TeacherUpdate,
+  TeacherWithStats,
 } from "./_schemas/teacher";
 import { TeacherTable } from "./_components/teacher-table";
 import { TeacherEmptyState } from "./_components/teacher-empty-state";
@@ -23,16 +25,16 @@ import { EditTeacherDialog } from "./_components/edit-teacher-dialog";
 import { ImportTeachersDialog } from "./_components/import-teachers-dialog";
 
 function filterTeachers(
-  teachers: TeacherResponse[],
+  rows: TeacherWithStats[],
   query: string
-): TeacherResponse[] {
-  if (!query) return teachers;
+): TeacherWithStats[] {
+  if (!query) return rows;
   const q = query.toLowerCase();
-  return teachers.filter(
+  return rows.filter(
     (t) =>
       `${t.first_name} ${t.last_name}`.toLowerCase().includes(q) ||
-      t.email?.toLowerCase().includes(q) ||
-      t.qualification?.toLowerCase().includes(q)
+      t.qualification?.toLowerCase().includes(q) ||
+      t.subject_name?.toLowerCase().includes(q),
   );
 }
 
@@ -50,13 +52,20 @@ export default function TeachersPage() {
   );
 
   const teachersQuery = useTeachers(branchId);
+  const statsQuery = useTeachersWithStats(branchId);
   const createMutation = useCreateTeacher(branchId);
   const updateMutation = useUpdateTeacher(branchId);
   const deleteMutation = useDeleteTeacher(branchId);
 
+  const teachersById = useMemo(() => {
+    const map: Record<string, TeacherResponse> = {};
+    for (const t of teachersQuery.data ?? []) map[t.id] = t;
+    return map;
+  }, [teachersQuery.data]);
+
   const filtered = useMemo(
-    () => filterTeachers(teachersQuery.data ?? [], debouncedSearch),
-    [teachersQuery.data, debouncedSearch]
+    () => filterTeachers(statsQuery.data ?? [], debouncedSearch),
+    [statsQuery.data, debouncedSearch]
   );
 
   async function handleCreate(data: Omit<TeacherCreate, "branch_id">) {
@@ -116,9 +125,9 @@ export default function TeachersPage() {
       </div>
 
       {/* Content */}
-      {teachersQuery.isLoading ? (
+      {statsQuery.isLoading || teachersQuery.isLoading ? (
         <p className="text-muted-foreground text-sm">Loading teachers...</p>
-      ) : teachersQuery.isError ? (
+      ) : statsQuery.isError || teachersQuery.isError ? (
         <p className="text-destructive text-sm">
           Failed to load teachers. Make sure the backend is running.
         </p>
@@ -126,7 +135,8 @@ export default function TeachersPage() {
         <TeacherEmptyState hasSearch={!!debouncedSearch} />
       ) : (
         <TeacherTable
-          teachers={filtered}
+          rows={filtered}
+          teachersById={teachersById}
           onEdit={handleEdit}
           onDelete={handleDeleteClick}
         />

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   useStudents,
+  useStudentsWithStats,
   useCreateStudent,
   useUpdateStudent,
   useDeleteStudent,
@@ -16,6 +17,7 @@ import type {
   StudentCreate,
   StudentResponse,
   StudentUpdate,
+  StudentWithStats,
 } from "./_schemas/student";
 import { StudentTable } from "./_components/student-table";
 import { StudentEmptyState } from "./_components/student-empty-state";
@@ -24,16 +26,15 @@ import { EditStudentDialog } from "./_components/edit-student-dialog";
 import { ImportStudentsDialog } from "./_components/import-students-dialog";
 
 function filterStudents(
-  students: StudentResponse[],
+  rows: StudentWithStats[],
   query: string
-): StudentResponse[] {
-  if (!query) return students;
+): StudentWithStats[] {
+  if (!query) return rows;
   const q = query.toLowerCase();
-  return students.filter(
+  return rows.filter(
     (s) =>
       `${s.first_name} ${s.last_name}`.toLowerCase().includes(q) ||
-      s.enrollment_number?.toLowerCase().includes(q) ||
-      s.email?.toLowerCase().includes(q)
+      s.enrollment_number?.toLowerCase().includes(q),
   );
 }
 
@@ -51,14 +52,21 @@ export default function StudentsPage() {
   );
 
   const studentsQuery = useStudents(branchId);
+  const statsQuery = useStudentsWithStats(branchId);
   const academicYearsQuery = useAcademicYears(branchId);
   const createMutation = useCreateStudent(branchId);
   const updateMutation = useUpdateStudent(branchId);
   const deleteMutation = useDeleteStudent(branchId);
 
+  const studentsById = useMemo(() => {
+    const map: Record<string, StudentResponse> = {};
+    for (const s of studentsQuery.data ?? []) map[s.id] = s;
+    return map;
+  }, [studentsQuery.data]);
+
   const filtered = useMemo(
-    () => filterStudents(studentsQuery.data ?? [], debouncedSearch),
-    [studentsQuery.data, debouncedSearch]
+    () => filterStudents(statsQuery.data ?? [], debouncedSearch),
+    [statsQuery.data, debouncedSearch]
   );
 
   async function handleCreate(data: Omit<StudentCreate, "branch_id">) {
@@ -119,9 +127,9 @@ export default function StudentsPage() {
       </div>
 
       {/* Content */}
-      {studentsQuery.isLoading ? (
+      {statsQuery.isLoading || studentsQuery.isLoading ? (
         <p className="text-muted-foreground text-sm">Loading students...</p>
-      ) : studentsQuery.isError ? (
+      ) : statsQuery.isError || studentsQuery.isError ? (
         <p className="text-destructive text-sm">
           Failed to load students. Make sure the backend is running.
         </p>
@@ -129,7 +137,8 @@ export default function StudentsPage() {
         <StudentEmptyState hasSearch={!!debouncedSearch} />
       ) : (
         <StudentTable
-          students={filtered}
+          rows={filtered}
+          studentsById={studentsById}
           onEdit={handleEdit}
           onDelete={handleDeleteClick}
         />

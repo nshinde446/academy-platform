@@ -13,6 +13,8 @@ export const TARGET_EXAMS = [
 ] as const;
 export type TargetExam = (typeof TARGET_EXAMS)[number];
 
+export type FeesStatus = "paid" | "due" | "overdue" | "partial";
+
 export interface StudentResponse {
   id: string;
   branch_id: string;
@@ -32,7 +34,28 @@ export interface StudentResponse {
   course_id: string | null;
   standard: Standard | null;
   target_exam: TargetExam | null;
+  fees_status: FeesStatus | null;
   status: string;
+}
+
+// Computed-stats row from GET /students/with-stats. Powers the
+// MSA_Design roster table — only the columns the table needs.
+export interface StudentWithStats {
+  id: string;
+  first_name: string;
+  last_name: string;
+  enrollment_number: string | null;
+  standard: Standard | null;
+  target_exam: TargetExam | null;
+  batch_id: string | null;
+  batch_name: string | null;
+  fees_status: FeesStatus | null;
+  avg_score_pct: number;
+  attendance_pct: number;
+  dpp_completion_pct: number;
+  batch_rank: number | null;
+  batch_size: number;
+  tests_taken: number;
 }
 
 export interface StudentCreate {
@@ -53,6 +76,7 @@ export interface StudentCreate {
   caste?: string | null;
   username?: string | null;
   course_id?: string | null;
+  fees_status?: FeesStatus | null;
 }
 
 export interface StudentUpdate {
@@ -71,6 +95,7 @@ export interface StudentUpdate {
   course_id?: string | null;
   standard?: Standard | null;
   target_exam?: TargetExam | null;
+  fees_status?: FeesStatus | null;
 }
 
 export interface AcademicYearResponse {

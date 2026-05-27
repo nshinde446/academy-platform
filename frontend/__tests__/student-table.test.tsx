@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StudentTable } from "@/app/(dashboard)/students/_components/student-table";
-import type { StudentResponse } from "@/app/(dashboard)/students/_schemas/student";
+import type {
+  StudentResponse,
+  StudentWithStats,
+} from "@/app/(dashboard)/students/_schemas/student";
 
 const mockEdit = vi.fn();
 const mockDelete = vi.fn();
@@ -11,8 +14,45 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-const MOCK_STUDENTS: StudentResponse[] = [
+const ROWS: StudentWithStats[] = [
   {
+    id: "s1",
+    first_name: "Rahul",
+    last_name: "Sharma",
+    enrollment_number: "ROLL-001",
+    standard: "11",
+    target_exam: "NEET",
+    batch_id: "b1",
+    batch_name: "NEET 2025-A",
+    fees_status: "paid",
+    avg_score_pct: 82,
+    attendance_pct: 95,
+    dpp_completion_pct: 80,
+    batch_rank: 1,
+    batch_size: 4,
+    tests_taken: 3,
+  },
+  {
+    id: "s2",
+    first_name: "Priya",
+    last_name: "Patel",
+    enrollment_number: null,
+    standard: null,
+    target_exam: null,
+    batch_id: null,
+    batch_name: null,
+    fees_status: "overdue",
+    avg_score_pct: 45,
+    attendance_pct: 0,
+    dpp_completion_pct: 0,
+    batch_rank: null,
+    batch_size: 0,
+    tests_taken: 0,
+  },
+];
+
+const STUDENTS: Record<string, StudentResponse> = {
+  s1: {
     id: "s1",
     branch_id: "b1",
     academic_year_id: "ay1",
@@ -29,11 +69,12 @@ const MOCK_STUDENTS: StudentResponse[] = [
     caste: null,
     username: null,
     course_id: null,
-    standard: null,
-    target_exam: null,
+    standard: "11",
+    target_exam: "NEET",
+    fees_status: "paid",
     status: "active",
   },
-  {
+  s2: {
     id: "s2",
     branch_id: "b1",
     academic_year_id: "ay1",
@@ -52,117 +93,80 @@ const MOCK_STUDENTS: StudentResponse[] = [
     course_id: null,
     standard: null,
     target_exam: null,
+    fees_status: "overdue",
     status: "inactive",
   },
-];
+};
 
-describe("StudentTable", () => {
-  it("renders table headers including Roll No, Gender, Parent Mobile, RFID", () => {
+describe("StudentTable (MSA_Design layout)", () => {
+  it("renders the new analytics headers (Rank, Avg score, Attendance, DPP, Fees)", () => {
     render(
-      <StudentTable students={[]} onEdit={mockEdit} onDelete={mockDelete} />
+      <StudentTable
+        rows={[]}
+        studentsById={{}}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
+      />,
     );
 
     expect(screen.getByText("Name")).toBeInTheDocument();
-    expect(screen.getByText("Roll No")).toBeInTheDocument();
-    expect(screen.getByText("Gender")).toBeInTheDocument();
-    expect(screen.getByText("Email")).toBeInTheDocument();
-    expect(screen.getByText("Phone")).toBeInTheDocument();
-    expect(screen.getByText("Parent Mobile")).toBeInTheDocument();
-    expect(screen.getByText("RFID")).toBeInTheDocument();
-    expect(screen.getByText("Status")).toBeInTheDocument();
+    expect(screen.getByText("Rank")).toBeInTheDocument();
+    expect(screen.getByText("Avg score")).toBeInTheDocument();
+    expect(screen.getByText("Attendance")).toBeInTheDocument();
+    expect(screen.getByText("DPP")).toBeInTheDocument();
+    expect(screen.getByText("Fees")).toBeInTheDocument();
   });
 
-  it("no longer renders the old 'Enrollment No.' header", () => {
-    render(
-      <StudentTable students={[]} onEdit={mockEdit} onDelete={mockDelete} />
-    );
-    expect(screen.queryByText("Enrollment No.")).not.toBeInTheDocument();
-  });
-
-  it("renders student rows with all data including gender, parent_mobile and rfid_number", () => {
+  it("renders student rows with batch, rank, score, attendance, and fees badge", () => {
     render(
       <StudentTable
-        students={MOCK_STUDENTS}
+        rows={ROWS}
+        studentsById={STUDENTS}
         onEdit={mockEdit}
         onDelete={mockDelete}
-      />
+      />,
     );
 
     expect(screen.getByText("Rahul Sharma")).toBeInTheDocument();
     expect(screen.getByText("ROLL-001")).toBeInTheDocument();
-    expect(screen.getByText("M")).toBeInTheDocument();
-    expect(screen.getByText("rahul@example.com")).toBeInTheDocument();
-    expect(screen.getByText("9876543210")).toBeInTheDocument();
-    expect(screen.getByText("9123456789")).toBeInTheDocument();
-    expect(screen.getByText("RFID-AAA-001")).toBeInTheDocument();
-    expect(screen.getByText("active")).toBeInTheDocument();
+    expect(screen.getByText("NEET 2025-A")).toBeInTheDocument();
+    expect(screen.getByText("#1")).toBeInTheDocument();
+    expect(screen.getByText("82%")).toBeInTheDocument();
+    expect(screen.getByText("95%")).toBeInTheDocument();
+    expect(screen.getByText("Paid")).toBeInTheDocument();
+    expect(screen.getByText("Overdue")).toBeInTheDocument();
   });
 
-  it("renders dashes for null optional fields", () => {
-    render(
-      <StudentTable
-        students={MOCK_STUDENTS}
-        onEdit={mockEdit}
-        onDelete={mockDelete}
-      />
-    );
-
-    // Priya has 6 null displayed fields (enrollment, gender, email, phone, parent_mobile, rfid)
-    const dashes = screen.getAllByText("—");
-    expect(dashes.length).toBeGreaterThanOrEqual(6);
-  });
-
-  it("renders empty state when no students", () => {
-    const { container } = render(
-      <StudentTable students={[]} onEdit={mockEdit} onDelete={mockDelete} />
-    );
-    const rows = container.querySelectorAll("tbody tr");
-    expect(rows).toHaveLength(0);
-  });
-
-  it("renders correct status badge variant", () => {
-    render(
-      <StudentTable
-        students={MOCK_STUDENTS}
-        onEdit={mockEdit}
-        onDelete={mockDelete}
-      />
-    );
-
-    expect(screen.getByText("active")).toBeInTheDocument();
-    expect(screen.getByText("inactive")).toBeInTheDocument();
-  });
-
-  it("invokes onEdit with the row's student", async () => {
+  it("invokes onEdit with the resolved StudentResponse for the row", async () => {
     const user = userEvent.setup();
     render(
       <StudentTable
-        students={MOCK_STUDENTS}
+        rows={ROWS}
+        studentsById={STUDENTS}
         onEdit={mockEdit}
         onDelete={mockDelete}
-      />
+      />,
     );
 
     const editButtons = screen.getAllByRole("button", { name: /^edit$/i });
     await user.click(editButtons[0]);
-
-    expect(mockEdit).toHaveBeenCalledWith(MOCK_STUDENTS[0]);
+    expect(mockEdit).toHaveBeenCalledWith(STUDENTS.s1);
   });
 
-  it("invokes onDelete with the row's student", async () => {
+  it("invokes onDelete with the resolved StudentResponse for the row", async () => {
     const user = userEvent.setup();
     render(
       <StudentTable
-        students={MOCK_STUDENTS}
+        rows={ROWS}
+        studentsById={STUDENTS}
         onEdit={mockEdit}
         onDelete={mockDelete}
-      />
+      />,
     );
 
     await user.click(
-      screen.getByRole("button", { name: /delete rahul sharma/i })
+      screen.getByRole("button", { name: /delete rahul sharma/i }),
     );
-
-    expect(mockDelete).toHaveBeenCalledWith(MOCK_STUDENTS[0]);
+    expect(mockDelete).toHaveBeenCalledWith(STUDENTS.s1);
   });
 });

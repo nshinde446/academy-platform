@@ -25,6 +25,7 @@ const EMPTY_FORM = {
   email: "",
   phone: "",
   qualification: "",
+  years_experience: "",
 };
 
 export function CreateTeacherDialog({
@@ -47,12 +48,14 @@ export function CreateTeacherDialog({
       return;
     }
     try {
+      const years = form.years_experience.trim();
       await onSubmit({
         first_name: form.first_name,
         last_name: form.last_name,
         email: form.email || undefined,
         phone: form.phone || undefined,
         qualification: form.qualification || undefined,
+        years_experience: years === "" ? undefined : Number(years),
       });
       reset();
       setOpen(false);
@@ -120,16 +123,32 @@ export function CreateTeacherDialog({
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="t_qualification">Qualification</Label>
-            <Input
-              id="t_qualification"
-              value={form.qualification}
-              onChange={(e) =>
-                setForm({ ...form, qualification: e.target.value })
-              }
-              placeholder="e.g. M.Sc Physics, B.Ed"
-            />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="t_qualification">Qualification</Label>
+              <Input
+                id="t_qualification"
+                value={form.qualification}
+                onChange={(e) =>
+                  setForm({ ...form, qualification: e.target.value })
+                }
+                placeholder="e.g. M.Sc Physics, B.Ed"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="t_years">Years experience</Label>
+              <Input
+                id="t_years"
+                type="number"
+                min={0}
+                max={60}
+                value={form.years_experience}
+                onChange={(e) =>
+                  setForm({ ...form, years_experience: e.target.value })
+                }
+                placeholder="e.g. 5"
+              />
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

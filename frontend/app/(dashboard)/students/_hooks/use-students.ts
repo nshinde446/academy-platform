@@ -4,12 +4,15 @@ import type {
   StudentResponse,
   StudentCreate,
   StudentUpdate,
+  StudentWithStats,
   AcademicYearResponse,
 } from "../_schemas/student";
 
 export const studentKeys = {
   all: ["students"] as const,
   list: (branchId: string) => [...studentKeys.all, "list", branchId] as const,
+  withStats: (branchId: string) =>
+    [...studentKeys.all, "with-stats", branchId] as const,
   detail: (branchId: string, id: string) =>
     [...studentKeys.all, "detail", branchId, id] as const,
 };
@@ -27,6 +30,21 @@ export function useStudents(branchId: string | undefined) {
       const res = await apiClient.get<StudentResponse[]>(
         "/api/v1/students",
         { params: { branch_id: branchId, limit: 200 } }
+      );
+      return res.data;
+    },
+    enabled: !!branchId,
+  });
+}
+
+// Roster + per-student stats for the MSA_Design table layout.
+export function useStudentsWithStats(branchId: string | undefined) {
+  return useQuery<StudentWithStats[]>({
+    queryKey: studentKeys.withStats(branchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<StudentWithStats[]>(
+        "/api/v1/students/with-stats",
+        { params: { branch_id: branchId } }
       );
       return res.data;
     },
@@ -62,6 +80,9 @@ export function useCreateStudent(branchId: string | undefined) {
     onSuccess: () => {
       if (branchId) {
         queryClient.invalidateQueries({ queryKey: studentKeys.list(branchId) });
+        queryClient.invalidateQueries({
+          queryKey: studentKeys.withStats(branchId),
+        });
       }
     },
   });
@@ -88,6 +109,9 @@ export function useUpdateStudent(branchId: string | undefined) {
     onSuccess: () => {
       if (branchId) {
         queryClient.invalidateQueries({ queryKey: studentKeys.list(branchId) });
+        queryClient.invalidateQueries({
+          queryKey: studentKeys.withStats(branchId),
+        });
       }
     },
   });
@@ -105,6 +129,9 @@ export function useDeleteStudent(branchId: string | undefined) {
     onSuccess: () => {
       if (branchId) {
         queryClient.invalidateQueries({ queryKey: studentKeys.list(branchId) });
+        queryClient.invalidateQueries({
+          queryKey: studentKeys.withStats(branchId),
+        });
       }
     },
   });

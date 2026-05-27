@@ -9,6 +9,7 @@ export interface TeacherResponse {
   email: string | null;
   phone: string | null;
   qualification: string | null;
+  years_experience: number | null;
   status: string;
 }
 
@@ -19,6 +20,7 @@ export interface TeacherCreate {
   email?: string | null;
   phone?: string | null;
   qualification?: string | null;
+  years_experience?: number | null;
 }
 
 export interface TeacherUpdate {
@@ -27,6 +29,23 @@ export interface TeacherUpdate {
   email?: string | null;
   phone?: string | null;
   qualification?: string | null;
+  years_experience?: number | null;
+}
+
+// Computed-stats row from GET /teachers/with-stats. Powers the
+// MSA_Design teachers roster (Years, Subject, Lectures (30d), Sub
+// rate, Avg outcome).
+export interface TeacherWithStats {
+  id: string;
+  first_name: string;
+  last_name: string;
+  qualification: string | null;
+  years_experience: number | null;
+  subject_id: string | null;
+  subject_name: string | null;
+  lectures_30d: number;
+  sub_rate_pct: number;
+  avg_outcome_delta_pp: number | null;
 }
 
 export interface ImportSummary {

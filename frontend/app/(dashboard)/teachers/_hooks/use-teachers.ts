@@ -4,11 +4,14 @@ import type {
   TeacherResponse,
   TeacherCreate,
   TeacherUpdate,
+  TeacherWithStats,
 } from "../_schemas/teacher";
 
 export const teacherKeys = {
   all: ["teachers"] as const,
   list: (branchId: string) => [...teacherKeys.all, "list", branchId] as const,
+  withStats: (branchId: string) =>
+    [...teacherKeys.all, "with-stats", branchId] as const,
   detail: (branchId: string, id: string) =>
     [...teacherKeys.all, "detail", branchId, id] as const,
 };
@@ -20,6 +23,22 @@ export function useTeachers(branchId: string | undefined) {
       const res = await apiClient.get<TeacherResponse[]>("/api/v1/teachers", {
         params: { branch_id: branchId, limit: 200 },
       });
+      return res.data;
+    },
+    enabled: !!branchId,
+  });
+}
+
+// Roster + per-teacher adherence + outcome metrics for the MSA_Design
+// teachers table.
+export function useTeachersWithStats(branchId: string | undefined) {
+  return useQuery<TeacherWithStats[]>({
+    queryKey: teacherKeys.withStats(branchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<TeacherWithStats[]>(
+        "/api/v1/teachers/with-stats",
+        { params: { branch_id: branchId } }
+      );
       return res.data;
     },
     enabled: !!branchId,
@@ -39,6 +58,9 @@ export function useCreateTeacher(branchId: string | undefined) {
     onSuccess: () => {
       if (branchId) {
         queryClient.invalidateQueries({ queryKey: teacherKeys.list(branchId) });
+        queryClient.invalidateQueries({
+          queryKey: teacherKeys.withStats(branchId),
+        });
       }
     },
   });
@@ -64,6 +86,9 @@ export function useUpdateTeacher(branchId: string | undefined) {
     onSuccess: () => {
       if (branchId) {
         queryClient.invalidateQueries({ queryKey: teacherKeys.list(branchId) });
+        queryClient.invalidateQueries({
+          queryKey: teacherKeys.withStats(branchId),
+        });
       }
     },
   });
@@ -80,6 +105,9 @@ export function useDeleteTeacher(branchId: string | undefined) {
     onSuccess: () => {
       if (branchId) {
         queryClient.invalidateQueries({ queryKey: teacherKeys.list(branchId) });
+        queryClient.invalidateQueries({
+          queryKey: teacherKeys.withStats(branchId),
+        });
       }
     },
   });
