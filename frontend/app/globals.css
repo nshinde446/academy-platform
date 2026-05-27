@@ -28,6 +28,8 @@
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-primary-tint: var(--primary-tint);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -56,8 +58,12 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  /* MSA navy. Primary fill on buttons, sidebar accents, and badge
+     borders all derive from this single hue. */
+  --primary: oklch(0.32 0.12 264);
   --primary-foreground: oklch(0.985 0 0);
+  --primary-tint: oklch(0.32 0.12 264 / 0.08);
+  --primary-tint-strong: oklch(0.32 0.12 264 / 0.14);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -66,6 +72,7 @@
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --success: oklch(0.55 0.13 152);
+  --warning: oklch(0.68 0.14 75);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -92,8 +99,10 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: oklch(0.6 0.13 264);
+  --primary-foreground: oklch(0.985 0 0);
+  --primary-tint: oklch(0.6 0.13 264 / 0.14);
+  --primary-tint-strong: oklch(0.6 0.13 264 / 0.22);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -102,6 +111,7 @@
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --success: oklch(0.7 0.15 152);
+  --warning: oklch(0.78 0.14 75);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
