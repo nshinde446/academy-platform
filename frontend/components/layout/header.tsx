@@ -14,6 +14,7 @@ const PATH_LABELS: Record<string, string> = {
   lectures: "Lectures",
   insights: "Insights",
   "question-bank": "Question Bank",
+  materials: "Materials",
   courses: "Courses",
   batches: "Batches",
   classrooms: "Classrooms",
@@ -34,6 +35,10 @@ export function Header() {
   // mismatch, tiny single-frame delay.
   const [todayDate, setTodayDate] = useState("");
   useEffect(() => {
+    // Deliberate hydration-deferral: server doesn't know the browser locale,
+    // so we render "" on the server and fill in after mount. Disable the
+    // set-state-in-effect lint — this *is* the pattern.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTodayDate(
       new Date().toLocaleDateString(undefined, {
         weekday: "long",

@@ -141,7 +141,10 @@ async def create_subject(
 @router.get("/subjects", response_model=list[SubjectResponse])
 async def list_subjects(
     branch_id: uuid.UUID = Query(...),
-    course_id: uuid.UUID = Query(...),
+    # course_id is optional — when omitted, returns every subject in the
+    # branch. Callers like the Materials upload form want the full pool
+    # without choosing a course first.
+    course_id: uuid.UUID | None = Query(None),
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):

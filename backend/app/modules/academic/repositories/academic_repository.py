@@ -156,14 +156,15 @@ async def get_subject(session: AsyncSession, subject_id: uuid.UUID) -> Subject |
     return result.scalar_one_or_none()
 
 
-async def list_subjects(session: AsyncSession, branch_id: uuid.UUID, course_id: uuid.UUID) -> list[Subject]:
-    result = await session.execute(
-        select(Subject).where(
-            Subject.branch_id == branch_id,
-            Subject.course_id == course_id,
-            Subject.is_deleted == False,
-        )
-    )
+async def list_subjects(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    course_id: uuid.UUID | None = None,
+) -> list[Subject]:
+    clauses = [Subject.branch_id == branch_id, Subject.is_deleted == False]
+    if course_id is not None:
+        clauses.append(Subject.course_id == course_id)
+    result = await session.execute(select(Subject).where(*clauses))
     return list(result.scalars().all())
 
 
