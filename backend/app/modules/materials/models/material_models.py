@@ -46,6 +46,9 @@ class Material(BaseModel):
         String(20), nullable=False, default="uploaded", server_default="uploaded"
     )
     ingest_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Progress counters for the UI bar while extracting. Null = no run yet.
+    ingest_pages_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ingest_pages_done: Mapped[int | None] = mapped_column(Integer, nullable=True)
     question_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )

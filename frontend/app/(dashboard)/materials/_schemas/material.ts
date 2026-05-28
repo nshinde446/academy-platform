@@ -69,6 +69,8 @@ export interface MaterialResponse {
   description: string | null;
   ingest_status: IngestStatus;
   ingest_error: string | null;
+  ingest_pages_total: number | null;
+  ingest_pages_done: number | null;
   question_count: number;
   branch_id: string;
   created_at: string;

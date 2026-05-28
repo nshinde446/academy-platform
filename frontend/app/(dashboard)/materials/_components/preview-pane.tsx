@@ -22,6 +22,40 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function IngestProgress({
+  done,
+  total,
+}: {
+  done: number | null;
+  total: number | null;
+}) {
+  // Before the page count is published, show an indeterminate state.
+  const hasCounts = typeof total === "number" && total > 0;
+  const pct = hasCounts ? Math.round(((done ?? 0) / total!) * 100) : 0;
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border border-warning/30 bg-[color-mix(in_oklch,var(--warning)_8%,white)] px-2.5 py-2">
+      <div className="flex items-center justify-between text-[12px]">
+        <span className="font-medium text-[oklch(0.42_0.13_75)]">
+          Extracting questions…
+        </span>
+        <span className="tabular-nums text-muted-foreground">
+          {hasCounts ? `page ${done ?? 0} / ${total} · ${pct}%` : "starting…"}
+        </span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full rounded-full bg-[var(--warning)] transition-all duration-500 ${
+            hasCounts ? "" : "animate-pulse w-1/3"
+          }`}
+          style={hasCounts ? { width: `${pct}%` } : undefined}
+        />
+      </div>
+    </div>
+  );
+}
+
+
 function ingestBadgeTone(status: string) {
   switch (status) {
     case "ingested":
@@ -109,6 +143,13 @@ export function MaterialPreviewPane({
         <p className="rounded-md bg-muted/40 px-2.5 py-2 text-[12px] text-muted-foreground">
           {material.description}
         </p>
+      )}
+
+      {material.ingest_status === "ingesting" && (
+        <IngestProgress
+          done={material.ingest_pages_done}
+          total={material.ingest_pages_total}
+        />
       )}
 
       {material.ingest_error && (

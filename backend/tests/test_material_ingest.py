@@ -146,6 +146,9 @@ class TestMaterialIngest:
         assert refreshed.ingest_status == "ingested"
         assert refreshed.question_count == 3
         assert refreshed.ingest_error is None
+        # Progress counters reached completion (2 fake pages).
+        assert refreshed.ingest_pages_total == 2
+        assert refreshed.ingest_pages_done == 2
 
     @pytest.mark.usefixtures("seed_data")
     async def test_reingest_is_idempotent(self, db_session, seed_data, monkeypatch):

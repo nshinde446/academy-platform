@@ -195,6 +195,12 @@ async def extract_and_store(
                 )).all()
             }
 
+            # Publish total + reset done so the UI bar can render. Commit
+            # so a polling request in another session sees it immediately.
+            material.ingest_pages_total = len(pages)
+            material.ingest_pages_done = 0
+            await session.commit()
+
             inserted = 0
             for page_idx, png in enumerate(pages, start=1):
                 rows = await asyncio.to_thread(_gemini_extract_page, client, png)
@@ -240,10 +246,12 @@ async def extract_and_store(
                     ))
                     inserted += 1
 
-            # Flush so the count query sees the freshly-added rows, then
-            # count straight from the DB (no manual add — autoflush would
-            # otherwise double-count).
-            await session.flush()
+                # Commit progress (and this page's questions) so the UI
+                # bar advances live via polling. Partial results survive
+                # a mid-run crash; re-ingest is idempotent on source_ref.
+                material.ingest_pages_done = page_idx
+                await session.commit()
+
             total = await _count_questions(session, material.id)
             await _mark(session, material, status="ingested", error=None, count=total)
             return {"ok": True, "inserted": inserted, "pages": len(pages), "total": total}

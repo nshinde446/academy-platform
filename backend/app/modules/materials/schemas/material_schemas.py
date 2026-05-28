@@ -69,6 +69,8 @@ class MaterialResponse(PydanticBaseModel):
     description: str | None
     ingest_status: IngestStatus
     ingest_error: str | None
+    ingest_pages_total: int | None
+    ingest_pages_done: int | None
     question_count: int
     branch_id: uuid.UUID
     created_at: datetime
