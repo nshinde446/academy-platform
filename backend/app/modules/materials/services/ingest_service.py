@@ -35,6 +35,7 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config.settings import get_settings
 from app.core.database.session import async_session_factory
 from app.core.storage import get_storage_backend
 from app.modules.materials.models.material_models import Material
@@ -179,9 +180,16 @@ async def extract_and_store(
             )
             return {"ok": True, "skipped": "non-extractable category", "inserted": 0}
 
+        # Cap pages to bound Gemini cost. Explicit max_pages (e.g. a
+        # smoke test) wins; otherwise use the configured safety cap.
+        effective_max = (
+            max_pages if max_pages is not None
+            else get_settings().MATERIALS_INGEST_MAX_PAGES
+        )
+
         try:
             data = await asyncio.to_thread(storage.read, material.storage_key)
-            pages = await asyncio.to_thread(_render_pdf_pages, data, max_pages)
+            pages = await asyncio.to_thread(_render_pdf_pages, data, effective_max)
 
             client = _get_gemini_client()
 

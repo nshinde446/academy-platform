@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     ATTENDANCE_GRACE_PERIOD_MINUTES: int = 10
     ATTENDANCE_DUPLICATE_WINDOW_MINUTES: int = 5
 
+    # Safety cap on Materials ingest — at most this many PDF pages get
+    # sent to Gemini Vision per ingest, bounding worst-case API cost if
+    # someone uploads a huge document. Most coaching PDFs are well under
+    # this. Raise if you legitimately ingest larger files.
+    MATERIALS_INGEST_MAX_PAGES: int = 100
+
 
 @lru_cache
 def get_settings() -> Settings:
