@@ -326,10 +326,17 @@ async def start_ingest(
         ip_address=ip_address,
         branch_id=branch_id,
     )
-    # The UPDATE above fires server-side onupdate=now() on updated_at,
-    # which SQLAlchemy expires after flush. Refresh in-context so
-    # FastAPI's response serialization reads loaded attributes instead
-    # of triggering a lazy load outside the async greenlet (which raises
-    # MissingGreenlet during serialization).
+    # Commit the "ingesting" flip durably HERE rather than relying on the
+    # request-teardown commit in get_db. On prod that post-response commit
+    # was silently not persisting (200 returned, but the row stayed
+    # "uploaded" and the background task never saw the new state) — likely
+    # a BackgroundTask/teardown ordering interaction. An explicit commit
+    # guarantees the status is saved before the response returns and
+    # before extract_and_store runs in the background.
+    await session.commit()
+    # The UPDATE fired server-side onupdate=now() on updated_at, which the
+    # flush expired; refresh reloads it so FastAPI's response serialization
+    # reads loaded attributes instead of lazy-loading outside the async
+    # greenlet (MissingGreenlet).
     await session.refresh(m)
     return m

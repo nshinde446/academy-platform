@@ -243,6 +243,20 @@ class TestMaterialsAPI:
         assert body["ingest_status"] == "ingesting"
         assert body["updated_at"]  # serialized cleanly, no MissingGreenlet
 
+        # Regression: the "ingesting" flip must be DURABLY committed, not
+        # just present in the response body. On prod the response said
+        # "ingesting" (200) but the row stayed "uploaded" because the flip
+        # relied on the request-teardown commit. Verify via a fresh session.
+        import uuid as _uuid
+        from tests.conftest import TestSessionLocal
+        from app.modules.materials.models.material_models import Material
+        from sqlalchemy import select
+        async with TestSessionLocal() as vs:
+            row = (await vs.execute(
+                select(Material).where(Material.id == _uuid.UUID(material_id))
+            )).scalar_one()
+            assert row.ingest_status == "ingesting"
+
         backend_mod._default_backend = None
 
     @pytest.mark.usefixtures("seed_data")
