@@ -58,6 +58,10 @@ async def list_questions(
         description="Filter by Question.source prefix (e.g. 'studymat:')",
     ),
     search: str | None = Query(None, description="ILIKE on question content"),
+    material_id: uuid.UUID | None = Query(None),
+    class_label: str | None = Query(None, description="Via the source material"),
+    topic: str | None = Query(None, description="Via the source material"),
+    exam_type: str | None = Query(None, description="e.g. neet, jee_main (Postgres)"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])),
@@ -72,6 +76,10 @@ async def list_questions(
         review_status=review_status,
         source_prefix=source_prefix,
         search=search,
+        material_id=material_id,
+        class_label=class_label,
+        topic=topic,
+        exam_type=exam_type,
         offset=offset,
         limit=limit,
     )
@@ -87,6 +95,10 @@ async def count_questions(
     review_status: str | None = Query(None),
     source_prefix: str | None = Query(None),
     search: str | None = Query(None),
+    material_id: uuid.UUID | None = Query(None),
+    class_label: str | None = Query(None),
+    topic: str | None = Query(None),
+    exam_type: str | None = Query(None),
     current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])),
     session: AsyncSession = Depends(get_db),
 ):
@@ -100,6 +112,10 @@ async def count_questions(
         review_status=review_status,
         source_prefix=source_prefix,
         search=search,
+        material_id=material_id,
+        class_label=class_label,
+        topic=topic,
+        exam_type=exam_type,
     )
     return {"count": n}
 

@@ -10,6 +10,7 @@ import {
   useBulkReject,
   useQuestionCount,
   useQuestionList,
+  useSubjectOptions,
   useUpdateQuestion,
 } from "./_hooks/use-question-bank";
 import { EditQuestionDialog } from "./_components/edit-question-dialog";
@@ -26,6 +27,9 @@ const DEFAULT_FILTERS: QBFilters = {
   review_status: "pending_review",
   difficulty: "",
   source_prefix: "",
+  class_label: "",
+  subject_id: "",
+  exam_type: "",
 };
 
 export default function QuestionBankPage() {
@@ -48,12 +52,16 @@ export default function QuestionBankPage() {
       review_status: filters.review_status || undefined,
       difficulty: filters.difficulty || undefined,
       source_prefix: filters.source_prefix || undefined,
+      class_label: filters.class_label || undefined,
+      subject_id: filters.subject_id || undefined,
+      exam_type: filters.exam_type || undefined,
       search: search || undefined,
     }),
     [filters, search],
   );
 
   const listQuery = useQuestionList(branchId, queryFilters);
+  const subjectsQuery = useSubjectOptions(branchId);
   const pendingCount = useQuestionCount(branchId, {
     review_status: "pending_review",
   });
@@ -207,6 +215,7 @@ export default function QuestionBankPage() {
               approved: approvedCount.data ?? 0,
               rejected: rejectedCount.data ?? 0,
             }}
+            subjects={subjectsQuery.data ?? []}
           />
         </div>
 

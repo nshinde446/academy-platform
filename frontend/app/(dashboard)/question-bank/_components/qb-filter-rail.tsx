@@ -11,12 +11,24 @@ export interface QBFilters {
   review_status: ReviewStatus | "";
   difficulty: "" | "EASY" | "MEDIUM" | "HARD";
   source_prefix: "" | "studymat:" | "HUMAN" | "AI-";
+  class_label: "" | "9" | "10" | "11" | "12" | "drop";
+  subject_id: string;
+  exam_type: "" | "neet" | "jee_main" | "jee_advanced" | "boards" | "cet";
 }
+
+const EXAM_TYPE_OPTIONS: { value: QBFilters["exam_type"]; label: string }[] = [
+  { value: "neet", label: "NEET" },
+  { value: "jee_main", label: "JEE Main" },
+  { value: "jee_advanced", label: "JEE Adv" },
+  { value: "boards", label: "Boards" },
+  { value: "cet", label: "CET" },
+];
 
 interface QBFilterRailProps {
   filters: QBFilters;
   onChange: (next: QBFilters) => void;
   counts: { pending: number; approved: number; rejected: number };
+  subjects: { id: string; name: string }[];
 }
 
 function RailItem({
@@ -53,6 +65,7 @@ export function QBFilterRail({
   filters,
   onChange,
   counts,
+  subjects,
 }: QBFilterRailProps) {
   function setStatus(v: QBFilters["review_status"]) {
     onChange({ ...filters, review_status: filters.review_status === v ? "" : v });
@@ -63,9 +76,63 @@ export function QBFilterRail({
   function setSource(v: QBFilters["source_prefix"]) {
     onChange({ ...filters, source_prefix: filters.source_prefix === v ? "" : v });
   }
+  function setClass(v: QBFilters["class_label"]) {
+    onChange({ ...filters, class_label: filters.class_label === v ? "" : v });
+  }
+  function setExam(v: QBFilters["exam_type"]) {
+    onChange({ ...filters, exam_type: filters.exam_type === v ? "" : v });
+  }
 
   return (
     <aside className="flex flex-col gap-5 rounded-xl border bg-card p-3">
+      <section className="flex flex-col gap-1.5">
+        <h3 className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Class
+        </h3>
+        {(["9", "10", "11", "12", "drop"] as const).map((c) => (
+          <RailItem
+            key={c}
+            label={c === "drop" ? "Drop year" : `Class ${c}`}
+            active={filters.class_label === c}
+            onClick={() => setClass(c)}
+          />
+        ))}
+      </section>
+
+      {subjects.length > 0 && (
+        <section className="flex flex-col gap-1.5">
+          <h3 className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Subject
+          </h3>
+          {subjects.map((s) => (
+            <RailItem
+              key={s.id}
+              label={s.name}
+              active={filters.subject_id === s.id}
+              onClick={() =>
+                onChange({
+                  ...filters,
+                  subject_id: filters.subject_id === s.id ? "" : s.id,
+                })
+              }
+            />
+          ))}
+        </section>
+      )}
+
+      <section className="flex flex-col gap-1.5">
+        <h3 className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Exam type
+        </h3>
+        {EXAM_TYPE_OPTIONS.map((e) => (
+          <RailItem
+            key={e.value}
+            label={e.label}
+            active={filters.exam_type === e.value}
+            onClick={() => setExam(e.value)}
+          />
+        ))}
+      </section>
       <section className="flex flex-col gap-1.5">
         <h3 className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Status

@@ -106,6 +106,10 @@ async def list_questions(
     review_status: str | None = None,
     source_prefix: str | None = None,
     search: str | None = None,
+    material_id: uuid.UUID | None = None,
+    class_label: str | None = None,
+    topic: str | None = None,
+    exam_type: str | None = None,
     offset: int = 0,
     limit: int = 50,
 ):
@@ -118,6 +122,10 @@ async def list_questions(
         review_status=review_status,
         source_prefix=source_prefix,
         search=search,
+        material_id=material_id,
+        class_label=class_label,
+        topic=topic,
+        exam_type=exam_type,
         offset=offset,
         limit=limit,
     )

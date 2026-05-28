@@ -13,6 +13,9 @@ export interface QuestionListFilters {
   search?: string;
   source_prefix?: string;
   subject_id?: string;
+  class_label?: string;
+  exam_type?: string;
+  material_id?: string;
 }
 
 export const questionKeys = {
@@ -33,7 +36,38 @@ function buildParams(branchId: string, filters: QuestionListFilters) {
   if (filters.search) params.search = filters.search;
   if (filters.source_prefix) params.source_prefix = filters.source_prefix;
   if (filters.subject_id) params.subject_id = filters.subject_id;
+  if (filters.class_label) params.class_label = filters.class_label;
+  if (filters.exam_type) params.exam_type = filters.exam_type;
+  if (filters.material_id) params.material_id = filters.material_id;
   return params;
+}
+
+export interface SubjectOption {
+  id: string;
+  name: string;
+}
+
+// Distinct-by-name subjects for the filter rail (the table can carry one
+// Subject row per course; the rail wants one entry per subject name).
+export function useSubjectOptions(branchId: string | undefined) {
+  return useQuery<SubjectOption[]>({
+    queryKey: ["question-bank", "subject-options", branchId],
+    queryFn: async () => {
+      const res = await apiClient.get<{ id: string; name: string }[]>(
+        "/api/v1/academic/subjects",
+        { params: { branch_id: branchId } },
+      );
+      const seen = new Set<string>();
+      const out: SubjectOption[] = [];
+      for (const s of res.data) {
+        if (seen.has(s.name)) continue;
+        seen.add(s.name);
+        out.push({ id: s.id, name: s.name });
+      }
+      return out;
+    },
+    enabled: !!branchId,
+  });
 }
 
 export function useQuestionList(

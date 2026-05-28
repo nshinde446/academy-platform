@@ -10,14 +10,18 @@ const DEFAULT: QBFilters = {
   review_status: "pending_review",
   difficulty: "",
   source_prefix: "",
+  class_label: "",
+  subject_id: "",
+  exam_type: "",
 };
 
 const COUNTS = { pending: 87, approved: 1604, rejected: 12 };
+const SUBJECTS = [{ id: "s1", name: "Physics" }];
 
 describe("QBFilterRail", () => {
   it("renders the three section headings", () => {
     render(
-      <QBFilterRail filters={DEFAULT} onChange={() => {}} counts={COUNTS} />,
+      <QBFilterRail filters={DEFAULT} onChange={() => {}} counts={COUNTS} subjects={SUBJECTS} />,
     );
     expect(screen.getByText("Status")).toBeInTheDocument();
     expect(screen.getByText("Difficulty")).toBeInTheDocument();
@@ -26,7 +30,7 @@ describe("QBFilterRail", () => {
 
   it("renders status counts next to each option", () => {
     render(
-      <QBFilterRail filters={DEFAULT} onChange={() => {}} counts={COUNTS} />,
+      <QBFilterRail filters={DEFAULT} onChange={() => {}} counts={COUNTS} subjects={SUBJECTS} />,
     );
     expect(screen.getByText("87")).toBeInTheDocument();
     expect(screen.getByText("1604")).toBeInTheDocument();
@@ -35,7 +39,7 @@ describe("QBFilterRail", () => {
 
   it("marks the active status with aria-pressed", () => {
     render(
-      <QBFilterRail filters={DEFAULT} onChange={() => {}} counts={COUNTS} />,
+      <QBFilterRail filters={DEFAULT} onChange={() => {}} counts={COUNTS} subjects={SUBJECTS} />,
     );
     expect(
       screen.getByRole("button", { name: /pending review/i }),
@@ -49,7 +53,7 @@ describe("QBFilterRail", () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(
-      <QBFilterRail filters={DEFAULT} onChange={onChange} counts={COUNTS} />,
+      <QBFilterRail filters={DEFAULT} onChange={onChange} counts={COUNTS} subjects={SUBJECTS} />,
     );
 
     await user.click(screen.getByRole("button", { name: /hard/i }));
@@ -67,6 +71,7 @@ describe("QBFilterRail", () => {
         filters={{ ...DEFAULT, difficulty: "EASY" }}
         onChange={onChange}
         counts={COUNTS}
+        subjects={SUBJECTS}
       />,
     );
 

@@ -29,16 +29,27 @@ async def get_question_by_id(session: AsyncSession, question_id: uuid.UUID) -> Q
     return result.scalar_one_or_none()
 
 
-def _question_filter_clauses(
+def _apply_question_filters(
+    stmt,
+    *,
+    is_postgres: bool,
     branch_id: uuid.UUID,
-    subject_id: uuid.UUID | None,
-    topic_id: uuid.UUID | None,
-    difficulty: str | None,
-    blooms_taxonomy: str | None,
-    review_status: str | None,
-    source_prefix: str | None,
-    search: str | None,
+    subject_id: uuid.UUID | None = None,
+    topic_id: uuid.UUID | None = None,
+    difficulty: str | None = None,
+    blooms_taxonomy: str | None = None,
+    review_status: str | None = None,
+    source_prefix: str | None = None,
+    search: str | None = None,
+    material_id: uuid.UUID | None = None,
+    class_label: str | None = None,
+    topic: str | None = None,
+    exam_type: str | None = None,
 ):
+    """Apply all question-bank filters to a select. Joins materials only
+    when a material-derived facet (class_label / topic) is requested."""
+    from app.modules.materials.models.material_models import Material
+
     clauses = [Question.branch_id == branch_id, Question.is_deleted == False]
     if subject_id:
         clauses.append(Question.subject_id == subject_id)
@@ -54,7 +65,26 @@ def _question_filter_clauses(
         clauses.append(Question.source.like(f"{source_prefix}%"))
     if search:
         clauses.append(Question.content.ilike(f"%{search}%"))
-    return clauses
+    if material_id:
+        clauses.append(Question.material_id == material_id)
+    # exam_types is a Postgres ARRAY (JSON on the SQLite test DB). The
+    # array-contains operator is PG-only; on SQLite we skip it rather
+    # than emit invalid SQL.
+    if exam_type and is_postgres:
+        clauses.append(Question.exam_types.any(exam_type))
+
+    if class_label or topic:
+        stmt = stmt.join(Material, Question.material_id == Material.id)
+        if class_label:
+            clauses.append(Material.class_label == class_label)
+        if topic:
+            clauses.append(Material.topic == topic)
+
+    return stmt.where(*clauses)
+
+
+def _is_pg(session: AsyncSession) -> bool:
+    return session.bind.dialect.name == "postgresql"
 
 
 async def list_questions(
@@ -67,21 +97,24 @@ async def list_questions(
     review_status: str | None = None,
     source_prefix: str | None = None,
     search: str | None = None,
+    material_id: uuid.UUID | None = None,
+    class_label: str | None = None,
+    topic: str | None = None,
+    exam_type: str | None = None,
     offset: int = 0,
     limit: int = 50,
 ) -> list[Question]:
-    clauses = _question_filter_clauses(
-        branch_id, subject_id, topic_id, difficulty, blooms_taxonomy,
-        review_status, source_prefix, search,
+    stmt = _apply_question_filters(
+        select(Question),
+        is_postgres=_is_pg(session),
+        branch_id=branch_id, subject_id=subject_id, topic_id=topic_id,
+        difficulty=difficulty, blooms_taxonomy=blooms_taxonomy,
+        review_status=review_status, source_prefix=source_prefix, search=search,
+        material_id=material_id, class_label=class_label, topic=topic,
+        exam_type=exam_type,
     )
-    query = (
-        select(Question)
-        .where(*clauses)
-        .order_by(Question.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-    )
-    result = await session.execute(query)
+    stmt = stmt.order_by(Question.created_at.desc()).offset(offset).limit(limit)
+    result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
@@ -95,14 +128,21 @@ async def count_questions(
     review_status: str | None = None,
     source_prefix: str | None = None,
     search: str | None = None,
+    material_id: uuid.UUID | None = None,
+    class_label: str | None = None,
+    topic: str | None = None,
+    exam_type: str | None = None,
 ) -> int:
-    clauses = _question_filter_clauses(
-        branch_id, subject_id, topic_id, difficulty, blooms_taxonomy,
-        review_status, source_prefix, search,
+    stmt = _apply_question_filters(
+        select(func.count(Question.id)),
+        is_postgres=_is_pg(session),
+        branch_id=branch_id, subject_id=subject_id, topic_id=topic_id,
+        difficulty=difficulty, blooms_taxonomy=blooms_taxonomy,
+        review_status=review_status, source_prefix=source_prefix, search=search,
+        material_id=material_id, class_label=class_label, topic=topic,
+        exam_type=exam_type,
     )
-    result = await session.execute(
-        select(func.count(Question.id)).where(*clauses)
-    )
+    result = await session.execute(stmt)
     return int(result.scalar() or 0)
 
 
