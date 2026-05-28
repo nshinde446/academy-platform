@@ -30,12 +30,19 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         secure=settings.COOKIE_SECURE,
         samesite=settings.COOKIE_SAMESITE,
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
-        path="/api/v1/auth/refresh",
+        # path="/" (was /api/v1/auth/refresh) so the page middleware can
+        # see a live session and avoid bouncing to /login when only the
+        # short-lived access token has expired. Still httpOnly + only used
+        # by the /refresh endpoint server-side.
+        path="/",
     )
 
 
 def _clear_auth_cookies(response: Response):
     response.delete_cookie(key="access_token", path="/")
+    response.delete_cookie(key="refresh_token", path="/")
+    # Also clear the legacy narrowly-scoped cookie from before the path
+    # was widened, so logout fully signs out older sessions.
     response.delete_cookie(key="refresh_token", path="/api/v1/auth/refresh")
 
 
