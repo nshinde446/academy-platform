@@ -2,6 +2,7 @@ import uuid
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -27,7 +28,7 @@ from app.modules.materials.schemas.material_schemas import (
     MaterialUpdate,
     MaterialUploadMetadata,
 )
-from app.modules.materials.services import material_service
+from app.modules.materials.services import ingest_service, material_service
 
 
 router = APIRouter(prefix="/materials", tags=["materials"])
@@ -215,17 +216,25 @@ async def update_material(
 async def ingest_material(
     material_id: uuid.UUID,
     request: Request,
+    background_tasks: BackgroundTasks,
     branch_id: uuid.UUID = Query(...),
     current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
     session: AsyncSession = Depends(get_db),
 ):
-    return await material_service.ingest_material(
+    # Flip status to "ingesting" synchronously, then run the heavy
+    # PDF → questions extraction after the response returns. The
+    # background task opens its own DB session.
+    material = await material_service.start_ingest(
         session,
         material_id,
         branch_id,
         current_user["user_id"],
         request.client.host if request.client else None,
     )
+    background_tasks.add_task(
+        ingest_service.extract_and_store, material_id, branch_id
+    )
+    return material
 
 
 @router.delete("/{material_id}", status_code=status.HTTP_204_NO_CONTENT)

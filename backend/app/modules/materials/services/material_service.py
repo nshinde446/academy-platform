@@ -287,25 +287,32 @@ async def delete_material(
     )
 
 
-async def ingest_material(
+async def start_ingest(
     session: AsyncSession,
     material_id: uuid.UUID,
     branch_id: uuid.UUID,
     current_user_id: uuid.UUID,
     ip_address: str | None = None,
 ) -> Material:
-    """M1 stub — refresh question_count from existing links and mark
-    ingested. The actual extraction pipeline (PDF text → questions)
-    will be wired in M3 once the upload UI lands."""
+    """Mark the material as ingesting and return it. The actual PDF →
+    questions extraction runs as a BackgroundTask (see ingest_service)
+    because it makes many Gemini Vision calls and can take minutes.
+
+    Guards against double-runs: if an ingest is already in flight, 409.
+    """
     m = await get_material(session, material_id, branch_id)
-    count = await material_repository.refresh_question_count(session, m.id)
+
+    if m.ingest_status == "ingesting":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ingest already in progress for this material.",
+        )
 
     await material_repository.update(
         session,
         m,
-        ingest_status="ingested",
+        ingest_status="ingesting",
         ingest_error=None,
-        question_count=count,
         updated_by=current_user_id,
     )
 
@@ -315,7 +322,7 @@ async def ingest_material(
         action="UPDATE",
         table_name="materials",
         record_id=m.id,
-        new_values={"ingest_status": "ingested", "question_count": count},
+        new_values={"ingest_status": "ingesting"},
         ip_address=ip_address,
         branch_id=branch_id,
     )

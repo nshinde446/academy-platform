@@ -55,6 +55,15 @@ export function useMaterialList(
       return res.data;
     },
     enabled: !!branchId,
+    // Ingest runs as a backend BackgroundTask. Poll every 3s while any
+    // material is mid-extraction so the status badge + question count
+    // update live, then stop polling once nothing is ingesting.
+    refetchInterval: (query) => {
+      const anyIngesting = query.state.data?.items?.some(
+        (m) => m.ingest_status === "ingesting",
+      );
+      return anyIngesting ? 3000 : false;
+    },
   });
 }
 

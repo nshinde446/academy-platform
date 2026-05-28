@@ -87,7 +87,9 @@ export default function MaterialsPage() {
   async function handleIngest(id: string) {
     try {
       await ingestMutation.mutateAsync(id);
-      setAlert("Ingest complete.");
+      // Extraction runs in the background; the list polls until it
+      // flips to "ingested". Don't claim completion here.
+      setAlert("Ingest started — extracting questions in the background. The count updates when it's done.");
     } catch (err) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data

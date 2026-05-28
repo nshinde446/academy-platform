@@ -122,9 +122,13 @@ export function MaterialPreviewPane({
           size="sm"
           variant="outline"
           onClick={() => onIngest(material.id)}
-          disabled={pending}
+          disabled={pending || material.ingest_status === "ingesting"}
         >
-          {material.ingest_status === "ingested" ? "Re-ingest" : "Ingest"}
+          {material.ingest_status === "ingesting"
+            ? "Ingesting…"
+            : material.ingest_status === "ingested"
+              ? "Re-ingest"
+              : "Ingest"}
         </Button>
         <Button
           size="sm"
