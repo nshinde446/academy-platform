@@ -326,4 +326,10 @@ async def start_ingest(
         ip_address=ip_address,
         branch_id=branch_id,
     )
+    # The UPDATE above fires server-side onupdate=now() on updated_at,
+    # which SQLAlchemy expires after flush. Refresh in-context so
+    # FastAPI's response serialization reads loaded attributes instead
+    # of triggering a lazy load outside the async greenlet (which raises
+    # MissingGreenlet during serialization).
+    await session.refresh(m)
     return m

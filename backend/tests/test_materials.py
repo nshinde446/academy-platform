@@ -210,6 +210,42 @@ class TestMaterialsAPI:
         backend_mod._default_backend = None
 
     @pytest.mark.usefixtures("seed_data")
+    async def test_ingest_endpoint_serializes(
+        self, client, seed_data, tmp_path, monkeypatch
+    ):
+        """Regression: the ingest endpoint must serialize its response
+        (MaterialResponse includes updated_at, which the UPDATE expires —
+        without an in-context refresh this raised MissingGreenlet during
+        FastAPI serialization)."""
+        from app.core.storage import backend as backend_mod
+        backend_mod._default_backend = LocalFilesystemBackend(tmp_path)
+
+        # Stub the background extractor so the test doesn't call Gemini.
+        called = {}
+
+        async def _fake_extract(material_id, branch_id, **kw):
+            called["material_id"] = material_id
+            return {"ok": True, "inserted": 0}
+
+        from app.modules.materials.services import ingest_service
+        monkeypatch.setattr(ingest_service, "extract_and_store", _fake_extract)
+
+        token = await _login_admin(client)
+        resp = await _upload_pdf(client, token, seed_data=seed_data)
+        material_id = resp.json()["id"]
+
+        ingest_resp = await client.post(
+            f"/api/v1/materials/{material_id}/ingest?branch_id={seed_data['branch_a'].id}",
+            cookies={"access_token": token},
+        )
+        assert ingest_resp.status_code == 200, ingest_resp.text
+        body = ingest_resp.json()
+        assert body["ingest_status"] == "ingesting"
+        assert body["updated_at"]  # serialized cleanly, no MissingGreenlet
+
+        backend_mod._default_backend = None
+
+    @pytest.mark.usefixtures("seed_data")
     async def test_soft_delete(self, client, seed_data, tmp_path):
         from app.core.storage import backend as backend_mod
         backend_mod._default_backend = LocalFilesystemBackend(tmp_path)
