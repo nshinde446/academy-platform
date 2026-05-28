@@ -239,7 +239,11 @@ async def extract_and_store(
                         blooms_taxonomy=_norm_enum(
                             r.get("blooms_taxonomy"), _BLOOMS, "APPLY"
                         ),
-                        concept_tags=json.dumps([material.topic, material.class_label]),
+                        # Drop None entries — QuestionResponse.concept_tags
+                        # is list[str] and a null would 500 the list endpoint.
+                        concept_tags=json.dumps(
+                            [t for t in (material.topic, material.class_label) if t]
+                        ),
                         source=f"material:{material.id}",
                         source_ref=source_ref,
                         diagram_ref=None,

@@ -260,11 +260,18 @@ async def delete_question(
 
 def _format_question(question):
     # concept_tags is stored as JSON text. Tolerate both JSON-encoded
-    # lists and plain comma-separated strings (older inserts).
+    # lists and plain comma-separated strings (older inserts). Drop any
+    # null/empty entries — material ingest can write [null, "12"] when a
+    # material has no topic, and QuestionResponse.concept_tags is
+    # list[str], which would reject the null and 500 the whole list.
     tags = None
     if question.concept_tags:
         try:
-            tags = json.loads(question.concept_tags)
+            parsed = json.loads(question.concept_tags)
+            if isinstance(parsed, list):
+                tags = [str(t) for t in parsed if t]
+            else:
+                tags = None
         except (ValueError, TypeError):
             tags = [t.strip() for t in question.concept_tags.split(",") if t.strip()]
     return {

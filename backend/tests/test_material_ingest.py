@@ -6,14 +6,49 @@ created with the right inheritance, counts + status updated, idempotent
 re-ingest, and non-extractable categories skipped.
 """
 
+import json
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
 
 from app.modules.materials.models.material_models import Material
 from app.modules.materials.services import ingest_service
+from app.modules.tests.services.test_service import _format_question
 from app.modules.tests.models.test_models import Question
+
+
+def _q(**over):
+    base = dict(
+        id=uuid.uuid4(), content="x", options=None, correct_answer="",
+        explanation=None, subject_id=uuid.uuid4(), topic_id=None,
+        difficulty="MEDIUM", blooms_taxonomy="APPLY", concept_tags=None,
+        source="material:x", source_ref="k#p1q1", diagram_ref=None,
+        review_status="pending_review", quality_score=None,
+        branch_id=uuid.uuid4(), academic_year_id=uuid.uuid4(), status="active",
+    )
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+class TestFormatQuestionTags:
+    """Regression: material ingest can write concept_tags like
+    [null, "12"] when the material has no topic. QuestionResponse's
+    concept_tags is list[str], so a null element 500'd the whole
+    question-bank list endpoint."""
+
+    def test_drops_null_tag(self):
+        out = _format_question(_q(concept_tags=json.dumps([None, "12"])))
+        assert out["concept_tags"] == ["12"]
+
+    def test_normal_tags(self):
+        out = _format_question(_q(concept_tags=json.dumps(["physics", "11"])))
+        assert out["concept_tags"] == ["physics", "11"]
+
+    def test_no_tags(self):
+        out = _format_question(_q(concept_tags=None))
+        assert out["concept_tags"] is None
 
 
 # Canned extraction output — two questions on "page 1", one on "page 2".
