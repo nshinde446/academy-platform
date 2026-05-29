@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
@@ -258,6 +258,38 @@ async def get_test_questions(
 ):
     """Full question payloads on a test (ordered) — composer draft review."""
     return await test_service.get_test_question_details(session, test_id, branch_id)
+
+
+def _pdf_response(filename: str, data: bytes) -> Response:
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@tests_router.get("/{test_id}/paper.pdf")
+async def download_paper_pdf(
+    test_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Branded student question paper as a PDF (Tier 14)."""
+    filename, data = await test_service.generate_paper_pdf(session, test_id, branch_id)
+    return _pdf_response(filename, data)
+
+
+@tests_router.get("/{test_id}/answer-key.pdf")
+async def download_answer_key_pdf(
+    test_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Internal answer key PDF — narrower roles than the question paper."""
+    filename, data = await test_service.generate_answer_key_pdf(session, test_id, branch_id)
+    return _pdf_response(filename, data)
 
 
 @tests_router.post("/{test_id}/questions")

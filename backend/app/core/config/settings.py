@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # this. Raise if you legitimately ingest larger files.
     MATERIALS_INGEST_MAX_PAGES: int = 100
 
+    # Institute name printed in the header of generated paper PDFs
+    # (Tier 14). Full per-branch branding (logo/colours) comes later;
+    # for now this single name is enough.
+    ACADEMY_BRAND_NAME: str = "Academy Institute"
+
 
 @lru_cache
 def get_settings() -> Settings:

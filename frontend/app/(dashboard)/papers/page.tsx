@@ -19,12 +19,16 @@ import {
   useAutoPick,
   useAvailableCount,
   useBatchOptions,
+  useDownloadPaperPdf,
   usePaperList,
   useSavePaper,
   useSubjectOptions,
+  type PdfKind,
 } from "./_hooks/use-papers";
+import type { TestResponse } from "./_schemas/paper";
 import { ComposeForm } from "./_components/compose-form";
 import { PaperPreview } from "./_components/paper-preview";
+import { RecentPapers } from "./_components/recent-papers";
 
 const DEFAULT_MIX: DifficultyMix = { EASY: 3, MEDIUM: 5, HARD: 2 };
 
@@ -50,6 +54,22 @@ export default function PapersPage() {
   const autoPick = useAutoPick(branchId);
   const savePaper = useSavePaper(branchId);
   const papers = usePaperList(branchId, batchId || undefined);
+  const downloadPdf = useDownloadPaperPdf(branchId);
+
+  function downloadPaper(p: TestResponse, kind: PdfKind) {
+    downloadPdf.mutate(
+      { testId: p.id, kind, name: p.name },
+      {
+        onError: (err: any) =>
+          setAlert(err?.response?.data?.detail || "Could not generate the PDF"),
+      },
+    );
+  }
+
+  const downloadBusyKey =
+    downloadPdf.isPending && downloadPdf.variables
+      ? `${downloadPdf.variables.testId}:${downloadPdf.variables.kind}`
+      : null;
 
   const baseFacets = {
     subject_id: subjectId || undefined,
@@ -201,27 +221,13 @@ export default function PapersPage() {
         />
       </div>
 
-      {/* Recent drafts for the selected batch */}
-      {batchId && recentPapers.length > 0 && (
-        <div className="rounded-xl border bg-card p-4">
-          <h3 className="mb-2 text-sm font-medium">Recent papers</h3>
-          <ul className="flex flex-col divide-y">
-            {recentPapers.map((p) => (
-              <li
-                key={p.id}
-                className="flex items-center gap-3 py-2 text-sm"
-              >
-                <span className="rounded border border-border px-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {PAPER_TYPE_LABEL[p.paper_type]}
-                </span>
-                <span className="truncate">{p.name}</span>
-                <span className="ml-auto text-[11px] uppercase tracking-wide text-muted-foreground">
-                  {p.test_status}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {/* Recent drafts for the selected batch — with PDF downloads */}
+      {batchId && (
+        <RecentPapers
+          papers={recentPapers}
+          onDownload={downloadPaper}
+          busyKey={downloadBusyKey}
+        />
       )}
 
       <ConfirmDialog

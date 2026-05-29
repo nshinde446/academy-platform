@@ -1,0 +1,145 @@
+"""Paper PDF generation (Tier 14): mathtext LaTeX rendering + PyMuPDF
+Story layout for the question paper and answer key. Exercises the render
+helpers directly so it runs on the SQLite test DB without HTTP."""
+
+import uuid
+from types import SimpleNamespace
+
+import fitz
+import pytest
+
+from app.modules.tests.repositories import test_repository as repo
+from app.modules.tests.services import test_service
+from app.modules.tests.services import pdf_service
+from app.modules.tests.services.latex_render import render_math_png
+from app.modules.tests.models.test_models import Question
+
+
+def _meta(name="Mechanics DPP", paper_type="DPP", total_marks=2.0):
+    return SimpleNamespace(name=name, paper_type=paper_type, total_marks=total_marks)
+
+
+def _q(content, *, options=None, correct="A", explanation=None, difficulty="MEDIUM"):
+    return {
+        "content": content,
+        "options": options,
+        "correct_answer": correct,
+        "explanation": explanation,
+        "difficulty": difficulty,
+    }
+
+
+class TestLatexRender:
+    def test_good_expression_returns_png(self):
+        png = render_math_png(r"x^2 + \frac{1}{2}")
+        assert png is not None
+        assert png[:8] == b"\x89PNG\r\n\x1a\n"
+
+    def test_malformed_expression_returns_none(self):
+        assert render_math_png(r"\frac{1}{") is None
+
+
+class TestPaperPdf:
+    def test_question_paper_is_valid_pdf(self):
+        questions = [
+            _q(
+                "A body moves with velocity $v = u + at$. Find $v$.",
+                options={"A": "$5$", "B": "10", "C": "15", "D": "20"},
+            ),
+            _q("Plain text question with no math here.",
+               options={"A": "one", "B": "two", "C": "three", "D": "four"}),
+        ]
+        data = pdf_service.build_question_paper_pdf(_meta(), questions, "Bright Future")
+        assert data[:5] == b"%PDF-"
+        doc = fitz.open("pdf", data)
+        assert doc.page_count >= 1
+        text = doc[0].get_text()
+        assert "Bright Future" in text
+        assert "Mechanics DPP" in text
+
+    def test_answer_key_lists_answers(self):
+        questions = [
+            _q("Q1", correct="B", explanation="Because $E = mc^2$."),
+            _q("Q2", correct="D"),
+        ]
+        data = pdf_service.build_answer_key_pdf(_meta(), questions, "Bright Future")
+        doc = fitz.open("pdf", data)
+        text = doc[0].get_text()
+        assert "Answer key" in text
+        assert "B" in text and "D" in text
+
+    def test_malformed_latex_does_not_break_paper(self):
+        # An unparseable expression must fall back to raw source, not raise.
+        questions = [_q(r"Broken math $\frac{1}{$ still renders.")]
+        data = pdf_service.build_question_paper_pdf(_meta(), questions, "Inst")
+        assert data[:5] == b"%PDF-"
+
+
+async def _seed_question(db_session, seed_data, content="q") -> Question:
+    q = Question(
+        id=uuid.uuid4(),
+        content=content,
+        options=None,
+        correct_answer="A",
+        subject_id=seed_data["subject"].id,
+        difficulty="EASY",
+        blooms_taxonomy="APPLY",
+        source="HUMAN",
+        review_status="approved",
+        exam_types=[],
+        branch_id=seed_data["branch_a"].id,
+        academic_year_id=seed_data["academic_year"].id,
+        status="active",
+        is_deleted=False,
+    )
+    db_session.add(q)
+    await db_session.flush()
+    return q
+
+
+class TestPdfServiceEndToEnd:
+    @pytest.mark.usefixtures("seed_data")
+    async def test_generate_paper_pdf_from_saved_test(self, db_session, seed_data):
+        test = await test_service.create_test(
+            db_session,
+            {
+                "name": "Physics Test",
+                "paper_type": "TEST",
+                "batch_id": seed_data["batch"].id,
+                "subject_id": seed_data["subject"].id,
+            },
+            seed_data["admin_user"].id,
+        )
+        q1 = await _seed_question(db_session, seed_data, content="What is $g$?")
+        await db_session.commit()
+        await repo.add_questions_to_test(
+            db_session, test.id, [{"question_id": q1.id, "order": 0}]
+        )
+        await db_session.commit()
+
+        filename, data = await test_service.generate_paper_pdf(
+            db_session, test.id, seed_data["branch_a"].id
+        )
+        assert filename.endswith("-paper.pdf")
+        assert data[:5] == b"%PDF-"
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_generate_pdf_rejects_empty_paper(self, db_session, seed_data):
+        from fastapi import HTTPException
+
+        test = await test_service.create_test(
+            db_session,
+            {
+                "name": "Empty",
+                "paper_type": "DPP",
+                "batch_id": seed_data["batch"].id,
+                "subject_id": seed_data["subject"].id,
+            },
+            seed_data["admin_user"].id,
+        )
+        await db_session.commit()
+        with pytest.raises(HTTPException) as exc:
+            await test_service.generate_paper_pdf(
+                db_session, test.id, seed_data["branch_a"].id
+            )
+        assert exc.value.status_code == 400

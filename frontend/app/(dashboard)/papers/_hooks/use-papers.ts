@@ -145,6 +145,38 @@ export function useSavePaper(branchId: string | undefined) {
   });
 }
 
+export type PdfKind = "paper" | "answer-key";
+
+// Fetches the PDF as a blob (so the auth cookie / axios credentials are
+// sent) and triggers a browser download.
+export function useDownloadPaperPdf(branchId: string | undefined) {
+  return useMutation({
+    mutationFn: async ({
+      testId,
+      kind,
+      name,
+    }: {
+      testId: string;
+      kind: PdfKind;
+      name: string;
+    }) => {
+      const path = kind === "paper" ? "paper.pdf" : "answer-key.pdf";
+      const res = await apiClient.get(`/api/v1/tests/${testId}/${path}`, {
+        params: { branch_id: branchId },
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${name}-${kind}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
+  });
+}
+
 export function usePaperList(
   branchId: string | undefined,
   batchId?: string,

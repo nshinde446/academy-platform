@@ -418,6 +418,46 @@ async def get_test_question_details(
     return [_format_question(q) for q in questions]
 
 
+async def _paper_pdf(session, test_id, branch_id, builder_name: str) -> tuple[str, bytes]:
+    """Shared fetch+render for the two paper PDFs. Returns (filename, bytes).
+
+    Heavy work (matplotlib mathtext + PyMuPDF Story) runs in a worker
+    thread; we hand it plain values, never the ORM/session."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from app.core.config.settings import get_settings
+    from app.modules.tests.services import pdf_service
+
+    test = await get_test(session, test_id, branch_id)  # validates branch
+    questions = await get_test_question_details(session, test_id, branch_id)
+    if not questions:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This paper has no questions yet",
+        )
+    meta = SimpleNamespace(
+        name=test.name,
+        paper_type=test.paper_type,
+        total_marks=test.total_marks,
+    )
+    brand = get_settings().ACADEMY_BRAND_NAME
+    builder = getattr(pdf_service, builder_name)
+    data = await asyncio.to_thread(builder, meta, questions, brand)
+
+    slug = "".join(c if c.isalnum() else "-" for c in test.name).strip("-") or "paper"
+    suffix = "answer-key" if "answer" in builder_name else "paper"
+    return f"{slug}-{suffix}.pdf", data
+
+
+async def generate_paper_pdf(session, test_id: uuid.UUID, branch_id: uuid.UUID):
+    return await _paper_pdf(session, test_id, branch_id, "build_question_paper_pdf")
+
+
+async def generate_answer_key_pdf(session, test_id: uuid.UUID, branch_id: uuid.UUID):
+    return await _paper_pdf(session, test_id, branch_id, "build_answer_key_pdf")
+
+
 async def auto_pick_questions(
     session: AsyncSession,
     branch_id: uuid.UUID,
