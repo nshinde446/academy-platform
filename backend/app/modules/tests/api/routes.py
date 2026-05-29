@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.tests.schemas.test_schemas import (
+    AutoPickRequest,
     MarkBatchSubmit,
     MarkResponse,
     QuestionBulkAction,
@@ -209,6 +210,22 @@ async def create_test(
     )
 
 
+@tests_router.post("/auto-pick", response_model=list[QuestionResponse])
+async def auto_pick_questions(
+    body: AutoPickRequest,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Composer auto-pick — draw N questions from the bank by facets (M4).
+
+    Preview-only: returns questions but creates nothing. The composer
+    holds them client-side, lets the admin review/swap/remove, then saves
+    via POST /tests + POST /tests/{id}/questions.
+    """
+    return await test_service.auto_pick_questions(session, branch_id, body)
+
+
 @tests_router.get("", response_model=list[TestResponse])
 async def list_tests(
     branch_id: uuid.UUID = Query(...),
@@ -230,6 +247,17 @@ async def get_test(
     session: AsyncSession = Depends(get_db),
 ):
     return await test_service.get_test(session, test_id, branch_id)
+
+
+@tests_router.get("/{test_id}/questions", response_model=list[QuestionResponse])
+async def get_test_questions(
+    test_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Full question payloads on a test (ordered) — composer draft review."""
+    return await test_service.get_test_question_details(session, test_id, branch_id)
 
 
 @tests_router.post("/{test_id}/questions")

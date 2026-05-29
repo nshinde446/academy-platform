@@ -13,6 +13,9 @@ from app.modules.tests.repositories import test_repository
 VALID_DIFFICULTIES = {"EASY", "MEDIUM", "HARD"}
 VALID_BLOOMS = {"REMEMBER", "UNDERSTAND", "APPLY", "ANALYZE", "EVALUATE", "CREATE"}
 VALID_TEST_STATUSES = {"DRAFT", "SCHEDULED", "ACTIVE", "COMPLETED", "CANCELLED"}
+VALID_PAPER_TYPES = {"DPP", "CPP", "TEST"}
+# Bound a single auto-pick so a runaway request can't scan the whole bank.
+MAX_AUTO_PICK = 200
 PASS_PERCENTAGE = 33.0
 
 
@@ -312,6 +315,13 @@ async def create_test(
     current_user_id: uuid.UUID,
     ip_address: str | None = None,
 ):
+    paper_type = data.get("paper_type", "TEST")
+    if paper_type not in VALID_PAPER_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid paper_type '{paper_type}'. Allowed: {sorted(VALID_PAPER_TYPES)}",
+        )
+
     batch = await batch_repository.get_by_id(session, data["batch_id"])
     if not batch:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
@@ -320,6 +330,7 @@ async def create_test(
         session,
         name=data["name"],
         description=data.get("description"),
+        paper_type=paper_type,
         batch_id=data["batch_id"],
         subject_id=data["subject_id"],
         scheduled_at=data.get("scheduled_at"),
@@ -392,6 +403,81 @@ async def add_questions_to_test(
         branch_id=branch_id,
     )
     return result
+
+
+async def get_test_question_details(
+    session: AsyncSession, test_id: uuid.UUID, branch_id: uuid.UUID
+):
+    """Full question payloads for a test, ordered — composer preview."""
+    test = await test_repository.get_test_by_id(session, test_id)
+    if not test:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
+    if test.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+    questions = await test_repository.get_test_question_details(session, test_id)
+    return [_format_question(q) for q in questions]
+
+
+async def auto_pick_questions(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    payload,  # AutoPickRequest
+) -> list[dict]:
+    """Draw questions from the bank by facets for the composer (M4).
+
+    Honours `difficulty_mix` (one randomized draw per difficulty) or a
+    flat `count` (any difficulty). De-dupes across the per-difficulty
+    draws and excludes `exclude_ids` so reshuffle / swap never re-surface
+    a question already on the paper.
+    """
+    picked: list = []
+    seen: set[uuid.UUID] = set(payload.exclude_ids or [])
+
+    facets = dict(
+        subject_id=payload.subject_id,
+        class_label=payload.class_label,
+        topic=payload.topic,
+        exam_type=payload.exam_type,
+        review_status=payload.review_status,
+    )
+
+    if payload.difficulty_mix:
+        for diff, n in payload.difficulty_mix.items():
+            if n <= 0:
+                continue
+            if diff not in VALID_DIFFICULTIES:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Invalid difficulty '{diff}' in difficulty_mix",
+                )
+            rows = await test_repository.pick_random_questions(
+                session, branch_id,
+                count=min(n, MAX_AUTO_PICK),
+                difficulty=diff,
+                exclude_ids=list(seen),
+                **facets,
+            )
+            for q in rows:
+                if q.id not in seen:
+                    seen.add(q.id)
+                    picked.append(q)
+    else:
+        count = payload.count if payload.count is not None else 10
+        if count <= 0:
+            return []
+        rows = await test_repository.pick_random_questions(
+            session, branch_id,
+            count=min(count, MAX_AUTO_PICK),
+            difficulty=None,
+            exclude_ids=list(seen),
+            **facets,
+        )
+        for q in rows:
+            if q.id not in seen:
+                seen.add(q.id)
+                picked.append(q)
+
+    return [_format_question(q) for q in picked]
 
 
 async def publish_test(

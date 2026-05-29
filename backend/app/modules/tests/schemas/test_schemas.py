@@ -64,6 +64,7 @@ class QuestionBulkResult(BaseModel):
 class TestCreate(BaseModel):
     name: str
     description: str | None = None
+    paper_type: str = "TEST"  # DPP | CPP | TEST
     batch_id: uuid.UUID
     subject_id: uuid.UUID
     scheduled_at: datetime | None = None
@@ -75,6 +76,7 @@ class TestResponse(BaseModel):
     id: uuid.UUID
     name: str
     description: str | None = None
+    paper_type: str
     batch_id: uuid.UUID
     subject_id: uuid.UUID
     scheduled_at: datetime | None = None
@@ -85,6 +87,25 @@ class TestResponse(BaseModel):
     academic_year_id: uuid.UUID
     status: str
     model_config = {"from_attributes": True}
+
+
+class AutoPickRequest(BaseModel):
+    """Composer auto-pick: draw N questions from the bank by facets (M4).
+
+    Either pass `difficulty_mix` (e.g. {"EASY": 4, "MEDIUM": 6, "HARD": 2})
+    for a balanced paper, or `count` for any-difficulty selection. Picks
+    are randomized server-side and exclude `exclude_ids` (used by
+    reshuffle / swap). Defaults to approved questions only.
+    """
+
+    subject_id: uuid.UUID | None = None
+    class_label: str | None = None
+    topic: str | None = None
+    exam_type: str | None = None
+    review_status: str = "approved"
+    difficulty_mix: dict[str, int] | None = None
+    count: int | None = None
+    exclude_ids: list[uuid.UUID] = []
 
 
 class TestQuestionAdd(BaseModel):

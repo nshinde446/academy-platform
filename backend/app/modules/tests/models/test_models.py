@@ -86,6 +86,10 @@ class Test(BaseModel):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # DPP | CPP | TEST — the composer (M4) builds all three on this table.
+    paper_type: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="TEST", server_default="TEST"
+    )
     batch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("batches.id"), nullable=False
     )

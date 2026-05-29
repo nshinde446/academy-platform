@@ -33,8 +33,9 @@ const SECTIONS: NavSection[] = [
   {
     label: "Content",
     items: [
-      { label: "Materials", href: "/materials", isNew: true },
+      { label: "Materials", href: "/materials" },
       { label: "Question Bank", href: "/question-bank" },
+      { label: "Papers", href: "/papers", isNew: true },
     ],
   },
   {

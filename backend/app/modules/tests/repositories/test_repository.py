@@ -146,6 +146,43 @@ async def count_questions(
     return int(result.scalar() or 0)
 
 
+async def pick_random_questions(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    *,
+    count: int,
+    difficulty: str | None = None,
+    exclude_ids: list[uuid.UUID] | None = None,
+    subject_id: uuid.UUID | None = None,
+    class_label: str | None = None,
+    topic: str | None = None,
+    exam_type: str | None = None,
+    review_status: str | None = "approved",
+) -> list[Question]:
+    """Draw up to `count` random questions matching the facets (composer
+    auto-pick). Reuses the question-bank filter logic so the composer and
+    the /question-bank list stay in lock-step."""
+    if count <= 0:
+        return []
+    stmt = _apply_question_filters(
+        select(Question),
+        is_postgres=_is_pg(session),
+        branch_id=branch_id,
+        subject_id=subject_id,
+        difficulty=difficulty,
+        review_status=review_status,
+        class_label=class_label,
+        topic=topic,
+        exam_type=exam_type,
+    )
+    if exclude_ids:
+        stmt = stmt.where(Question.id.notin_(exclude_ids))
+    # func.random() maps to RANDOM() on both Postgres and SQLite.
+    stmt = stmt.order_by(func.random()).limit(count)
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def bulk_update_review_status(
     session: AsyncSession,
     branch_id: uuid.UUID,
@@ -255,6 +292,24 @@ async def get_test_questions(session: AsyncSession, test_id: uuid.UUID) -> list[
         select(TestQuestion).where(
             TestQuestion.test_id == test_id, TestQuestion.is_deleted == False
         ).order_by(TestQuestion.order)
+    )
+    return list(result.scalars().all())
+
+
+async def get_test_question_details(
+    session: AsyncSession, test_id: uuid.UUID
+) -> list[Question]:
+    """Full Question rows for a test, ordered by TestQuestion.order — for
+    the composer's review/preview of a saved draft."""
+    result = await session.execute(
+        select(Question)
+        .join(TestQuestion, TestQuestion.question_id == Question.id)
+        .where(
+            TestQuestion.test_id == test_id,
+            TestQuestion.is_deleted == False,
+            Question.is_deleted == False,
+        )
+        .order_by(TestQuestion.order)
     )
     return list(result.scalars().all())
 

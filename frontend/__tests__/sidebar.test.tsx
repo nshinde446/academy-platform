@@ -56,16 +56,21 @@ describe("Sidebar (MSA_Design section layout)", () => {
     }
   });
 
-  it("renders Content section with Materials + Question Bank", () => {
+  it("renders Content section with Materials + Question Bank + Papers", () => {
     render(<Sidebar />);
     expect(screen.getByText("Content")).toBeInTheDocument();
 
-    // Materials is the new addition (M2) — flagged NEW.
+    // Papers is the newest addition (M4) — flagged NEW.
+    const papers = screen.getByRole("link", { name: /papers/i });
+    expect(papers).toHaveAttribute("href", "/papers");
+    expect(papers.textContent).toMatch(/NEW/);
+
+    // Materials stays in Content but no longer carries the NEW chip.
     const materials = screen.getByRole("link", { name: /materials/i });
     expect(materials).toHaveAttribute("href", "/materials");
-    expect(materials.textContent).toMatch(/NEW/);
+    expect(materials.textContent).not.toMatch(/NEW/);
 
-    // Question Bank stays in Content but no longer carries the NEW chip.
+    // Question Bank stays in Content, no NEW chip.
     const qb = screen.getByRole("link", { name: /question bank/i });
     expect(qb).toHaveAttribute("href", "/question-bank");
     expect(qb.textContent).not.toMatch(/NEW/);
