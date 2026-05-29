@@ -73,27 +73,19 @@ class _MathImages:
 
 
 def _render_runs(text: str, imgs: _MathImages) -> str:
-    """Turn a text+LaTeX string into safe HTML with inline math images."""
+    """Emit the question/option text verbatim (with $...$ visible).
+
+    Math rendering is intentionally disabled: Gemini-ingested questions
+    routinely wrap plain values like ``$100\\%$`` in math markers, and
+    PyMuPDF Story treats CSS px as pt, which fought the supersample
+    factor and made rendered math come out roughly 3x oversized.
+    Surfacing the source verbatim matches what the admin sees on the
+    Question Bank and is readable for students. Leaving the math
+    pipeline (latex_render, _MathImages) intact so it can be turned
+    back on once the sizing is reworked."""
     if not text:
         return ""
-    out: list[str] = []
-    pos = 0
-    for m in _SEG.finditer(text):
-        if m.start() > pos:
-            out.append(html.escape(text[pos:m.start()]))
-        display = m.group(1) is not None
-        expr = (m.group(1) or m.group(2)).strip()
-        if display:
-            out.append(
-                f'<div style="text-align:center;margin:4pt 0;">'
-                f"{imgs.tag(expr, display=True)}</div>"
-            )
-        else:
-            out.append(imgs.tag(expr, display=False))
-        pos = m.end()
-    if pos < len(text):
-        out.append(html.escape(text[pos:]))
-    return "".join(out)
+    return html.escape(text)
 
 
 _CSS = """
