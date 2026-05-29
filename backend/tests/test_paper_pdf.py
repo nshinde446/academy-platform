@@ -74,6 +74,16 @@ class TestPaperPdf:
         data = pdf_service.build_question_paper_pdf(_meta(), questions, "Inst")
         assert data[:5] == b"%PDF-"
 
+    def test_latex_markup_is_stripped_in_pdf_text(self):
+        # The user-reported case: $1.6\text{m}$ must render as "1.6m"
+        # in the PDF, matching the KaTeX-rendered Question Bank preview.
+        questions = [_q("Bucket on a $1.6\\text{m}$ string.")]
+        data = pdf_service.build_question_paper_pdf(_meta(), questions, "Inst")
+        text = fitz.open("pdf", data)[0].get_text()
+        assert "1.6m" in text
+        assert "\\text" not in text
+        assert "$1.6" not in text
+
 
 async def _seed_question(db_session, seed_data, content="q") -> Question:
     q = Question(

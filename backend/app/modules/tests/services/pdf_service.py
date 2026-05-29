@@ -21,6 +21,7 @@ import struct
 import fitz
 
 from app.modules.tests.services.latex_render import render_math_png
+from app.modules.tests.services.latex_strip import latex_to_plain
 
 # Render math oversized for crispness, then scale back down in the HTML.
 _MATH_SCALE = 3
@@ -73,19 +74,15 @@ class _MathImages:
 
 
 def _render_runs(text: str, imgs: _MathImages) -> str:
-    """Emit the question/option text verbatim (with $...$ visible).
+    """Emit the question/option text as plain readable HTML.
 
-    Math rendering is intentionally disabled: Gemini-ingested questions
-    routinely wrap plain values like ``$100\\%$`` in math markers, and
-    PyMuPDF Story treats CSS px as pt, which fought the supersample
-    factor and made rendered math come out roughly 3x oversized.
-    Surfacing the source verbatim matches what the admin sees on the
-    Question Bank and is readable for students. Leaving the math
-    pipeline (latex_render, _MathImages) intact so it can be turned
-    back on once the sizing is reworked."""
+    Strips LaTeX markup (``$...$`` delimiters, ``\\text{}`` wrappers,
+    common Greek letters, sub/superscripts) so the PDF matches what the
+    admin sees in the Question Bank preview pane (KaTeX-rendered).
+    Image-based math rendering stays disabled — see latex_strip.py."""
     if not text:
         return ""
-    return html.escape(text)
+    return html.escape(latex_to_plain(text))
 
 
 _CSS = """
