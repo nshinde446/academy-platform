@@ -19,6 +19,7 @@ import {
   useAutoPick,
   useAvailableCount,
   useBatchOptions,
+  useDeleteTest,
   useDownloadPaperPdf,
   usePaperList,
   useSavePaper,
@@ -55,6 +56,8 @@ export default function PapersPage() {
   const savePaper = useSavePaper(branchId);
   const papers = usePaperList(branchId, batchId || undefined);
   const downloadPdf = useDownloadPaperPdf(branchId);
+  const deleteTest = useDeleteTest(branchId);
+  const [deleteTarget, setDeleteTarget] = useState<TestResponse | null>(null);
 
   function downloadPaper(p: TestResponse, kind: PdfKind) {
     downloadPdf.mutate(
@@ -226,9 +229,29 @@ export default function PapersPage() {
         <RecentPapers
           papers={recentPapers}
           onDownload={downloadPaper}
+          onDelete={(p) => setDeleteTarget(p)}
           busyKey={downloadBusyKey}
+          deletingId={deleteTest.isPending ? deleteTest.variables ?? null : null}
         />
       )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="Delete draft?"
+        description={
+          deleteTarget
+            ? `"${deleteTarget.name}" will be removed from Recent papers. The questions in the bank are not affected.`
+            : ""
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={async () => {
+          if (!deleteTarget) return;
+          await deleteTest.mutateAsync(deleteTarget.id);
+          setDeleteTarget(null);
+        }}
+      />
 
       <ConfirmDialog
         open={!!alert}

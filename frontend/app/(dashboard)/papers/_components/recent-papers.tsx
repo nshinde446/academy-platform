@@ -6,10 +6,18 @@ import type { PdfKind } from "../_hooks/use-papers";
 interface RecentPapersProps {
   papers: TestResponse[];
   onDownload: (paper: TestResponse, kind: PdfKind) => void;
+  onDelete: (paper: TestResponse) => void;
   busyKey: string | null;
+  deletingId: string | null;
 }
 
-export function RecentPapers({ papers, onDownload, busyKey }: RecentPapersProps) {
+export function RecentPapers({
+  papers,
+  onDownload,
+  onDelete,
+  busyKey,
+  deletingId,
+}: RecentPapersProps) {
   if (papers.length === 0) return null;
 
   return (
@@ -40,6 +48,15 @@ export function RecentPapers({ papers, onDownload, busyKey }: RecentPapersProps)
               className="rounded border px-2 py-0.5 text-[11px] transition-colors hover:bg-muted disabled:opacity-50"
             >
               {busyKey === `${p.id}:answer-key` ? "…" : "Key"}
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(p)}
+              disabled={deletingId === p.id}
+              aria-label={`Delete ${p.name}`}
+              className="rounded border border-transparent px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+            >
+              {deletingId === p.id ? "…" : "Delete"}
             </button>
           </li>
         ))}

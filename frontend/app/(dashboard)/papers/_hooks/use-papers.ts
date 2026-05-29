@@ -177,6 +177,20 @@ export function useDownloadPaperPdf(branchId: string | undefined) {
   });
 }
 
+export function useDeleteTest(branchId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (testId: string) => {
+      await apiClient.delete(`/api/v1/tests/${testId}`, {
+        params: { branch_id: branchId },
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["papers", "list"] });
+    },
+  });
+}
+
 export function usePaperList(
   branchId: string | undefined,
   batchId?: string,

@@ -520,6 +520,39 @@ async def auto_pick_questions(
     return [_format_question(q) for q in picked]
 
 
+async def delete_test(
+    session: AsyncSession,
+    test_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> None:
+    """Soft-delete a paper/test (the draft disappears from /papers list).
+
+    Row stays in the DB so an accidental delete can be reversed by
+    flipping is_deleted; associated test_questions stay too so a
+    restored test still has its questions."""
+    test = await test_repository.get_test_by_id(session, test_id)
+    if not test:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
+    if test.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    old_name = test.name
+    await test_repository.soft_delete_test(session, test)
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="DELETE",
+        table_name="tests",
+        record_id=test.id,
+        old_values={"name": old_name, "paper_type": test.paper_type},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+
+
 async def publish_test(
     session: AsyncSession,
     test_id: uuid.UUID,

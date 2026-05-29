@@ -323,6 +323,21 @@ async def publish_test(
     )
 
 
+@tests_router.delete("/{test_id}", status_code=204)
+async def delete_test(
+    test_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "academic_head"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Soft-delete a paper/test draft from /papers."""
+    await test_service.delete_test(
+        session, test_id, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
 @tests_router.get("/{test_id}/marks", response_model=list[MarkResponse])
 async def get_test_marks(
     test_id: uuid.UUID,

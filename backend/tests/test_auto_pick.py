@@ -145,6 +145,56 @@ class TestPaperTypePersistence:
         assert exc.value.status_code == 422
 
 
+class TestDeleteTest:
+    @pytest.mark.usefixtures("seed_data")
+    async def test_delete_soft_removes_from_list(self, db_session, seed_data):
+        test = await test_service.create_test(
+            db_session,
+            {
+                "name": "Doomed DPP",
+                "paper_type": "DPP",
+                "batch_id": seed_data["batch"].id,
+                "subject_id": seed_data["subject"].id,
+            },
+            seed_data["admin_user"].id,
+        )
+        await db_session.commit()
+
+        await test_service.delete_test(
+            db_session, test.id, seed_data["branch_a"].id,
+            seed_data["admin_user"].id,
+        )
+        await db_session.commit()
+
+        listed = await test_service.list_tests(
+            db_session, seed_data["branch_a"].id,
+        )
+        assert all(t.id != test.id for t in listed)
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_delete_blocks_other_branch(self, db_session, seed_data):
+        from fastapi import HTTPException
+
+        test = await test_service.create_test(
+            db_session,
+            {
+                "name": "Branch A paper",
+                "paper_type": "TEST",
+                "batch_id": seed_data["batch"].id,
+                "subject_id": seed_data["subject"].id,
+            },
+            seed_data["admin_user"].id,
+        )
+        await db_session.commit()
+
+        with pytest.raises(HTTPException) as exc:
+            await test_service.delete_test(
+                db_session, test.id, seed_data["branch_b"].id,
+                seed_data["admin_user"].id,
+            )
+        assert exc.value.status_code == 403
+
+
 class TestTestQuestionDetails:
     @pytest.mark.usefixtures("seed_data")
     async def test_returns_questions_in_order(self, db_session, seed_data):

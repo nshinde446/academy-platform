@@ -22,32 +22,53 @@ function paper(id: string, name: string): TestResponse {
   };
 }
 
+const NOOP = () => {};
+
 describe("RecentPapers", () => {
   it("renders nothing when there are no papers", () => {
     const { container } = render(
-      <RecentPapers papers={[]} onDownload={() => {}} busyKey={null} />,
+      <RecentPapers
+        papers={[]}
+        onDownload={NOOP}
+        onDelete={NOOP}
+        busyKey={null}
+        deletingId={null}
+      />,
     );
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("lists papers with Paper + Key download buttons", () => {
+  it("lists papers with Paper + Key + Delete buttons", () => {
     render(
       <RecentPapers
         papers={[paper("1", "Mechanics DPP")]}
-        onDownload={() => {}}
+        onDownload={NOOP}
+        onDelete={NOOP}
         busyKey={null}
+        deletingId={null}
       />,
     );
     expect(screen.getByText("Mechanics DPP")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Paper" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Key" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /delete mechanics dpp/i }),
+    ).toBeInTheDocument();
   });
 
   it("fires onDownload with the right kind per button", async () => {
     const user = userEvent.setup();
     const onDownload = vi.fn();
     const p = paper("1", "Mechanics DPP");
-    render(<RecentPapers papers={[p]} onDownload={onDownload} busyKey={null} />);
+    render(
+      <RecentPapers
+        papers={[p]}
+        onDownload={onDownload}
+        onDelete={NOOP}
+        busyKey={null}
+        deletingId={null}
+      />,
+    );
 
     await user.click(screen.getByRole("button", { name: "Paper" }));
     expect(onDownload).toHaveBeenCalledWith(p, "paper");
@@ -56,14 +77,48 @@ describe("RecentPapers", () => {
     expect(onDownload).toHaveBeenCalledWith(p, "answer-key");
   });
 
-  it("disables the busy button", () => {
+  it("fires onDelete with the paper when Delete is clicked", async () => {
+    const user = userEvent.setup();
+    const onDelete = vi.fn();
+    const p = paper("1", "Mechanics DPP");
+    render(
+      <RecentPapers
+        papers={[p]}
+        onDownload={NOOP}
+        onDelete={onDelete}
+        busyKey={null}
+        deletingId={null}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /delete mechanics dpp/i }));
+    expect(onDelete).toHaveBeenCalledWith(p);
+  });
+
+  it("disables the busy download button", () => {
     render(
       <RecentPapers
         papers={[paper("1", "Mechanics DPP")]}
-        onDownload={() => {}}
+        onDownload={NOOP}
+        onDelete={NOOP}
         busyKey={"1:paper"}
+        deletingId={null}
       />,
     );
     expect(screen.getByRole("button", { name: "…" })).toBeDisabled();
+  });
+
+  it("disables the Delete button while that paper is being deleted", () => {
+    render(
+      <RecentPapers
+        papers={[paper("1", "Mechanics DPP")]}
+        onDownload={NOOP}
+        onDelete={NOOP}
+        busyKey={null}
+        deletingId={"1"}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /delete mechanics dpp/i }),
+    ).toBeDisabled();
   });
 });
