@@ -421,13 +421,13 @@ async def get_test_question_details(
 async def _paper_pdf(session, test_id, branch_id, builder_name: str) -> tuple[str, bytes]:
     """Shared fetch+render for the two paper PDFs. Returns (filename, bytes).
 
-    Heavy work (matplotlib mathtext + PyMuPDF Story) runs in a worker
-    thread; we hand it plain values, never the ORM/session."""
-    import asyncio
+    Layout runs in a headless Chromium via Playwright so output matches
+    the Question Bank preview pane (same KaTeX render). The browser
+    builders are async, so no asyncio.to_thread shim needed."""
     from types import SimpleNamespace
 
     from app.core.config.settings import get_settings
-    from app.modules.tests.services import pdf_service
+    from app.modules.tests.services import pdf_browser_service as svc
 
     test = await get_test(session, test_id, branch_id)  # validates branch
     questions = await get_test_question_details(session, test_id, branch_id)
@@ -442,8 +442,8 @@ async def _paper_pdf(session, test_id, branch_id, builder_name: str) -> tuple[st
         total_marks=test.total_marks,
     )
     brand = get_settings().ACADEMY_BRAND_NAME
-    builder = getattr(pdf_service, builder_name)
-    data = await asyncio.to_thread(builder, meta, questions, brand)
+    builder = getattr(svc, builder_name)
+    data = await builder(meta, questions, brand)
 
     slug = "".join(c if c.isalnum() else "-" for c in test.name).strip("-") or "paper"
     suffix = "answer-key" if "answer" in builder_name else "paper"

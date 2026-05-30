@@ -23,6 +23,25 @@ import fitz
 from app.modules.tests.services.latex_render import render_math_png
 from app.modules.tests.services.latex_strip import latex_to_plain
 
+
+# Some ingested questions carry their options baked into the content too —
+# "...proportional to (a) √t (b) constant (c) t (d) 1/√t". When real
+# options are also stored, that block would print twice in the PDF, so
+# we trim it from the content side.
+_EMBEDDED_OPTIONS_RE = re.compile(
+    r"\(\s*[aA]\s*\).*?\(\s*[bB]\s*\).*?\(\s*[cC]\s*\).*?\(\s*[dD]\s*\)",
+    re.DOTALL,
+)
+
+
+def _strip_embedded_options(content: str, has_real_options: bool) -> str:
+    if not has_real_options or not content:
+        return content
+    m = _EMBEDDED_OPTIONS_RE.search(content)
+    if not m:
+        return content
+    return content[: m.start()].rstrip(" \n\t.,:;-")
+
 # Render math oversized for crispness, then scale back down in the HTML.
 _MATH_SCALE = 3
 _BODY_PT = 11
@@ -150,10 +169,12 @@ def build_question_paper_pdf(test, questions: list[dict], brand_name: str) -> by
     imgs = _MathImages()
     parts = [_header_html(brand_name, test, len(questions), "Question paper")]
     for i, q in enumerate(questions, start=1):
+        opts = q.get("options")
+        content = _strip_embedded_options(q.get("content", ""), bool(opts))
         parts.append(
             f'<div class="q"><b>{i}.</b> '
-            f'{_render_runs(q.get("content", ""), imgs)}'
-            f'{_options_html(q.get("options"), imgs)}</div>'
+            f"{_render_runs(content, imgs)}"
+            f"{_options_html(opts, imgs)}</div>"
         )
     body = f"<body>{''.join(parts)}</body>"
     return _story_to_pdf(body, imgs.archive)

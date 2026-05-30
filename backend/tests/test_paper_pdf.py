@@ -101,6 +101,32 @@ class TestPaperPdf:
         assert "A." in text and "B." in text
         assert "(A)" not in text
 
+    def test_embedded_options_in_content_stripped_when_real_options_present(self):
+        # Ingested content sometimes carries options inline AND as a
+        # separate dict. The inline copy gets trimmed so they only print
+        # once.
+        questions = [
+            _q(
+                "If KE increases with t, force is proportional to "
+                "(a) √t (b) constant (c) t (d) 1/√t",
+                options={"A": "√t", "B": "constant", "C": "t", "D": "1/√t"},
+            )
+        ]
+        data = pdf_service.build_question_paper_pdf(_meta(), questions, "Inst")
+        text = fitz.open("pdf", data)[0].get_text()
+        # The inline "(a)" lowercase block is stripped from content.
+        assert "(a)" not in text and "(b)" not in text
+        # Proper options still print.
+        assert "A." in text and "D." in text
+
+    def test_nested_brace_sqrt_renders(self):
+        # \sqrt{mkt^{-1/2}} should render with the radical glyph in the PDF.
+        questions = [_q("Force is", options={"A": "\\sqrt{mkt^{-1/2}}"})]
+        data = pdf_service.build_question_paper_pdf(_meta(), questions, "Inst")
+        text = fitz.open("pdf", data)[0].get_text()
+        assert "√" in text
+        assert "\\sqrt" not in text
+
 
 async def _seed_question(db_session, seed_data, content="q") -> Question:
     q = Question(
@@ -124,6 +150,29 @@ async def _seed_question(db_session, seed_data, content="q") -> Question:
     return q
 
 
+def _chromium_available() -> bool:
+    """Whether Playwright + Chromium are installed locally. CI may not
+    have run `playwright install chromium`, so the end-to-end PDF test
+    skips when the browser isn't there."""
+    try:
+        import playwright  # noqa: F401
+    except Exception:
+        return False
+    import os
+    if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+        return True
+    import pathlib
+    cache = pathlib.Path.home() / ".cache" / "ms-playwright"
+    appdata = pathlib.Path(
+        os.environ.get("LOCALAPPDATA", str(pathlib.Path.home()))
+    ) / "ms-playwright"
+    return cache.exists() or appdata.exists()
+
+
+@pytest.mark.skipif(
+    not _chromium_available(),
+    reason="Playwright / Chromium not installed locally",
+)
 class TestPdfServiceEndToEnd:
     @pytest.mark.usefixtures("seed_data")
     async def test_generate_paper_pdf_from_saved_test(self, db_session, seed_data):

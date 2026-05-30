@@ -115,15 +115,29 @@ def latex_to_plain(text: str) -> str:
     s = _BLOCK_DELIM_RE.sub(_keep_math_together, s)
     s = _INLINE_DELIM_RE.sub(_keep_math_together, s)
 
-    # 2. \frac{a}{b} -> a/b, \sqrt{x} -> √x — before generic wrappers
-    #    eat the brace groups.
-    s = _FRAC_RE.sub(lambda m: f"{m.group(1)}/{m.group(2)}", s)
-    s = _SQRT_RE.sub(lambda m: f"√{m.group(1)}", s)
+    # 2-3. Brace-bound commands: sub/sup, frac, sqrt, wrappers. The
+    #      patterns can't traverse nested braces, so iterate until stable.
+    #      Innermost groups dissolve first (e.g. \sqrt{mkt^{-1/2}} →
+    #      \sqrt{mkt^-1/2} → √mkt^-1/2), then the outer ones become
+    #      matchable on the next pass.
+    def _sub_brace_inner(m):
+        out = _convert_run(m.group(1), _SUB_MAP)
+        return out if out is not None else f"_{m.group(1)}"
 
-    # 3. Wrapper commands — applied twice for one level of nesting
-    #    (e.g. \vec{\hat{i}}).
-    s = _WRAPPER_RE.sub(lambda m: m.group(1), s)
-    s = _WRAPPER_RE.sub(lambda m: m.group(1), s)
+    def _sup_brace_inner(m):
+        out = _convert_run(m.group(1), _SUP_MAP)
+        return out if out is not None else f"^{m.group(1)}"
+
+    prev = None
+    for _ in range(8):  # bounded to keep pathological inputs cheap
+        if s == prev:
+            break
+        prev = s
+        s = re.sub(r"_\{([^{}]*)\}", _sub_brace_inner, s)
+        s = re.sub(r"\^\{([^{}]*)\}", _sup_brace_inner, s)
+        s = _SQRT_RE.sub(lambda m: f"√{m.group(1)}", s)
+        s = _FRAC_RE.sub(lambda m: f"{m.group(1)}/{m.group(2)}", s)
+        s = _WRAPPER_RE.sub(lambda m: m.group(1), s)
 
     # 4. \left and \right wrappers around delimiters — drop them. Negative
     #    lookahead so \rightarrow isn't decapitated into "arrow".
@@ -138,27 +152,20 @@ def latex_to_plain(text: str) -> str:
     for cmd, sym in _SYMBOL_MAP.items():
         s = re.sub(re.escape(cmd) + r"(?![a-zA-Z])", sym, s)
 
-    # 7. Subscripts and superscripts (Unicode where possible).
-    def _sub_brace(m):
-        out = _convert_run(m.group(1), _SUB_MAP)
-        return out if out is not None else f"_{m.group(1)}"
-
+    # 7. Single-char (un-braced) subscripts and superscripts. Allow an
+    #    optional sign so non-standard Gemini output like t^-1 maps to
+    #    t⁻¹ instead of leaving the caret orphaned. The brace forms were
+    #    already handled in the iterative pass above.
     def _sub_short(m):
         out = _convert_run(m.group(1), _SUB_MAP)
         return out if out is not None else m.group(0)
-
-    def _sup_brace(m):
-        out = _convert_run(m.group(1), _SUP_MAP)
-        return out if out is not None else f"^{m.group(1)}"
 
     def _sup_short(m):
         out = _convert_run(m.group(1), _SUP_MAP)
         return out if out is not None else m.group(0)
 
-    s = re.sub(r"_\{([^{}]*)\}", _sub_brace, s)
     s = re.sub(r"_([a-zA-Z0-9])", _sub_short, s)
-    s = re.sub(r"\^\{([^{}]*)\}", _sup_brace, s)
-    s = re.sub(r"\^([a-zA-Z0-9])", _sup_short, s)
+    s = re.sub(r"\^([+-]?[a-zA-Z0-9])", _sup_short, s)
 
     # 8. Escaped punctuation — last so earlier passes don't consume them.
     s = s.replace(r"\%", "%").replace(r"\&", "&")

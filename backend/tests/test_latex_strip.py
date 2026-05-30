@@ -110,6 +110,25 @@ class TestNbspInMath:
         assert "F" in out and "N" in out
 
 
+class TestNestedBraces:
+    def test_sqrt_with_nested_superscript_braces(self):
+        # Real Gemini output: \sqrt{mkt^{-1/2}} — the inner braces around
+        # ^{-1/2} previously blocked the [^{}]* in _SQRT_RE.
+        out = latex_to_plain("\\sqrt{mkt^{-1/2}}")
+        assert "√" in out and "\\sqrt" not in out
+        # The -1 inside the now-bare ^ should be a Unicode superscript.
+        assert "⁻¹" in out
+
+    def test_frac_with_sqrt_in_numerator(self):
+        out = latex_to_plain("\\frac{\\sqrt{x}}{y}")
+        # Either form is fine — what matters is no \frac / \sqrt remain.
+        assert "\\frac" not in out and "\\sqrt" not in out
+
+    def test_unbraced_negative_superscript(self):
+        # t^-1 is non-standard LaTeX but appears in ingested text.
+        assert latex_to_plain("t^-1") == "t⁻¹"
+
+
 class TestRealWorld:
     def test_full_bucket_question(self):
         # Exactly the case from the user-reported screenshot.
