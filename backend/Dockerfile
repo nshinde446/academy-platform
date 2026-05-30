@@ -24,7 +24,14 @@ FROM python:${PYTHON_VERSION}-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH=/home/app/.local/bin:$PATH \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    DEBIAN_FRONTEND=noninteractive \
+    # The builder stage installed Python deps with `pip install --user`,
+    # so they live under /home/app/.local after the COPY below. Tell
+    # Python explicitly to use that as the user site base — without this
+    # root would look in /root/.local (empty) and `playwright install`
+    # would fail with ModuleNotFoundError.
+    PYTHONUSERBASE=/home/app/.local
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libpq5 curl tini \
@@ -37,9 +44,10 @@ COPY --from=builder --chown=app:app /root/.local /home/app/.local
 
 # Chromium + its system libs for headless PDF rendering (Tier 14 papers
 # use KaTeX inside a real browser so output matches the Question Bank
-# preview byte-for-byte). --with-deps invokes apt-get, so this must run
-# as root before USER app. ~280 MB to the image.
+# preview byte-for-byte). --with-deps invokes apt-get under the hood,
+# so this runs as root before USER app. ~280 MB added to the image.
 RUN mkdir -p /ms-playwright \
+    && apt-get update \
     && /home/app/.local/bin/playwright install --with-deps chromium \
     && chown -R app:app /ms-playwright \
     && rm -rf /var/lib/apt/lists/*
