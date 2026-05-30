@@ -21,6 +21,69 @@ interface ImportScheduleSummary {
   errors: string[];
 }
 
+// CSV cell escape — quote any cell with comma, quote, or newline (RFC 4180).
+function csvCell(v: string): string {
+  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+const SAMPLE_HEADERS = [
+  "date",
+  "start_time",
+  "end_time",
+  "teacher_email",
+  "batch_code",
+  "subject_code",
+  "classroom_code",
+  "delivery_mode",
+  "notes",
+];
+
+// Two example rows so the admin can see what real values look like for
+// the optional columns alongside the required ones. Keep the placeholder
+// emails on example.edu so nothing looks like a real address.
+const SAMPLE_ROWS: string[][] = [
+  [
+    "2026-06-01",
+    "09:00",
+    "10:00",
+    "rahul.sharma@example.edu",
+    "NEET-A",
+    "PHY",
+    "R-101",
+    "offline",
+    "Newton's laws of motion",
+  ],
+  [
+    "2026-06-01",
+    "10:15",
+    "11:15",
+    "priya.menon@example.edu",
+    "JEE-B",
+    "MATH",
+    "",
+    "online",
+    "",
+  ],
+];
+
+function downloadSampleTemplate() {
+  const lines = [SAMPLE_HEADERS, ...SAMPLE_ROWS].map((r) =>
+    r.map(csvCell).join(","),
+  );
+  // BOM keeps Excel happy on the Windows side when it opens the CSV.
+  const blob = new Blob(["﻿" + lines.join("\r\n")], {
+    type: "text/csv;charset=utf-8;",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "lecture-schedule-template.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 interface ImportScheduleDialogProps {
   branchId: string | undefined;
 }
@@ -101,6 +164,16 @@ export function ImportScheduleDialog({ branchId }: ImportScheduleDialogProps) {
           <span className="font-mono text-xs">notes</span>. Rows that fail
           validation are skipped — you&apos;ll get a list of which ones and why.
         </DialogDescription>
+        <div className="mt-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={downloadSampleTemplate}
+          >
+            Download sample CSV
+          </Button>
+        </div>
         <div className="mt-4 flex flex-col gap-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
           {summary && (
