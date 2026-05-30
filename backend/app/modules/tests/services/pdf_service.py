@@ -82,7 +82,9 @@ def _render_runs(text: str, imgs: _MathImages) -> str:
     Image-based math rendering stays disabled — see latex_strip.py."""
     if not text:
         return ""
-    return html.escape(latex_to_plain(text))
+    # Preserve explicit line breaks from the source content (questions
+    # extracted from PDFs sometimes carry meaningful newlines).
+    return html.escape(latex_to_plain(text)).replace("\n", "<br>")
 
 
 _CSS = """
@@ -90,9 +92,9 @@ body { font-family: sans-serif; color: #111; }
 h1 { font-size: 16pt; margin: 0; }
 .sub { font-size: 9.5pt; color: #555; margin: 2pt 0 0 0; }
 hr { border: none; border-top: 1px solid #999; margin: 8pt 0; }
-.q { font-size: 11pt; margin: 0 0 9pt 0; }
-.opts { font-size: 10.5pt; color: #222; margin: 2pt 0 0 14pt; }
-.opt { margin: 1pt 0; }
+.q { font-size: 11pt; margin: 0 0 12pt 0; }
+.opts { font-size: 10.5pt; color: #222; margin: 4pt 0 0 14pt; }
+.opt { margin: 3pt 0; }
 .akrow { font-size: 10.5pt; margin: 0 0 6pt 0; }
 .ans { font-weight: bold; }
 .expl { font-size: 9.5pt; color: #555; margin: 1pt 0 0 14pt; }
@@ -118,7 +120,7 @@ def _options_html(options: dict | None, imgs: _MathImages) -> str:
     keys = [k for k in _OPTION_ORDER if k in options] or list(options.keys())
     for k in keys:
         rows.append(
-            f'<div class="opt">({html.escape(str(k))}) '
+            f'<div class="opt"><b>{html.escape(str(k))}.</b> '
             f"{_render_runs(str(options[k]), imgs)}</div>"
         )
     return f'<div class="opts">{"".join(rows)}</div>'

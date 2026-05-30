@@ -84,6 +84,23 @@ class TestPaperPdf:
         assert "\\text" not in text
         assert "$1.6" not in text
 
+    def test_degree_idiom_renders_cleanly(self):
+        # ^\circ should become "°" with no orphaned caret.
+        questions = [_q("Projected at $45^\\circ$ to horizontal.")]
+        data = pdf_service.build_question_paper_pdf(_meta(), questions, "Inst")
+        text = fitz.open("pdf", data)[0].get_text()
+        assert "45°" in text
+        assert "^°" not in text
+        assert "\\circ" not in text
+
+    def test_options_use_letter_dot_format(self):
+        # Match the QB preview's "A. text" style instead of "(A) text".
+        questions = [_q("Pick one.", options={"A": "alpha", "B": "beta"})]
+        data = pdf_service.build_question_paper_pdf(_meta(), questions, "Inst")
+        text = fitz.open("pdf", data)[0].get_text()
+        assert "A." in text and "B." in text
+        assert "(A)" not in text
+
 
 async def _seed_question(db_session, seed_data, content="q") -> Question:
     q = Question(

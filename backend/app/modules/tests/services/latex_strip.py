@@ -12,6 +12,11 @@ clean it up in Question Bank Edit if it matters.
 
 import re
 
+# Non-breaking space — used inside math expressions so that a short
+# formula like "F = (4 + t i + 6j)N" doesn't word-wrap mid-expression
+# when PyMuPDF Story lays the PDF out.
+NBSP = "\xa0"
+
 # \cmd -> unicode glyph. Word-boundary matched at use so \\alpha doesn't
 # eat \\alphax.
 _SYMBOL_MAP: dict[str, str] = {
@@ -90,16 +95,25 @@ def _convert_run(run: str, table: dict[str, str]) -> str | None:
 def latex_to_plain(text: str) -> str:
     """Strip LaTeX markup to readable plain text (Unicode where useful).
 
-    Order matters: delimiters first, then multi-argument commands
-    (\\frac, \\sqrt), then wrapper commands, then symbols, then
-    sub/superscripts."""
+    Order matters: idioms first (^\\circ), then delimiters, then
+    multi-argument commands (\\frac, \\sqrt), wrappers, symbols, and
+    finally sub/superscripts."""
     if not text:
         return text
     s = text
 
-    # 1. Strip $$...$$ and $...$ math delimiters.
-    s = _BLOCK_DELIM_RE.sub(lambda m: m.group(1), s)
-    s = _INLINE_DELIM_RE.sub(lambda m: m.group(1), s)
+    # 0. Idioms that consume the caret along with their argument — handle
+    #    before the generic symbol/superscript passes leave a stray "^".
+    s = re.sub(r"\^\{?\\circ\}?", "°", s)
+    s = re.sub(r"\^\{?\\prime\}?", "′", s)
+
+    # 1. Strip $$...$$ and $...$ math delimiters. Replace ASCII spaces
+    #    inside math with NBSP so short formulas don't word-wrap.
+    def _keep_math_together(m: re.Match) -> str:
+        return m.group(1).replace(" ", NBSP)
+
+    s = _BLOCK_DELIM_RE.sub(_keep_math_together, s)
+    s = _INLINE_DELIM_RE.sub(_keep_math_together, s)
 
     # 2. \frac{a}{b} -> a/b, \sqrt{x} -> √x — before generic wrappers
     #    eat the brace groups.
@@ -116,9 +130,9 @@ def latex_to_plain(text: str) -> str:
     s = re.sub(r"\\left(?![a-zA-Z])", "", s)
     s = re.sub(r"\\right(?![a-zA-Z])", "", s)
 
-    # 5. Spacing commands -> spaces (or nothing).
-    s = re.sub(r"\\[,;:!]", " ", s)
-    s = re.sub(r"\\(?:quad|qquad)\b", "  ", s)
+    # 5. Spacing commands -> spaces (NBSP since they originated in math).
+    s = re.sub(r"\\[,;:!]", NBSP, s)
+    s = re.sub(r"\\(?:quad|qquad)\b", NBSP * 2, s)
 
     # 6. Greek letters / operators / arrows / misc symbols.
     for cmd, sym in _SYMBOL_MAP.items():

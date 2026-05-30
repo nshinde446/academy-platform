@@ -54,22 +54,23 @@ class TestSymbols:
         assert latex_to_plain("$250\\pi^2$") == "250π²"
 
     def test_times_and_cdot(self):
-        assert latex_to_plain("$a \\times b$") == "a × b"
+        # Spaces inside $...$ become NBSP so the formula stays together.
+        assert latex_to_plain("$a \\times b$") == "a\xa0×\xa0b"
 
     def test_inequalities(self):
-        assert latex_to_plain("$x \\leq 5$") == "x ≤ 5"
-        assert latex_to_plain("$x \\geq 5$") == "x ≥ 5"
+        assert latex_to_plain("$x \\leq 5$") == "x\xa0≤\xa05"
+        assert latex_to_plain("$x \\geq 5$") == "x\xa0≥\xa05"
 
     def test_arrow(self):
-        assert latex_to_plain("$x \\rightarrow 0$") == "x → 0"
+        assert latex_to_plain("$x \\rightarrow 0$") == "x\xa0→\xa00"
 
 
 class TestSubSuper:
     def test_numeric_subscript(self):
-        assert latex_to_plain("$m_1 = m_2$") == "m₁ = m₂"
+        assert latex_to_plain("$m_1 = m_2$") == "m₁\xa0=\xa0m₂"
 
     def test_numeric_superscript(self):
-        assert latex_to_plain("$x^2 + y^2$") == "x² + y²"
+        assert latex_to_plain("$x^2 + y^2$") == "x²\xa0+\xa0y²"
 
     def test_brace_subscript_with_digits(self):
         assert latex_to_plain("$P_{0}$") == "P₀"
@@ -77,6 +78,36 @@ class TestSubSuper:
     def test_non_convertible_subscript_kept_literal(self):
         # 'b' has no Unicode subscript — keep underscore notation.
         assert latex_to_plain("$m_b$") == "m_b"
+
+
+class TestDegreeIdiom:
+    def test_caret_circ_becomes_degree(self):
+        # The user-reported case from question 7.
+        assert latex_to_plain("$45^\\circ$") == "45°"
+
+    def test_caret_braced_circ_becomes_degree(self):
+        assert latex_to_plain("$45^{\\circ}$") == "45°"
+
+    def test_bare_circ_still_works(self):
+        # Standalone \circ (not preceded by ^) still maps to °.
+        assert latex_to_plain("$\\circ$") == "°"
+
+
+class TestNbspInMath:
+    def test_spaces_inside_inline_math_become_nbsp(self):
+        # Spaces inside $...$ get replaced with NBSP (U+00A0) so a short
+        # formula doesn't word-wrap mid-expression in the PDF. Whole
+        # text outside math is left alone.
+        out = latex_to_plain("a $b c d$ e")
+        assert "b\xa0c\xa0d" in out
+        # Outside-math spaces stay ASCII.
+        assert "a " in out and " e" in out
+
+    def test_math_keeps_together_in_force_expression(self):
+        # Real example: F = (4 + t \hat{i} + 6\hat{j})N
+        out = latex_to_plain("$F = (4 + t \\hat{i} + 6\\hat{j})N$")
+        assert "\xa0" in out  # at least one NBSP present
+        assert "F" in out and "N" in out
 
 
 class TestRealWorld:
