@@ -16,28 +16,22 @@ import {
 } from "@/components/ui/dialog";
 import { downloadCsvTemplate } from "@/lib/csv-template";
 import { studentKeys } from "../_hooks/use-students";
-import {
-  STANDARDS,
-  TARGET_EXAMS,
-  type Standard,
-  type TargetExam,
-} from "../_schemas/student";
 
 interface ImportStudentsDialogProps {
   branchId: string;
 }
 
-const SELECT_CLASS =
-  "flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm";
-
 // Per-row INPUT columns the student importer accepts (see
-// backend/app/modules/student/services/import_service.py header map).
-// Class / target exam / batch are picked once for the whole upload via
-// the dialog controls — NOT per-row columns. Table-view derived columns
-// (Rank, Avg score, Attendance, DPP, Fees, Actions) are computed by the
-// system and therefore intentionally absent.
+// backend/app/modules/student/services/import_service.py COLUMN_MAPPING).
+// Class / Target / Batch are now read per-row so a single file can mix
+// cohorts. Table-view derived columns (Rank, Avg score, Attendance,
+// DPP, Fees, Actions) are computed by the system and intentionally
+// absent.
 const SAMPLE_HEADERS = [
   "Name",
+  "Class",
+  "Target",
+  "Batch",
   "Roll No",
   "Email",
   "Phone",
@@ -52,6 +46,9 @@ const SAMPLE_HEADERS = [
 const SAMPLE_ROWS: string[][] = [
   [
     "Aman Sharma",
+    "11",
+    "NEET",
+    "NEET-11-A",
     "S-001",
     "aman.sharma@example.edu",
     "9876543210",
@@ -64,6 +61,9 @@ const SAMPLE_ROWS: string[][] = [
   ],
   [
     "Priya Singh",
+    "12",
+    "JEE-Main",
+    "JEE-12-B",
     "S-002",
     "priya.singh@example.edu",
     "9876500000",
@@ -84,15 +84,11 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
   const [open, setOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
-  const [standard, setStandard] = useState<Standard | "">("");
-  const [targetExam, setTargetExam] = useState<TargetExam | "">("");
   const fileRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
 
   function reset() {
     setError("");
-    setStandard("");
-    setTargetExam("");
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -100,14 +96,6 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
     const file = fileRef.current?.files?.[0];
     if (!file) {
       setError("Please select a file.");
-      return;
-    }
-    if (!standard) {
-      setError("Pick the Standard / Class for these students.");
-      return;
-    }
-    if (!targetExam) {
-      setError("Pick the target exam track for these students.");
       return;
     }
 
@@ -122,11 +110,7 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
         `/api/v1/students/import`,
         formData,
         {
-          params: {
-            branch_id: branchId,
-            standard,
-            target_exam: targetExam,
-          },
+          params: { branch_id: branchId },
           headers: { "Content-Type": "multipart/form-data" },
         },
       );
@@ -158,10 +142,10 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
       <DialogPopup>
         <DialogTitle>Import Students</DialogTitle>
         <DialogDescription>
-          Upload a CSV or Excel file. Required column: Name. Optional: Roll
-          No, Email, Phone, Parent Mobile, Gender, District, Caste, Username,
-          RFIDNumber. Standard and target exam apply to every row in the
-          file.
+          Upload a CSV or Excel file. Required columns: Name, Class, Target,
+          Batch. Optional: Roll No, Email, Phone, Parent Mobile, Gender,
+          District, Caste, Username, RFIDNumber. Class / Target / Batch are
+          per-row, so one file can mix cohorts.
         </DialogDescription>
         <div className="mt-3">
           <Button
@@ -175,45 +159,6 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
         </div>
         <div className="mt-4 flex flex-col gap-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="import_standard">Standard *</Label>
-              <select
-                id="import_standard"
-                value={standard}
-                onChange={(e) => setStandard(e.target.value as Standard)}
-                className={SELECT_CLASS}
-                required
-              >
-                <option value="">Pick standard…</option>
-                {STANDARDS.map((s) => (
-                  <option key={s} value={s}>
-                    {s === "Dropper" ? "Dropper" : `Class ${s}`}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="import_target_exam">Target exam *</Label>
-              <select
-                id="import_target_exam"
-                value={targetExam}
-                onChange={(e) =>
-                  setTargetExam(e.target.value as TargetExam)
-                }
-                className={SELECT_CLASS}
-                required
-              >
-                <option value="">Pick target exam…</option>
-                {TARGET_EXAMS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="import_file">File *</Label>

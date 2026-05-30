@@ -27,7 +27,7 @@ describe("ImportStudentsDialog", () => {
     ).toBeInTheDocument();
   });
 
-  it("downloads a template with the per-row import columns only", async () => {
+  it("downloads a template with per-row Class / Target / Batch columns", async () => {
     const user = userEvent.setup();
     let captured: Blob | null = null;
     URL.createObjectURL = ((b: Blob) => {
@@ -47,18 +47,22 @@ describe("ImportStudentsDialog", () => {
 
     expect(captured).toBeTruthy();
     const text = await (captured as unknown as Blob).text();
-    // Required + optional INPUT headers — NOT derived columns.
+    // Required + optional INPUT headers.
     expect(text).toContain("Name");
+    expect(text).toContain("Class");
+    expect(text).toContain("Target");
+    expect(text).toContain("Batch");
     expect(text).toContain("Roll No");
     expect(text).toContain("Parent Mobile");
     expect(text).toContain("RFIDNumber");
+    // Sample rows exercise common class / exam / batch values.
+    expect(text).toMatch(/NEET/);
+    expect(text).toMatch(/JEE-Main/);
     // Derived columns must not leak into the template.
     expect(text).not.toMatch(/\bRank\b/);
     expect(text).not.toMatch(/Avg score/i);
     expect(text).not.toMatch(/Attendance/);
     expect(text).not.toMatch(/\bDPP\b/);
-    // Class / target exam are picked from the dialog dropdowns, not per row.
-    expect(text).not.toMatch(/\bClass\b,/);
-    expect(text).not.toMatch(/\bTarget\b/);
+    expect(text).not.toMatch(/Fees/);
   });
 });

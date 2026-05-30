@@ -4,10 +4,13 @@ import uuid
 from typing import Any
 
 from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.academic.repositories import academic_repository
 from app.modules.audit.services import audit_service
+from app.modules.batch.models.batch_models import Batch
+from app.modules.student.models.student_models import StudentBatchMapping
 from app.modules.student.repositories import student_repository
 
 # Excel/CSV column -> Student field
@@ -30,6 +33,16 @@ COLUMN_MAPPING = {
     "rfidnumber": "rfid_number",
     "rfid_number": "rfid_number",
     "rfid number": "rfid_number",
+    # Per-row enrolment fields. Each row picks its own class / exam /
+    # batch — the dialog no longer carries them.
+    "class": "standard",
+    "standard": "standard",
+    "target": "target_exam",
+    "target exam": "target_exam",
+    "target_exam": "target_exam",
+    "batch": "_batch_code",
+    "batch code": "_batch_code",
+    "batch_code": "_batch_code",
 }
 
 
@@ -105,22 +118,33 @@ def _row_to_student_kwargs(
     return mapped
 
 
+async def _resolve_batch_id(
+    session: AsyncSession, branch_id: uuid.UUID, code: str
+) -> uuid.UUID:
+    batch = (
+        await session.execute(
+            select(Batch).where(
+                Batch.code == code.strip(),
+                Batch.branch_id == branch_id,
+                Batch.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalar_one_or_none()
+    if batch is None:
+        raise ValueError(f"unknown batch code '{code}'")
+    return batch.id
+
+
 async def import_students(
     session: AsyncSession,
     file: UploadFile,
     branch_id: uuid.UUID,
     current_user_id: uuid.UUID,
     ip_address: str | None = None,
-    *,
-    standard: str | None = None,
-    target_exam: str | None = None,
 ) -> dict[str, Any]:
-    # Defer to the student service's enrolment-field validator so the
-    # error messages match what the create endpoint returns.
     from app.modules.student.services.student_service import (
         _validate_enrolment_fields,
     )
-    _validate_enrolment_fields(standard, target_exam)
 
     content = await file.read()
     filename = (file.filename or "").lower()
@@ -153,13 +177,39 @@ async def import_students(
             skipped += 1
             errors.append(f"Row {idx}: missing required 'Name'")
             continue
-        # Apply the per-import standard + target_exam to every row.
-        if standard is not None:
-            kwargs["standard"] = standard
-        if target_exam is not None:
-            kwargs["target_exam"] = target_exam
+
+        batch_code = kwargs.pop("_batch_code", None)
         try:
-            await student_repository.create(session, **kwargs)
+            _validate_enrolment_fields(
+                kwargs.get("standard"), kwargs.get("target_exam")
+            )
+        except HTTPException as exc:
+            skipped += 1
+            errors.append(f"Row {idx}: {exc.detail}")
+            continue
+
+        try:
+            batch_id = (
+                await _resolve_batch_id(session, branch_id, str(batch_code))
+                if batch_code
+                else None
+            )
+        except ValueError as exc:
+            skipped += 1
+            errors.append(f"Row {idx}: {exc}")
+            continue
+
+        try:
+            student = await student_repository.create(session, **kwargs)
+            if batch_id is not None:
+                session.add(
+                    StudentBatchMapping(
+                        student_id=student.id,
+                        batch_id=batch_id,
+                        branch_id=branch_id,
+                    )
+                )
+                await session.flush()
             imported += 1
         except Exception as exc:  # noqa: BLE001
             skipped += 1

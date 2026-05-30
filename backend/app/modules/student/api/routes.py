@@ -82,22 +82,17 @@ async def import_students(
     request: Request,
     file: UploadFile = File(...),
     branch_id: uuid.UUID = Query(...),
-    standard: str = Query(..., description="Class/standard applied to all imported rows"),
-    target_exam: str = Query(..., description="Exam track applied to all imported rows"),
     current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
     session: AsyncSession = Depends(get_db),
 ):
-    """Bulk import students. Standard + target_exam are picked once in
-    the dialog and applied to every row in the file, so the CSV/Excel
-    only needs name and contact columns."""
+    """Bulk import students. Class, Target Exam, and Batch are read
+    per-row from the file so one CSV/Excel can mix cohorts."""
     return await import_service.import_students(
         session,
         file,
         branch_id,
         current_user["user_id"],
         request.client.host if request.client else None,
-        standard=standard,
-        target_exam=target_exam,
     )
 
 
