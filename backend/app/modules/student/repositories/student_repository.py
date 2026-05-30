@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -200,3 +201,180 @@ async def list_with_stats(
             r["batch_size"] = len(rows) if bid is not None else 0
 
     return raw_rows
+
+
+async def get_test_history(
+    session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
+) -> list[dict]:
+    """Per-student test history with subject, topics, marks, and
+    both batch + institute rankings for each test the student took.
+
+    Drives /students/[id] (Tier 13). One pass per join — no N+1 per
+    test — then ranks are computed in Python so the query stays
+    portable across Postgres and the SQLite test DB.
+    """
+    from app.modules.academic.models.academic_models import Subject, Topic
+    from app.modules.tests.models.test_models import (
+        Question,
+        StudentMark,
+        Test,
+        TestQuestion,
+    )
+
+    student = await get_by_id(session, student_id)
+    if student is None or student.branch_id != branch_id:
+        return []
+
+    student_batch_id = (
+        await session.execute(
+            select(StudentBatchMapping.batch_id).where(
+                StudentBatchMapping.student_id == student_id,
+                StudentBatchMapping.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalar_one_or_none()
+
+    student_marks = (
+        await session.execute(
+            select(StudentMark).where(
+                StudentMark.student_id == student_id,
+                StudentMark.branch_id == branch_id,
+                StudentMark.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalars().all()
+    if not student_marks:
+        return []
+
+    test_ids = [m.test_id for m in student_marks]
+
+    test_rows = (
+        await session.execute(
+            select(Test).where(Test.id.in_(test_ids))
+        )
+    ).scalars().all()
+    test_by_id = {t.id: t for t in test_rows}
+
+    subject_ids = list({t.subject_id for t in test_rows})
+    subject_by_id: dict[uuid.UUID, str] = {}
+    if subject_ids:
+        rows = (
+            await session.execute(
+                select(Subject.id, Subject.name).where(Subject.id.in_(subject_ids))
+            )
+        ).all()
+        subject_by_id = {r.id: r.name for r in rows}
+
+    # Topics per test — distinct topic names across the test's questions.
+    topics_by_test: dict[uuid.UUID, list[str]] = {tid: [] for tid in test_ids}
+    if test_ids:
+        rows = (
+            await session.execute(
+                select(TestQuestion.test_id, Topic.name)
+                .join(Question, Question.id == TestQuestion.question_id)
+                .join(Topic, Topic.id == Question.topic_id)
+                .where(
+                    TestQuestion.test_id.in_(test_ids),
+                    TestQuestion.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).all()
+        for r in rows:
+            bucket = topics_by_test.setdefault(r.test_id, [])
+            if r.name not in bucket:
+                bucket.append(r.name)
+
+    # All marks across these tests in the same branch — for ranking.
+    all_marks_rows = (
+        await session.execute(
+            select(StudentMark).where(
+                StudentMark.test_id.in_(test_ids),
+                StudentMark.branch_id == branch_id,
+                StudentMark.is_deleted == False,  # noqa: E712
+                StudentMark.is_absent == False,
+            )
+        )
+    ).scalars().all()
+
+    # Batch membership for every student who has a mark on these tests.
+    candidate_student_ids = list({m.student_id for m in all_marks_rows})
+    batch_by_student: dict[uuid.UUID, uuid.UUID] = {}
+    if candidate_student_ids:
+        rows = (
+            await session.execute(
+                select(
+                    StudentBatchMapping.student_id, StudentBatchMapping.batch_id
+                ).where(
+                    StudentBatchMapping.student_id.in_(candidate_student_ids),
+                    StudentBatchMapping.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).all()
+        batch_by_student = {r.student_id: r.batch_id for r in rows}
+
+    # Per-test ranking buckets.
+    marks_by_test: dict[uuid.UUID, list] = {}
+    for m in all_marks_rows:
+        marks_by_test.setdefault(m.test_id, []).append(m)
+
+    out: list[dict] = []
+    for m in student_marks:
+        test = test_by_id.get(m.test_id)
+        if test is None:
+            continue
+
+        siblings = marks_by_test.get(m.test_id, [])
+        # Institute rank (whole branch). Absentees already filtered out.
+        institute_present = sorted(
+            siblings, key=lambda x: x.percentage, reverse=True
+        )
+        institute_size = len(institute_present)
+        institute_rank: int | None = None
+        if not m.is_absent:
+            for idx, row in enumerate(institute_present, start=1):
+                if row.student_id == student_id:
+                    institute_rank = idx
+                    break
+
+        # Batch rank — only the student's batch peers.
+        batch_present: list = []
+        if student_batch_id is not None:
+            batch_present = sorted(
+                (s for s in institute_present
+                 if batch_by_student.get(s.student_id) == student_batch_id),
+                key=lambda x: x.percentage,
+                reverse=True,
+            )
+        batch_size = len(batch_present)
+        batch_rank: int | None = None
+        if not m.is_absent and student_batch_id is not None:
+            for idx, row in enumerate(batch_present, start=1):
+                if row.student_id == student_id:
+                    batch_rank = idx
+                    break
+
+        out.append({
+            "test_id": test.id,
+            "test_name": test.name,
+            "paper_type": test.paper_type,
+            "scheduled_at": test.scheduled_at,
+            "subject_id": test.subject_id,
+            "subject_name": subject_by_id.get(test.subject_id, ""),
+            "topics": topics_by_test.get(test.id, []),
+            "marks_obtained": m.marks_obtained,
+            "max_marks": m.max_marks,
+            "percentage": m.percentage,
+            "grade": m.grade,
+            "is_absent": m.is_absent,
+            "batch_rank": batch_rank,
+            "batch_size": batch_size,
+            "institute_rank": institute_rank,
+            "institute_size": institute_size,
+        })
+
+    # Newest tests first; rows without a scheduled_at sink to the bottom.
+    out.sort(
+        key=lambda r: r["scheduled_at"] or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    return out

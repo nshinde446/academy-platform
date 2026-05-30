@@ -9,6 +9,7 @@ from app.modules.student.schemas.student_schemas import (
     ImportSummary,
     StudentCreate,
     StudentResponse,
+    StudentTestHistoryRow,
     StudentUpdate,
     StudentWithStats,
 )
@@ -60,6 +61,21 @@ async def get_student(
     session: AsyncSession = Depends(get_db),
 ):
     return await student_service.get_student(session, student_id, branch_id)
+
+
+@router.get(
+    "/{student_id}/test-history",
+    response_model=list[StudentTestHistoryRow],
+)
+async def get_student_test_history(
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Per-student dashboard data: one row per test taken, with subject,
+    topics, marks, batch rank, and institute rank."""
+    return await student_service.get_test_history(session, student_id, branch_id)
 
 
 @router.patch("/{student_id}", response_model=StudentResponse)

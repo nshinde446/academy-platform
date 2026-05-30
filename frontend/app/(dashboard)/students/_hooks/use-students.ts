@@ -5,6 +5,7 @@ import type {
   StudentCreate,
   StudentUpdate,
   StudentWithStats,
+  StudentTestHistoryRow,
   AcademicYearResponse,
 } from "../_schemas/student";
 
@@ -15,6 +16,8 @@ export const studentKeys = {
     [...studentKeys.all, "with-stats", branchId] as const,
   detail: (branchId: string, id: string) =>
     [...studentKeys.all, "detail", branchId, id] as const,
+  testHistory: (branchId: string, id: string) =>
+    [...studentKeys.all, "test-history", branchId, id] as const,
 };
 
 export const academicYearKeys = {
@@ -134,6 +137,23 @@ export function useDeleteStudent(branchId: string | undefined) {
         });
       }
     },
+  });
+}
+
+export function useStudentTestHistory(
+  branchId: string | undefined,
+  studentId: string,
+) {
+  return useQuery<StudentTestHistoryRow[]>({
+    queryKey: studentKeys.testHistory(branchId!, studentId),
+    queryFn: async () => {
+      const res = await apiClient.get<StudentTestHistoryRow[]>(
+        `/api/v1/students/${studentId}/test-history`,
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!studentId,
   });
 }
 

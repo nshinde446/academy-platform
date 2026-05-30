@@ -98,6 +98,26 @@ export interface StudentUpdate {
   fees_status?: FeesStatus | null;
 }
 
+// One row per test the student has taken — powers /students/[id].
+export interface StudentTestHistoryRow {
+  test_id: string;
+  test_name: string;
+  paper_type: string;
+  scheduled_at: string | null;
+  subject_id: string;
+  subject_name: string;
+  topics: string[];
+  marks_obtained: number;
+  max_marks: number;
+  percentage: number;
+  grade: string | null;
+  is_absent: boolean;
+  batch_rank: number | null;
+  batch_size: number;
+  institute_rank: number | null;
+  institute_size: number;
+}
+
 export interface AcademicYearResponse {
   id: string;
   branch_id: string;

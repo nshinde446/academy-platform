@@ -80,6 +80,14 @@ async def list_students_with_stats(session: AsyncSession, branch_id: uuid.UUID):
     return await student_repository.list_with_stats(session, branch_id)
 
 
+async def get_test_history(
+    session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
+):
+    # Ownership check — surfaces 404 the same way get_student does.
+    await get_student(session, student_id, branch_id)
+    return await student_repository.get_test_history(session, student_id, branch_id)
+
+
 async def update_student(
     session: AsyncSession,
     student_id: uuid.UUID,

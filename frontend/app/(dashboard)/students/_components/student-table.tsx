@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Table,
   TableHeader,
@@ -66,7 +67,12 @@ export function StudentTable({
                   <RosterAvatar first={r.first_name} last={r.last_name} />
                 </TableCell>
                 <TableCell className="font-medium">
-                  {r.first_name} {r.last_name}
+                  <Link
+                    href={`/students/${r.id}`}
+                    className="hover:underline"
+                  >
+                    {r.first_name} {r.last_name}
+                  </Link>
                   {r.enrollment_number ? (
                     <span className="ml-2 text-xs text-muted-foreground tabular-nums">
                       {r.enrollment_number}

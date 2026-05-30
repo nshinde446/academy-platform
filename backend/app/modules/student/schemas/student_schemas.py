@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -101,3 +101,25 @@ class ImportSummary(BaseModel):
     imported: int
     skipped: int
     errors: list[str] = []
+
+
+class StudentTestHistoryRow(BaseModel):
+    """One row per test the student has taken — drives the per-student
+    dashboard test series + rankings (Tier 13)."""
+
+    test_id: uuid.UUID
+    test_name: str
+    paper_type: str
+    scheduled_at: datetime | None = None
+    subject_id: uuid.UUID
+    subject_name: str
+    topics: list[str] = []
+    marks_obtained: float
+    max_marks: float
+    percentage: float
+    grade: str | None = None
+    is_absent: bool
+    batch_rank: int | None = None
+    batch_size: int = 0
+    institute_rank: int | None = None
+    institute_size: int = 0
