@@ -13,11 +13,45 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
+import { downloadCsvTemplate } from "@/lib/csv-template";
 import { teacherKeys } from "../_hooks/use-teachers";
 import type { ImportSummary } from "../_schemas/teacher";
 
 interface ImportTeachersDialogProps {
   branchId: string;
+}
+
+// Per-row INPUT columns the teacher importer accepts (see
+// backend/app/modules/teacher/services/import_service.py). The table-
+// view derived columns (lecture counts, attendance scores, etc.) are
+// computed by the system, so they're intentionally absent.
+const SAMPLE_HEADERS = [
+  "Name",
+  "Email",
+  "Phone",
+  "Qualification",
+  "Subjects",
+];
+
+const SAMPLE_ROWS: string[][] = [
+  [
+    "Rahul Sharma",
+    "rahul.sharma@example.edu",
+    "9876543210",
+    "M.Sc. Physics",
+    "Physics",
+  ],
+  [
+    "Priya Menon",
+    "priya.menon@example.edu",
+    "9123456780",
+    "Ph.D. Mathematics",
+    "Mathematics, Statistics",
+  ],
+];
+
+function downloadSampleTemplate() {
+  downloadCsvTemplate("teachers-import-template.csv", SAMPLE_HEADERS, SAMPLE_ROWS);
 }
 
 export function ImportTeachersDialog({ branchId }: ImportTeachersDialogProps) {
@@ -82,6 +116,16 @@ export function ImportTeachersDialog({ branchId }: ImportTeachersDialogProps) {
           Phone, Qualification, Subjects (comma-separated subject names —
           matched to existing subjects in this branch).
         </DialogDescription>
+        <div className="mt-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={downloadSampleTemplate}
+          >
+            Download sample CSV
+          </Button>
+        </div>
         <div className="mt-4 flex flex-col gap-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
           {summary && (

@@ -14,6 +14,7 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
+import { downloadCsvTemplate } from "@/lib/csv-template";
 import { studentKeys } from "../_hooks/use-students";
 import {
   STANDARDS,
@@ -28,6 +29,56 @@ interface ImportStudentsDialogProps {
 
 const SELECT_CLASS =
   "flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm";
+
+// Per-row INPUT columns the student importer accepts (see
+// backend/app/modules/student/services/import_service.py header map).
+// Class / target exam / batch are picked once for the whole upload via
+// the dialog controls — NOT per-row columns. Table-view derived columns
+// (Rank, Avg score, Attendance, DPP, Fees, Actions) are computed by the
+// system and therefore intentionally absent.
+const SAMPLE_HEADERS = [
+  "Name",
+  "Roll No",
+  "Email",
+  "Phone",
+  "Parent Mobile",
+  "Gender",
+  "District",
+  "Caste",
+  "Username",
+  "RFIDNumber",
+];
+
+const SAMPLE_ROWS: string[][] = [
+  [
+    "Aman Sharma",
+    "S-001",
+    "aman.sharma@example.edu",
+    "9876543210",
+    "9123456780",
+    "M",
+    "Pune",
+    "General",
+    "aman.sharma",
+    "1234567890",
+  ],
+  [
+    "Priya Singh",
+    "S-002",
+    "priya.singh@example.edu",
+    "9876500000",
+    "",
+    "F",
+    "Mumbai",
+    "",
+    "priya.singh",
+    "",
+  ],
+];
+
+function downloadSampleTemplate() {
+  downloadCsvTemplate("students-import-template.csv", SAMPLE_HEADERS, SAMPLE_ROWS);
+}
 
 export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
   const [open, setOpen] = useState(false);
@@ -112,6 +163,16 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
           RFIDNumber. Standard and target exam apply to every row in the
           file.
         </DialogDescription>
+        <div className="mt-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={downloadSampleTemplate}
+          >
+            Download sample CSV
+          </Button>
+        </div>
         <div className="mt-4 flex flex-col gap-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
 

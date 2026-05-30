@@ -13,6 +13,7 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
+import { downloadCsvTemplate } from "@/lib/csv-template";
 import { lectureKeys } from "../_hooks/use-lectures";
 
 interface ImportScheduleSummary {
@@ -21,11 +22,9 @@ interface ImportScheduleSummary {
   errors: string[];
 }
 
-// CSV cell escape — quote any cell with comma, quote, or newline (RFC 4180).
-function csvCell(v: string): string {
-  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-}
-
+// Per-row INPUT columns the lecture importer reads (see
+// backend/app/modules/lectures/services/import_service.py). Derived
+// values (status, conducted_at, etc.) don't belong in the template.
 const SAMPLE_HEADERS = [
   "date",
   "start_time",
@@ -39,8 +38,8 @@ const SAMPLE_HEADERS = [
 ];
 
 // Two example rows so the admin can see what real values look like for
-// the optional columns alongside the required ones. Keep the placeholder
-// emails on example.edu so nothing looks like a real address.
+// the optional columns alongside the required ones. example.edu emails
+// so nothing looks like a real address.
 const SAMPLE_ROWS: string[][] = [
   [
     "2026-06-01",
@@ -67,21 +66,11 @@ const SAMPLE_ROWS: string[][] = [
 ];
 
 function downloadSampleTemplate() {
-  const lines = [SAMPLE_HEADERS, ...SAMPLE_ROWS].map((r) =>
-    r.map(csvCell).join(","),
+  downloadCsvTemplate(
+    "lecture-schedule-template.csv",
+    SAMPLE_HEADERS,
+    SAMPLE_ROWS,
   );
-  // BOM keeps Excel happy on the Windows side when it opens the CSV.
-  const blob = new Blob(["﻿" + lines.join("\r\n")], {
-    type: "text/csv;charset=utf-8;",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "lecture-schedule-template.csv";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 interface ImportScheduleDialogProps {
