@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useUserStore } from "@/store/user-store";
@@ -35,6 +35,16 @@ import { RecentPapers } from "./_components/recent-papers";
 const DEFAULT_MIX: DifficultyMix = { EASY: 3, MEDIUM: 5, HARD: 2 };
 
 export default function PapersPage() {
+  // useSearchParams forces the page to opt out of static prerendering, so
+  // we wrap the body in <Suspense> per the Next 16 build requirement.
+  return (
+    <Suspense fallback={<p className="text-muted-foreground text-sm">Loading composer...</p>}>
+      <PapersPageBody />
+    </Suspense>
+  );
+}
+
+function PapersPageBody() {
   const user = useUserStore((s) => s.user);
   const branchId = user?.branch_roles?.[0]?.branch_id;
   const searchParams = useSearchParams();

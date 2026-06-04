@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueries } from "@tanstack/react-query";
@@ -140,6 +140,16 @@ function isThisWeek(iso: string): boolean {
 }
 
 export default function LecturesPage() {
+  // useSearchParams forces the page to opt out of static prerendering, so
+  // we wrap the body in <Suspense> per the Next 16 build requirement.
+  return (
+    <Suspense fallback={<p className="text-muted-foreground text-sm">Loading lectures...</p>}>
+      <LecturesPageBody />
+    </Suspense>
+  );
+}
+
+function LecturesPageBody() {
   const user = useUserStore((s) => s.user);
   const branchId = user?.branch_roles?.[0]?.branch_id;
 
