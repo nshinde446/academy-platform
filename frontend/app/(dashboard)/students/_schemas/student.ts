@@ -118,6 +118,12 @@ export interface StudentTestHistoryRow {
   institute_size: number;
 }
 
+export interface ImportSummary {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
 export interface AcademicYearResponse {
   id: string;
   branch_id: string;
