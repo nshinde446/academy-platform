@@ -1,11 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useQueries } from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
 import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   subjectKeys,
@@ -35,6 +39,12 @@ import type {
   TopicSummary,
 } from "./_schemas/lecture";
 import { LectureTable } from "./_components/lecture-table";
+import {
+  LectureTableMsa,
+  groupStatus,
+  type MsaStatusGroup,
+} from "./_components/lecture-table-msa";
+import { GenerateDppModal } from "./_components/generate-dpp-modal";
 import { LectureEmptyState } from "./_components/lecture-empty-state";
 import { CreateLectureDialog } from "./_components/create-lecture-dialog";
 import { MarkSubstituteDialog } from "./_components/mark-substitute-dialog";
@@ -99,9 +109,42 @@ function filterLectures(
   });
 }
 
+const MSA_GROUPS: { value: MsaStatusGroup | "all"; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "scheduled", label: "Scheduled" },
+  { value: "live", label: "Live" },
+  { value: "completed", label: "Completed" },
+  { value: "no_show", label: "No-show" },
+];
+
+function isToday(iso: string): boolean {
+  const d = new Date(iso);
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+function isThisWeek(iso: string): boolean {
+  const d = new Date(iso);
+  const now = new Date();
+  const day = now.getDay(); // 0 Sun … 6 Sat
+  const start = new Date(now);
+  start.setDate(now.getDate() - day);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  return d >= start && d < end;
+}
+
 export default function LecturesPage() {
   const user = useUserStore((s) => s.user);
   const branchId = user?.branch_roles?.[0]?.branch_id;
+
+  const searchParams = useSearchParams();
+  const isMsa = searchParams.get("view") === "msa";
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
@@ -110,6 +153,7 @@ export default function LecturesPage() {
   const [filterStatus, setFilterStatus] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [msaGroup, setMsaGroup] = useState<MsaStatusGroup | "all">("all");
 
   const [deleteTarget, setDeleteTarget] = useState<LectureResponse | null>(
     null
@@ -121,6 +165,10 @@ export default function LecturesPage() {
     null
   );
   const [noShowOpen, setNoShowOpen] = useState(false);
+  const [dppTarget, setDppTarget] = useState<LectureResponse | null>(null);
+  const [dppOpen, setDppOpen] = useState(false);
+  const [makeupOpen, setMakeupOpen] = useState(false);
+  const [makeupPrefillId, setMakeupPrefillId] = useState<string | null>(null);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
   const lecturesQuery = useLectures(branchId);
@@ -259,6 +307,47 @@ export default function LecturesPage() {
     ]
   );
 
+  // MSA view: drop cancelled rows entirely, group statuses, then apply chip.
+  const msaFiltered = useMemo(() => {
+    const q = debouncedSearch.toLowerCase();
+    return lectures.filter((l) => {
+      const g = groupStatus(l.lecture_status);
+      if (!g) return false;
+      if (msaGroup !== "all" && g !== msaGroup) return false;
+      if (!q) return true;
+      const t = teachers.find((x) => x.id === l.teacher_id);
+      const at = teachers.find((x) => x.id === l.actual_teacher_id);
+      const b = batches.find((x) => x.id === l.batch_id);
+      const top = allTopics.find((x) => x.id === l.topic_id);
+      const hay = [
+        t ? `${t.first_name} ${t.last_name}` : "",
+        at ? `${at.first_name} ${at.last_name}` : "",
+        b?.name ?? "",
+        top?.name ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [lectures, msaGroup, debouncedSearch, teachers, batches, allTopics]);
+
+  const msaKpis = useMemo(() => {
+    const eligible = lectures.filter((l) => !!groupStatus(l.lecture_status));
+    const thisWeek = eligible.filter((l) => isThisWeek(l.scheduled_start)).length;
+    const completed = eligible.filter(
+      (l) => groupStatus(l.lecture_status) === "completed" && isThisWeek(l.scheduled_start)
+    ).length;
+    const live = eligible.filter(
+      (l) => groupStatus(l.lecture_status) === "live"
+    ).length;
+    const upcomingToday = eligible.filter(
+      (l) =>
+        groupStatus(l.lecture_status) === "scheduled" &&
+        isToday(l.scheduled_start)
+    ).length;
+    return { thisWeek, completed, live, upcomingToday };
+  }, [lectures]);
+
   async function handleCreate(data: LectureCreate) {
     await createMutation.mutateAsync(data);
   }
@@ -317,6 +406,14 @@ export default function LecturesPage() {
       data,
     });
   }
+  function handleGenerateDpp(l: LectureResponse) {
+    setDppTarget(l);
+    setDppOpen(true);
+  }
+  function handleRecordMakeup(l: LectureResponse) {
+    setMakeupPrefillId(l.id);
+    setMakeupOpen(true);
+  }
 
   const hasFilter = !!(
     debouncedSearch ||
@@ -327,6 +424,30 @@ export default function LecturesPage() {
     toDate
   );
 
+  const headerActions = (
+    <div className="flex flex-wrap gap-2">
+      <ImportScheduleDialog branchId={branchId} />
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => {
+          setMakeupPrefillId(null);
+          setMakeupOpen(true);
+        }}
+      >
+        Record Makeup
+      </Button>
+      <CreateLectureDialog
+        branchId={branchId}
+        batches={batches}
+        teachers={teachers}
+        classrooms={classrooms}
+        onSubmit={handleCreate}
+        isPending={createMutation.isPending}
+      />
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -334,129 +455,236 @@ export default function LecturesPage() {
         <div>
           <h2 className="text-2xl font-semibold">Lectures</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Schedule, run, and track lectures. Backend rejects teacher/batch/
-            classroom conflicts at create time.
+            {isMsa
+              ? "Schedule, attendance, and one-click DPP generation off completed lectures."
+              : "Schedule, run, and track lectures. Backend rejects teacher/batch/classroom conflicts at create time."}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {isMsa ? (
+              <>
+                Simplified view ·{" "}
+                <Link href="/lectures" className="underline">
+                  switch to full view
+                </Link>
+              </>
+            ) : (
+              <>
+                Full view ·{" "}
+                <Link href="/lectures?view=msa" className="underline">
+                  try the simplified view
+                </Link>
+              </>
+            )}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <ImportScheduleDialog branchId={branchId} />
-          <RecordMakeupDialog
-            branchId={branchId}
-            batches={batches}
-            teachers={teachers}
-            classrooms={classrooms}
-            lectures={lectures}
-            onSubmit={handleRecordSession}
-            isPending={sessionMutation.isPending}
-          />
-          <CreateLectureDialog
-            branchId={branchId}
-            batches={batches}
-            teachers={teachers}
-            classrooms={classrooms}
-            onSubmit={handleCreate}
-            isPending={createMutation.isPending}
-          />
-        </div>
+        {headerActions}
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
-        <Input
-          placeholder="Search by batch or teacher..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full lg:max-w-xs"
-        />
-        <select
-          value={filterBatchId}
-          onChange={(e) => setFilterBatchId(e.target.value)}
-          className={SELECT_CLASS}
-          aria-label="Filter by batch"
-        >
-          <option value="">All batches</option>
-          {batches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterTeacherId}
-          onChange={(e) => setFilterTeacherId(e.target.value)}
-          className={SELECT_CLASS}
-          aria-label="Filter by teacher"
-        >
-          <option value="">All teachers</option>
-          {teachers.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.first_name} {t.last_name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className={SELECT_CLASS}
-          aria-label="Filter by status"
-        >
-          <option value="">All statuses</option>
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <Input
-          type="date"
-          value={fromDate}
-          onChange={(e) => setFromDate(e.target.value)}
-          className="w-full lg:w-40"
-          aria-label="From date"
-        />
-        <Input
-          type="date"
-          value={toDate}
-          onChange={(e) => setToDate(e.target.value)}
-          className="w-full lg:w-40"
-          aria-label="To date"
-        />
-        <span className="text-sm text-muted-foreground">
-          {filtered.length} lecture{filtered.length !== 1 ? "s" : ""}
-        </span>
-      </div>
+      {isMsa ? (
+        <>
+          {/* MSA KPI strip */}
+          <Card size="sm">
+            <div className="grid grid-cols-2 gap-3 px-3 sm:grid-cols-4">
+              <Kpi label="This week" value={String(msaKpis.thisWeek)} />
+              <Kpi label="Completed" value={String(msaKpis.completed)} />
+              <Kpi label="Live now" value={String(msaKpis.live)} />
+              <Kpi label="Upcoming today" value={String(msaKpis.upcomingToday)} />
+            </div>
+          </Card>
 
-      {/* Content */}
-      {lecturesQuery.isLoading ? (
-        <p className="text-muted-foreground text-sm">Loading lectures...</p>
-      ) : lecturesQuery.isError ? (
-        <p className="text-destructive text-sm">
-          Failed to load lectures. Make sure the backend is running.
-        </p>
-      ) : filtered.length === 0 ? (
-        <LectureEmptyState hasFilter={hasFilter} />
+          {/* Segmented status chips + search */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div
+              role="tablist"
+              aria-label="Status"
+              className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1"
+            >
+              {MSA_GROUPS.map((g) => {
+                const active = msaGroup === g.value;
+                return (
+                  <button
+                    key={g.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setMsaGroup(g.value)}
+                    className={
+                      "rounded-md px-3 py-1 text-xs font-medium transition-colors " +
+                      (active
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground")
+                    }
+                  >
+                    {g.label}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="flex-1" />
+            <Input
+              placeholder="Search teacher, batch, topic…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full sm:max-w-xs"
+              aria-label="Search lectures"
+            />
+            <span className="text-xs text-muted-foreground">
+              {msaFiltered.length} lecture{msaFiltered.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+
+          {/* MSA Content */}
+          {lecturesQuery.isLoading ? (
+            <p className="text-muted-foreground text-sm">Loading lectures...</p>
+          ) : lecturesQuery.isError ? (
+            <p className="text-destructive text-sm">
+              Failed to load lectures. Make sure the backend is running.
+            </p>
+          ) : msaFiltered.length === 0 ? (
+            <LectureEmptyState hasFilter={!!debouncedSearch || msaGroup !== "all"} />
+          ) : (
+            <LectureTableMsa
+              lectures={msaFiltered}
+              batches={batches}
+              teachers={teachers}
+              subjects={allSubjects}
+              topics={allTopics}
+              onStart={handleStart}
+              onComplete={handleComplete}
+              onGenerateDpp={handleGenerateDpp}
+              onRecordMakeup={handleRecordMakeup}
+            />
+          )}
+        </>
       ) : (
-        <LectureTable
-          lectures={filtered}
-          batches={batches}
-          teachers={teachers}
-          subjects={allSubjects}
-          topics={allTopics}
-          coveredLectureIds={coveredLectureIds}
-          onStart={handleStart}
-          onComplete={handleComplete}
-          onCancel={handleCancel}
-          onDelete={handleDeleteClick}
-          onSubstitute={handleSubstitute}
-          onNoShow={handleNoShow}
-        />
+        <>
+          {/* Filters */}
+          <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+            <Input
+              placeholder="Search by batch or teacher..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full lg:max-w-xs"
+            />
+            <select
+              value={filterBatchId}
+              onChange={(e) => setFilterBatchId(e.target.value)}
+              className={SELECT_CLASS}
+              aria-label="Filter by batch"
+            >
+              <option value="">All batches</option>
+              {batches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filterTeacherId}
+              onChange={(e) => setFilterTeacherId(e.target.value)}
+              className={SELECT_CLASS}
+              aria-label="Filter by teacher"
+            >
+              <option value="">All teachers</option>
+              {teachers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.first_name} {t.last_name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className={SELECT_CLASS}
+              aria-label="Filter by status"
+            >
+              <option value="">All statuses</option>
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            <Input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="w-full lg:w-40"
+              aria-label="From date"
+            />
+            <Input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="w-full lg:w-40"
+              aria-label="To date"
+            />
+            <span className="text-sm text-muted-foreground">
+              {filtered.length} lecture{filtered.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+
+          {/* Content */}
+          {lecturesQuery.isLoading ? (
+            <p className="text-muted-foreground text-sm">Loading lectures...</p>
+          ) : lecturesQuery.isError ? (
+            <p className="text-destructive text-sm">
+              Failed to load lectures. Make sure the backend is running.
+            </p>
+          ) : filtered.length === 0 ? (
+            <LectureEmptyState hasFilter={hasFilter} />
+          ) : (
+            <LectureTable
+              lectures={filtered}
+              batches={batches}
+              teachers={teachers}
+              subjects={allSubjects}
+              topics={allTopics}
+              coveredLectureIds={coveredLectureIds}
+              onStart={handleStart}
+              onComplete={handleComplete}
+              onCancel={handleCancel}
+              onDelete={handleDeleteClick}
+              onSubstitute={handleSubstitute}
+              onNoShow={handleNoShow}
+            />
+          )}
+
+          <SessionList
+            sessions={sessions}
+            batches={batches}
+            teachers={teachers}
+            subjects={allSubjects}
+          />
+        </>
       )}
 
-      <SessionList
-        sessions={sessions}
+      <RecordMakeupDialog
+        branchId={branchId}
         batches={batches}
         teachers={teachers}
+        classrooms={classrooms}
+        lectures={lectures}
+        onSubmit={handleRecordSession}
+        isPending={sessionMutation.isPending}
+        open={makeupOpen}
+        onOpenChange={(o) => {
+          setMakeupOpen(o);
+          if (!o) setMakeupPrefillId(null);
+        }}
+        prefillLectureId={makeupPrefillId}
+      />
+
+      <GenerateDppModal
+        lecture={dppTarget}
+        batches={batches}
         subjects={allSubjects}
+        topics={allTopics}
+        open={dppOpen}
+        onOpenChange={(o) => {
+          setDppOpen(o);
+          if (!o) setDppTarget(null);
+        }}
       />
 
       <MarkNoShowDialog
@@ -501,6 +729,15 @@ export default function LecturesPage() {
         confirmLabel="OK"
         hideCancel
       />
+    </div>
+  );
+}
+
+function Kpi({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-xl font-semibold tabular-nums">{value}</span>
     </div>
   );
 }

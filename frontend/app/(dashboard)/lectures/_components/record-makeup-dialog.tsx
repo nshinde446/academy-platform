@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
-  DialogTrigger,
   DialogPopup,
   DialogTitle,
   DialogDescription,
@@ -32,6 +31,11 @@ interface RecordMakeupDialogProps {
   lectures: LectureResponse[];
   onSubmit: (data: LectureSessionCreate) => Promise<void> | void;
   isPending: boolean;
+  /** Controlled-open. Parent owns the trigger button. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Pre-link to a missed lecture when the dialog opens. */
+  prefillLectureId?: string | null;
 }
 
 const SELECT_CLASS =
@@ -67,8 +71,10 @@ export function RecordMakeupDialog({
   lectures,
   onSubmit,
   isPending,
+  open,
+  onOpenChange,
+  prefillLectureId,
 }: RecordMakeupDialogProps) {
-  const [open, setOpen] = useState(false);
   const [linkedLectureId, setLinkedLectureId] = useState("");
   const [batchId, setBatchId] = useState("");
   const [teacherId, setTeacherId] = useState("");
@@ -129,6 +135,15 @@ export function RecordMakeupDialog({
     setDeliveryMode(l.delivery_mode);
   }, [linkedLectureId, lectures]);
 
+  // When the parent passes a prefillLectureId alongside open=true, pre-select
+  // the linked lecture so the MSA Quick Action lands the user on the right
+  // makeup row without typing.
+  useEffect(() => {
+    if (open && prefillLectureId) {
+      setLinkedLectureId(prefillLectureId);
+    }
+  }, [open, prefillLectureId]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!batchId) return setError("Pick a batch");
@@ -157,7 +172,7 @@ export function RecordMakeupDialog({
         notes: notes.trim() || null,
       });
       reset();
-      setOpen(false);
+      onOpenChange(false);
     } catch (err: any) {
       setError(
         err?.response?.data?.error?.message ||
@@ -171,17 +186,10 @@ export function RecordMakeupDialog({
     <Dialog
       open={open}
       onOpenChange={(isOpen) => {
-        setOpen(isOpen);
+        onOpenChange(isOpen);
         if (!isOpen) reset();
       }}
     >
-      <DialogTrigger
-        render={
-          <Button variant="outline" onClick={() => setOpen(true)}>
-            Record Makeup
-          </Button>
-        }
-      />
       <DialogPopup className="max-w-2xl">
         <DialogTitle>Record Makeup / Ad-hoc Lecture</DialogTitle>
         <DialogDescription>

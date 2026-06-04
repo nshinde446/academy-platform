@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useUserStore } from "@/store/user-store";
 import type {
@@ -36,16 +37,29 @@ const DEFAULT_MIX: DifficultyMix = { EASY: 3, MEDIUM: 5, HARD: 2 };
 export default function PapersPage() {
   const user = useUserStore((s) => s.user);
   const branchId = user?.branch_roles?.[0]?.branch_id;
+  const searchParams = useSearchParams();
 
-  const [paperType, setPaperType] = useState<PaperType>("DPP");
-  const [batchId, setBatchId] = useState("");
-  const [subjectId, setSubjectId] = useState("");
-  const [classLabel, setClassLabel] = useState<ClassLabel | "">("");
+  // One-shot prefill from query params (set by the lectures MSA "Generate
+  // DPP" flow). Lazy init reads the URL once at mount and never re-runs,
+  // so user edits aren't overwritten on subsequent renders.
+  const [paperType, setPaperType] = useState<PaperType>(() => {
+    const t = searchParams.get("paper_type");
+    return t === "DPP" || t === "CPP" || t === "TEST" ? t : "DPP";
+  });
+  const [batchId, setBatchId] = useState(
+    () => searchParams.get("batch_id") ?? ""
+  );
+  const [subjectId, setSubjectId] = useState(
+    () => searchParams.get("subject_id") ?? ""
+  );
+  const [classLabel, setClassLabel] = useState<ClassLabel | "">(
+    () => (searchParams.get("class_label") as ClassLabel | null) ?? ""
+  );
   const [examType, setExamType] = useState<ExamType | "">("");
   const [mix, setMixState] = useState<DifficultyMix>(DEFAULT_MIX);
 
   const [picked, setPicked] = useState<QuestionResponse[]>([]);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(() => searchParams.get("name") ?? "");
   const [pickMode, setPickMode] = useState<"pick" | "reshuffle" | null>(null);
   const [swappingId, setSwappingId] = useState<string | null>(null);
   const [alert, setAlert] = useState<string | null>(null);
