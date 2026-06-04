@@ -149,6 +149,21 @@ const SAMPLE_ROWS: string[][] = [
     "vikas.reddy",
     "1234567896",
   ],
+  [
+    "Tanvi Joshi",
+    "12",
+    "MHT-CET",
+    "MHT-12-A",
+    "S-008",
+    "tanvi.joshi@example.edu",
+    "9876566666",
+    "9123466666",
+    "F",
+    "Pune",
+    "OBC",
+    "tanvi.joshi",
+    "1234567897",
+  ],
 ];
 
 function downloadSampleTemplate() {
@@ -227,8 +242,8 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
           Upload a CSV or Excel file. <strong>Required:</strong> Name. Class /
           Target / Batch are per-row so one file can mix cohorts.{" "}
           <strong>Allowed Class:</strong> 9, 10, 11, 12, Dropper.{" "}
-          <strong>Allowed Target:</strong> NEET, JEE-Main, JEE-Advanced, Both,
-          Foundation, Other. <strong>Batch</strong> must match an existing
+          <strong>Allowed Target:</strong> NEET, JEE-Main, JEE-Advanced,
+          MHT-CET, Both, Foundation, Other. <strong>Batch</strong> must match an existing
           batch <em>code</em> in this branch — create the batch first if it
           does not exist. Optional: Roll No, Email, Phone, Parent Mobile,
           Gender, District, Caste, Username, RFIDNumber.

@@ -14,6 +14,7 @@ VALID_TARGET_EXAMS = {
     "NEET",
     "JEE-Main",
     "JEE-Advanced",
+    "MHT-CET",    # Maharashtra state engineering / pharmacy entrance
     "Both",       # NEET + JEE dual-prep
     "Foundation", # Class 9/10 foundation programs
     "Other",

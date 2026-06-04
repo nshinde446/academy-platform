@@ -37,7 +37,7 @@ class Student(BaseModel):
     # Allowed: "9" | "10" | "11" | "12" | "Dropper"
     standard: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Target exam track.
-    # Allowed: NEET | JEE-Main | JEE-Advanced | Both | Foundation | Other
+    # Allowed: NEET | JEE-Main | JEE-Advanced | MHT-CET | Both | Foundation | Other
     target_exam: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # Fees status surfaced as a Paid / Due badge on the students table.
     # Allowed: paid | due | overdue | partial

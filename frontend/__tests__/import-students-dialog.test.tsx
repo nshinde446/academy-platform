@@ -99,6 +99,7 @@ describe("ImportStudentsDialog", () => {
       "NEET",
       "JEE-Main",
       "JEE-Advanced",
+      "MHT-CET",
       "Both",
       "Foundation",
       "Other",
