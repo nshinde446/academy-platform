@@ -123,6 +123,32 @@ export interface ImportSummary {
   imported: number;
   skipped: number;
   errors: string[];
+  batches_created: string[];
+}
+
+// One distinct Batch code referenced by an upload — whether it already
+// exists and, if not, the course/exam-date derived from the Target column.
+export interface ImportPreviewBatch {
+  code: string;
+  student_count: number;
+  exists: boolean;
+  target: string | null;
+  suggested_course_code: string | null;
+  suggested_course_name: string | null;
+  suggested_exam_date: string | null;
+}
+
+// Dry-run of a student upload from POST /students/import/preview.
+export interface ImportPreview {
+  total_rows: number;
+  importable_rows: number;
+  rows_missing_name: number;
+  rows_invalid_enrolment: number;
+  unbatched_rows: number;
+  existing_batches: number;
+  missing_batches: number;
+  batches: ImportPreviewBatch[];
+  row_issues: string[];
 }
 
 export interface AcademicYearResponse {
