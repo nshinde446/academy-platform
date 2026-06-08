@@ -101,6 +101,38 @@ class ImportSummary(BaseModel):
     imported: int
     skipped: int
     errors: list[str] = []
+    # Codes of batches auto-created during this import (when the admin
+    # opted into "create missing batches").
+    batches_created: list[str] = []
+
+
+class ImportPreviewBatch(BaseModel):
+    """One distinct Batch code referenced by an upload, with whether it
+    already exists and — when it does not — the course/exam-date we would
+    derive from the rows' Target column if asked to create it."""
+
+    code: str
+    student_count: int
+    exists: bool
+    target: str | None = None
+    suggested_course_code: str | None = None
+    suggested_course_name: str | None = None
+    suggested_exam_date: date | None = None
+
+
+class ImportPreview(BaseModel):
+    """Dry-run of a student upload — surfaces row issues and the
+    existing-vs-missing batch split before anything is written."""
+
+    total_rows: int
+    importable_rows: int
+    rows_missing_name: int
+    rows_invalid_enrolment: int
+    unbatched_rows: int
+    existing_batches: int
+    missing_batches: int
+    batches: list[ImportPreviewBatch] = []
+    row_issues: list[str] = []
 
 
 class StudentTestHistoryRow(BaseModel):

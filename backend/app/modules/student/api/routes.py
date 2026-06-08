@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.student.schemas.student_schemas import (
+    ImportPreview,
     ImportSummary,
     StudentCreate,
     StudentResponse,
@@ -93,22 +94,39 @@ async def update_student(
     )
 
 
-@router.post("/import", response_model=ImportSummary)
-async def import_students(
-    request: Request,
+@router.post("/import/preview", response_model=ImportPreview)
+async def preview_import_students(
     file: UploadFile = File(...),
     branch_id: uuid.UUID = Query(...),
     current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
     session: AsyncSession = Depends(get_db),
 ):
+    """Dry-run a student upload — report row issues and which Batch codes
+    exist vs. are missing, so the admin can choose to create the missing
+    ones before committing the import."""
+    return await import_service.preview_import(session, file, branch_id)
+
+
+@router.post("/import", response_model=ImportSummary)
+async def import_students(
+    request: Request,
+    file: UploadFile = File(...),
+    branch_id: uuid.UUID = Query(...),
+    create_missing_batches: bool = Query(False),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
     """Bulk import students. Class, Target Exam, and Batch are read
-    per-row from the file so one CSV/Excel can mix cohorts."""
+    per-row from the file so one CSV/Excel can mix cohorts. When
+    ``create_missing_batches`` is set, batch codes that don't exist yet are
+    created (course/exam-date derived from the Target column)."""
     return await import_service.import_students(
         session,
         file,
         branch_id,
         current_user["user_id"],
-        request.client.host if request.client else None,
+        create_missing_batches=create_missing_batches,
+        ip_address=request.client.host if request.client else None,
     )
 
 
