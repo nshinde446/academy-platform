@@ -1,223 +1,246 @@
 # Students Master Import — Design (Academics auto-population)
 
-Status: **design / not implemented**. No prod or DB changes. Captures the
-deep-dive for an enriched student import template that becomes the single
-source of truth for the Academics tabs (Courses, Batches, Academic Years,
-Syllabus).
+Status: **design / not implemented**. No prod or DB changes. The student
+import becomes the single source of truth that builds the Academics tabs
+(Courses, Batches, Academic Years, Subjects) bottom-up, with no tangled
+data.
 
 Related: builds on the import preview + create-missing-batches work on
-branch `students/import-batch-preview`. §7–§11 incorporate a peer review
-(see `misc/read_this.txt`); where this doc diverges from that review it
-says so and why.
+branch `students/import-batch-preview`. This is the **corrected final**
+revision — it resolves the defects found in scenario testing of the
+earlier consolidated proposal (`misc/read_this.txt`).
+
+## 0. Defect resolutions (from scenario testing)
+
+| # | Defect found | Resolved in |
+|---|---|---|
+| D1 | Sample used `"1 Years"`, violating allowed `1 Year` | §4 (token normalization) |
+| D2 | `Syllabus=Auto` undefined for MHT-CET (default vs stream-required collide) | §4, §6 |
+| D3 | Student identity = Email+Phone (optional, family-shared) → false merges/dupes | §4, §7 |
+| D4 | Batch-match key specified 3 inconsistent ways | §7 (one canonical key) |
+| D5 | `End_AY_override` not representable in schema | §4 (removed v1), §11 |
+| D6 | Duration encoded twice (`Course_opt` text + `Duration` col) → can disagree | §3, §6 |
+| D7 | "Single transaction" vs "reject row only" contradiction | §7 (all-or-nothing) |
+| D8 | `Course_opt` free text → duplicate courses; first-import validation a no-op | §3, §4 |
+| D9 | `"Both/PCMB"` slash token ambiguous | §4 (→ `PCMB`) |
+| D10 | `NEET+PCMB → Warn` fires on a common legit cohort | §6 (downgraded to info) |
+| D11 | Class 9/10 + NEET → silent remap violates "catch, don't coerce" | §6 (`Aspiration_Target`) |
+| D12 | Foundation class×duration only half-specified | §6 |
+| D13 | `Enrollment_Date` Excel date landmine | §4, §7 |
+| D14 | AY naming drift (`2026-27` vs existing `2026-2027`) | §7 |
 
 ## 1. Core insight — what the enriched columns map to
 
-The data model already has the right entities; today they're created
-ad-hoc. The enriched columns let the **student import build them
-bottom-up**, so the Academics tabs stay consistent ("no tangled data").
-
-| New column | Maps to entity | Identity rule |
+| Column | Maps to entity | Identity rule |
 |---|---|---|
-| `Course_opt` + `Duration` | **Course** (`courses.duration_years`) | A course's identity *includes* its duration. "NEET 2-Year" and "NEET 1-Year" are two different courses. |
-| `Academic_year` (e.g. 2026-2028) | **Academic Year** rows | A 2-yr span = two AY rows (2026-27, 2027-28); a 1-yr span = one (2026-27). |
-| `Syllabus` | **Subjects** under the course (syllabus *skeleton*) | Which subject set (PCB / PCM / PCMB / Foundation) attaches to the course per year. |
-| `Batch` | **Batch** (cohort) | A batch instantiates one course for one start-AY. |
+| `Course_opt` + `Duration` + dropper-flag | **Course** (`courses.duration_years`) | Course identity = program family + duration + whether it's a dropper batch. "NEET 2-Year", "NEET 1-Year", and "NEET Dropper" are three distinct courses. |
+| `Academic_year` (e.g. 2026-2028) | **Academic Year** rows | A 2-yr span = two AY rows; a 1-yr span = one. |
+| `Syllabus` | **Subjects** under the course | Which subject set (PCB / PCM / PCMB / Foundation) attaches per year. |
+| `Batch` | **Batch** (cohort) | Identity = `(branch, normalized code, start_academic_year)` — see §7. |
 
-Critical structural fact: `Subject → Chapter → Topic → Subtopic` is **per
-(course_id, academic_year_id)**. So the student import can create
-**Courses, Academic Years, Subjects, and Batches** — but the *detailed
-chapter/topic tree* still comes from the existing `/syllabus` import,
-keyed to the same course+AY.
+`Subject → Chapter → Topic → Subtopic` is **per (course_id,
+academic_year_id)**. The student import creates **Courses, Academic Years,
+Subjects, Batches**; the detailed chapter/topic tree still comes from the
+existing `/syllabus` import, keyed to the same course+AY.
 
-> **The clean separation:** student import = academic *structure*;
-> syllabus import = curriculum *depth*.
+> **Clean separation:** student import = academic *structure*; syllabus
+> import = curriculum *depth*.
 
-## 2. Master scenario matrix (standard / "even" cases)
+## 2. Master scenario matrix (standard / valid rows)
 
-Class drives duration; Target+Syllabus drive the subject set; Duration
-drives the AY span.
+`Course_opt` is the **program family only — no duration in the text** (D6).
+The Course *name/code* is derived: `code = Course_opt + Duration (+ DROP)`.
 
-| Current_Class | Target | Duration | → Course | → AY span | → Subjects (Syllabus) |
-|---|---|---|---|---|---|
-| 11 | NEET | 2 Years | NEET 2-Year | 2026-2028 (2 AYs) | Physics, Chemistry, Botany, Zoology |
-| 11 | JEE-Main / JEE-Adv | 2 Years | JEE 2-Year | 2026-2028 | Physics, Chemistry, Maths |
-| 11 | Both | 2 Years | NEET+JEE 2-Year | 2026-2028 | PCMB (P, C, M, Bio) |
-| 11 | MHT-CET (PCM) | 2 Years | MHT-CET Engg 2-Year | 2026-2028 | Physics, Chemistry, Maths |
-| 11 | MHT-CET (PCB) | 2 Years | MHT-CET Pharm 2-Year | 2026-2028 | Physics, Chemistry, Biology |
-| 12 | NEET | 1 Year | NEET 1-Year | 2026-2027 | P, C, Botany, Zoology (12th) |
-| 12 | JEE | 1 Year | JEE 1-Year | 2026-2027 | P, C, M (12th) |
-| Dropper | NEET | 1 Year | NEET Dropper | 2026-2027 | full PCB repeat |
-| Dropper | JEE | 1 Year | JEE Dropper | 2026-2027 | full PCM repeat |
-| 9 | Foundation | 2 Years | Foundation 9-10 | 2026-2028 | Science, Maths, Mental Ability |
-| 10 | Foundation | 1 Year | Foundation 10 | 2026-2027 | Science, Maths |
+| # | Current_Class | Target | Duration | Syllabus (explicit or auto) | Course_opt | → derived Course | Academic_year |
+|---|---|---|---|---|---|---|---|
+| 1 | 11 | NEET | 2 Years | NEET / PCB | NEET | NEET 2-Year | 2026-2028 |
+| 2 | 11 | JEE-Main/Adv | 2 Years | JEE / PCM | JEE | JEE 2-Year | 2026-2028 |
+| 3 | 11 | Both | 2 Years | PCMB | NEET+JEE | NEET+JEE 2-Year | 2026-2028 |
+| 4 | 11 | MHT-CET | 2 Years | MHT-CET-PCM | MHT-CET Engg | MHT-CET Engg 2-Year | 2026-2028 |
+| 5 | 11 | MHT-CET | 2 Years | MHT-CET-PCB | MHT-CET Pharm | MHT-CET Pharm 2-Year | 2026-2028 |
+| 6 | 12 | NEET | 1 Year | NEET / PCB | NEET | NEET 1-Year | 2026-2027 |
+| 7 | 12 | JEE-Main | 1 Year | JEE / PCM | JEE | JEE 1-Year | 2026-2027 |
+| 8 | Dropper | NEET | 1 Year | NEET / PCB | NEET | NEET Dropper | 2026-2027 |
+| 9 | Dropper | JEE-Main | 1 Year | JEE / PCM | JEE | JEE Dropper | 2026-2027 |
+| 10 | 9 | Foundation | 2 Years | Foundation | Foundation | Foundation 9-10 | 2026-2028 |
+| 11 | 10 | Foundation | 1 Year | Foundation | Foundation | Foundation 10 | 2026-2027 |
 
-**Dropper is its own course, never year-2 of a 2-Year course** — different
-pacing (revision vs first-teach), different exam-date logic, different
-fees. The matrix reflects this.
+**Dropper is its own course** (different pacing, exam-date, fees) — the
+derivation appends `DROP` when `Current_Class = Dropper`, so it never
+collides with the 1-Year 12th course.
 
-## 3. "Odd" cases — contradictions to catch, not silently coerce
+## 3. Course identity — the derivation rule (D6, D8)
 
-This is where "no tangled data" is won or lost. Validate each row.
+- `Course_opt` is a **controlled vocabulary**, not free text (D8):
+  `{NEET, JEE, NEET+JEE, MHT-CET Engg, MHT-CET Pharm, Foundation}`.
+  Validated against the enum — a typo is rejected on the first import, not
+  canonicalized.
+- Duration lives **only** in the `Duration` column. If `Course_opt` text
+  contains a duration that disagrees with `Duration` → **error** (D6).
+- Derived course `code` / `name`:
+  - `NEET` + `2 Years` → "NEET 2-Year" / `NEET-2Y`
+  - `NEET` + `1 Year` + Dropper → "NEET Dropper" / `NEET-DROP`
+  - `Foundation` + `2 Years` (class 9) → "Foundation 9-10" / `FDN-9-10`
+- A given `(Course_opt, Duration, dropper)` always resolves to **one**
+  course, so re-imports are idempotent.
 
-| Scenario | Why it's wrong | Rule |
+## 4. Final template
+
+```
+Name | Current_Class | Target | Aspiration_Target | Batch | Roll No |
+Email | Phone | Parent Mobile | Gender | District | Caste | Username |
+RFIDNumber | Duration | Syllabus | Course_opt | Academic_year | Enrollment_Date
+```
+
+| Column | Required | Allowed values / format | Notes |
+|---|---|---|---|
+| `Name` | Yes | text | |
+| `Current_Class` | Yes | `9, 10, 11, 12, Dropper` | |
+| `Target` | Yes | `NEET, JEE-Main, JEE-Advanced, MHT-CET, Both, Foundation, Other` | |
+| `Aspiration_Target` | No | same enum as Target | For 9/10 foundation students whose eventual goal is NEET/JEE (D11). Stored, not remapped. |
+| `Batch` | Yes | string | Normalized (trim/case/collapse `--`). Identity = `(branch, code, start_AY)` (§7). |
+| `Roll No` | **Yes** | string | **Stable identity key** for idempotent re-import (D3). Fallback `RFIDNumber`; if both blank → treated as new + flagged. |
+| `Email` | No | email | Soft hint only — **never** an identity key (D3). |
+| `Phone` | No | string | Soft hint only (D3). |
+| `Parent Mobile` | No | string | |
+| `Gender` | No | `M, F, O` | |
+| `District` / `Caste` / `Username` / `RFIDNumber` | No | text | |
+| `Duration` | Yes | canonical `1 Year` \| `2 Years` | Accepts and normalizes `1`,`1yr`,`1 Years`,`2`,`2yr`,`2 Year` (D1). |
+| `Syllabus` | No | `NEET, JEE, MHT-CET-PCM, MHT-CET-PCB, PCMB, Foundation` or blank=auto | Blank/`auto` derives from Target — **except MHT-CET**, which must be explicit PCM/PCB or it errors (D2, D9). |
+| `Course_opt` | Yes | enum `NEET, JEE, NEET+JEE, MHT-CET Engg, MHT-CET Pharm, Foundation` | Controlled vocab, **no duration in the value** (D6, D8). |
+| `Academic_year` | Yes | `YYYY-YYYY` | Span length must equal Duration. Split into 4-digit AY rows (D14). |
+| `Enrollment_Date` | No | **ISO `YYYY-MM-DD`** | Importer also coerces Excel serials / `DD-MM-YYYY`; ambiguous → error (D13). Default = import date. Validated within batch span. |
+
+`End_AY_override` is **removed in v1** (D5): student↔batch mapping has no
+per-student AY scoping, so "second year only" can't be expressed. Mid-program
+joiners enroll in the matching 1-Year course/batch instead. See §11 for the
+schema change required if true second-year joins are needed later.
+
+## 5. (reserved)
+
+## 6. Odd-case validation matrix (catch, never silently coerce)
+
+| Scenario | Rule | Message |
 |---|---|---|
-| Class **12** + Duration **2 Years** | Only one academic year before the exam | **Error** — 12th/Dropper must be 1-Year |
-| **Dropper** + Duration **2 Years** | Droppers do a single repeat year | **Error** |
-| Class **11** + Duration **1 Year** | Finishes mid-program, before the exam | **Warn** (allow only for deliberate 11th-only crash course) |
-| `Academic_year` span ≠ `Duration` | The two columns disagree | **Error** — assert `(end_year − start_year) == duration` |
-| Class **12** + Duration 2yr **and** intake AY is the current/ending year | Student would miss the exam cycle entirely | **Error** unless `Academic_year` start is a future year (deferred/dropper intake) |
-| `Target` = NEET but `Syllabus` = JEE | Exam and curriculum conflict | **Error** unless Target = Both |
-| `Target` = **Both** but `Syllabus` = PCM (no Bio) | Incomplete for NEET half | **Error** — Both requires PCMB |
-| `Target` = NEET but `Syllabus` = PCMB | Extra Maths the student won't sit | **Warn** — allowed but flagged as inefficient |
-| `MHT-CET` with no PCM/PCB hint | Subject set ambiguous (engg vs pharmacy) | **Require** a stream sub-value or infer from paired Target |
-| Class **9/10** + Target NEET/JEE + Duration 2yr | No "NEET 2-Year" course exists for a 9th-grader | **Error or remap** to Foundation + store `aspiration_target = NEET` |
-| Same `(Name, Phone, Email)` → two `Course_opt` in one file | Possible dual-batch enrolment | **Warn** — confirm intentional (legit only for split programs) |
-| Same `Batch` code → two different (Course, AY) | Batch identity collision | **Error** — see namespace decision in §6 |
-| `Batch` code that exists in a **different branch** | Cross-branch contamination | **Error** — codes are per-branch only |
-| Duration "2 Years" but end AY missing/uncreatable | AY row missing | Auto-create AY; if blocked, error |
-| `JEE--` / `MHT--` malformed codes | Double-encoding | Normalize + surface in preview (already handled) |
+| Class 12 / Dropper + Duration 2 Years | **Error** | `12th/Dropper cannot be 2-Year (one year before exam)` |
+| Class 11 + Duration 1 Year | **Warn** | `11th + 1-Year ends mid-program; allow only for crash course` |
+| `(end_year − start_year) ≠ Duration` | **Error** | `Academic_year span ≠ Duration` |
+| `Course_opt` text duration ≠ `Duration` column | **Error** (D6) | `Course_opt implies a different duration than Duration` |
+| Target NEET + Syllabus JEE (or vice-versa) | **Error** | `Target/Syllabus mismatch` |
+| Target Both + Syllabus not PCMB | **Error** | `Both requires PCMB (P,C,M,Bio)` |
+| Target NEET + Syllabus PCMB | **Info** (not gating) (D10) | `PCMB kept alongside NEET — fine (backup stream)` |
+| Target MHT-CET + Syllabus blank/auto or no PCM/PCB | **Error** (D2) | `MHT-CET needs explicit MHT-CET-PCM or MHT-CET-PCB; auto cannot resolve` |
+| Class 9/10 + `Course_opt` ≠ Foundation | **Error** (D11) | `Class 9/10 must enroll in Foundation; put NEET/JEE goal in Aspiration_Target` |
+| Class 10 + Duration 2 Years | **Error** (D12) | `Foundation ends at class 10; 2-Year invalid for a 10th entrant` |
+| Class 9 + Duration 1 Year | **Warn** (D12) | `1-Year foundation for class 9 — confirm coaching offers it` (ties to §11.3) |
+| Same `Batch` code → different `(course, start_AY)` | **Error** (D4) | `Batch code already maps to a different course/year` |
+| Duration 2 Years + end AY uncreatable | **Error** | `Cannot create the second academic year` |
+| Malformed `JEE--` / `MHT--` codes | Normalize + **Warn** | `Code normalized; please fix the source file` |
+| `Roll No` and `RFIDNumber` both blank | **Warn** (D3) | `No stable id — row treated as new; re-import will duplicate` |
 
-## 4. Auto-update flow on import (idempotent upsert order)
-
-Each step is get-or-create, so re-imports don't duplicate. Steps run
-inside **one transaction per import** so a mid-run failure rolls back
-cleanly (see §7.2 — no orphaned Course/AY rows).
+## 7. Import flow — all-or-nothing, one transaction (D4, D7, D13, D14)
 
 ```
-0. Pre-flight: validate all rows (§3), build the diff, BLOCK on errors
-1. Academic Years   ← parse Academic_year span → ensure each AY row (2026-27, 2027-28)
-2. Course           ← (Course_opt + Duration) → ensure course w/ duration_years
-3. Subjects         ← (Syllabus + class) → ensure subject set under course, per AY  [respect §8 lock]
-4. Batch            ← (Batch code + course + start AY) → ensure batch (end AY = start + duration−1)
-5. Student + mapping← create student (Current_Class, Target...) + StudentBatchMapping → batch
+0. Parse & normalize  (trim, code-collapse, Duration tokens (D1), date coercion (D13))
+1. Validate ALL rows against §6.
+     - Any ERROR  → reject the WHOLE file, write nothing (D7).
+     - WARN/INFO  → surface in the preview; require explicit confirmation.
+2. Build the dry-run diff (the §10 confirmation matrix).
+3. On confirm, in ONE transaction (rollback on any failure):
+     a. Academic Years  ← split span → ensure 4-digit AY rows (2026-2027, 2027-2028) (D14)
+     b. Course          ← (Course_opt + Duration + dropper) → ensure course (§3)
+     c. Subjects        ← (Syllabus + class) → ensure set per AY  [respect §8 lock; additive-only]
+     d. Batch           ← match (branch, normalized code, start_AY) (D4)
+                            • found + different course → ERROR collision
+                            • else create under the resolved course
+     e. Student         ← identity = Roll No (→ RFIDNumber → else new+flag) (D3)
+     f. Mapping         ← StudentBatchMapping(student, batch); set Enrollment_Date
+4. Commit only if every row succeeded; tag all created students with import_id (§9).
 ```
 
-After a clean import the Academics tabs populate themselves consistently:
+**Batch identity is exactly `(branch_id, normalized_code, start_academic_year_id)`**
+— this is the single canonical key (resolves D4). Course is *asserted*
+against the matched batch, not part of the key. This also resolves §11.1:
+codes may repeat across intake years because `start_AY` disambiguates them.
 
-- **Academic Years** → exactly the AY rows the cohorts span (no orphans).
-- **Courses** → the real catalog (NEET 2-Year, JEE 1-Year, Foundation 9-10…), each with correct `duration_years`.
-- **Batches** → every cohort, linked to course + AY span + `target_exam_date`.
-- **Syllabus** → subject skeletons per course/year, ready for `/syllabus`
-  to fill in chapters/topics, keyed to the same course+AY.
-
-## 5. Recommended final template
-
-Keep all columns explicit (coaching provides master data) but **validate**
-rather than re-derive.
-
-```
-Name | Current_Class | Target | Batch | Roll No | Email | Phone | Parent Mobile |
-Gender | District | Caste | Username | RFIDNumber |
-Duration | Syllabus | Course_opt | Academic_year |
-[Enrollment_Date] | [End_AY_override]
-```
-
-- **Required**: Name, Current_Class, Target, Batch, Duration, Course_opt, Academic_year
-- **Syllabus**: optional → defaults from Target (NEET→PCB, JEE→PCM, Both→PCMB); explicit value **wins** (handles MHT-CET PCM/PCB split)
-- **`Enrollment_Date`** (optional) — pro-rata fees / attendance start, e.g. `2026-06-15`
-- **`End_AY_override`** (optional, rare) — student joins the *second* year of a 2-Year course. Course stays 2-Year (syllabus still shows both years) but the student maps only to that one AY.
-- **Allowed values to lock down**:
-  - Current_Class ∈ {9, 10, 11, 12, Dropper}
-  - Target ∈ {NEET, JEE-Main, JEE-Advanced, MHT-CET, Both, Foundation, Other}
-  - Duration ∈ {1 Year, 2 Years}
-  - Academic_year format `YYYY-YYYY`
-  - Syllabus ∈ {NEET, JEE, MHT-CET-PCM, MHT-CET-PCB, Both/PCMB, Foundation}
-
-## 6. Open decisions — master data only the coaching can define
-
-1. **Course catalog & naming** — "NEET 2-Year" vs branded names; course codes.
-2. **MHT-CET split** — separate PCM (engineering) and PCB (pharmacy/medical) tracks, or combined?
-3. **Foundation durations** — class 9 = 2-year (9+10) or 1-year? Class 10 = 1-year?
-4. **Subject set per syllabus** — Biology vs Botany+Zoology; MHT-CET state-board subject naming.
-5. **Target exam dates per program/year** — for `target_exam_date` driving `/insights` pacing.
-6. **Intake year** — all 2026 intake, or batches starting other years?
-7. **Batch-code namespace** — *do batch codes repeat across intake years?*
-   - If codes are reused yearly (e.g. "NEET-11-A" for both the 2026 and 2027
-     cohort), uniqueness must be **per (branch_id, start_academic_year_id)**,
-     and the importer must match on code + start-AY, not code alone.
-   - If codes are unique forever (e.g. year-suffixed "NEET-11-A-26"),
-     per-branch uniqueness is enough (current behaviour).
-   - **This choice changes the batch-matching key** — confirm before build.
-
-## 7. Operational safeguards
-
-### 7.1 Dry-run diff before any write
-Extend the existing import preview into a **confirmation matrix** the user
-must accept before committing:
-
-```
-Action              | Count | Examples                | Gate
---------------------+-------+-------------------------+------
-New courses         |   3   | NEET 2-Year, JEE 1-Yr   |
-Existing courses    |   5   | Foundation 9-10         |
-New academic years  |   2   | 2027-28                 |
-New batches         |   8   | NEET-11-A, JEE-12-B     |
-Batch collisions    |   1   | BATCH-X (diff course)   | BLOCK
-Student duplicates  |   2   | (phone/email)           | WARN
-Syllabus mismatch   |   0   |                         |
-```
-
-Plus a **sample-row transformation** so the user sees what one row creates:
-
-```
-Input:  Class 11, Target NEET, Duration 2 Years, Syllabus (empty)
-Creates: Course "NEET 2-Year" (duration_years=2)
-         AYs 2026-27, 2027-28
-         Subjects P, C, Botany, Zoology (both AYs)
-         Batch from Batch code + start AY
-```
-
-### 7.2 One transaction + import id
-Run the whole import in a single transaction tagged with an `import_id`
-(also stored on created students, §9). A failure after step 3 rolls back
-the whole thing — no orphaned `AcademicYear` / `Course` / `Subject` rows.
-The `import_id` also enables a targeted "undo this import" later.
-
-### 7.3 Batch-code namespace
-Enforce whatever §6.7 resolves to as a DB-level uniqueness constraint, so
-collisions are impossible rather than merely validated.
-
-### 7.4 Never silently overwrite syllabus
-Student import must **not** mutate `subjects` for a `(course, AY)` that
-already has them. If the incoming syllabus disagrees with what exists →
-**error**, don't overwrite. See §8.
-
-## 8. Syllabus boundary — explicit state machine
+## 8. Syllabus boundary — state machine + lock
 
 Per `(course_id, academic_year_id)`:
 
-| State | Meaning | Student import may… | Syllabus import may… |
-|---|---|---|---|
-| `no_subjects` | skeleton not created | create the subject set | — |
-| `subjects_only` | subjects exist, no chapters | validate match only (no change) | add chapters/topics |
-| `has_chapters` | curriculum loaded | error on mismatch, else no-op | append only (no destructive delete) |
+| State | Student import may… | Syllabus import may… |
+|---|---|---|
+| `no_subjects` | create the subject set | — |
+| `subjects_only` | **add** missing subjects; never delete | add chapters/topics |
+| `has_chapters` (`syllabus_locked`) | no-op if subjects match; **error on conflicting** subject; additions allowed | append only |
 
-Add a `syllabus_locked` flag per course-year; once a syllabus import runs,
-student imports can no longer touch that course-year's subjects. This makes
-the import-order independence explicit instead of relying on convention.
+Additions are allowed; only **conflicting/destructive** changes error (so a
+coaching legitimately adding "English" later isn't blocked). An admin
+override exists to correct a wrong skeleton after lock (escape hatch).
 
 ## 9. Derived fields — store only what isn't derivable
 
-The review suggested storing several derived fields. Applying judgment, to
-avoid denormalization drift:
-
 | Field | Verdict | Rationale |
 |---|---|---|
-| `aspiration_target` (student) | **Store** | Not derivable once a 9th/10th NEET aspirant is remapped to Foundation. |
-| `import_source_file` + `import_id` (student) | **Store** | Pure traceability; can't be recomputed. |
-| `target_exam_date` (batch) | **Already exists** | Reuse the existing column (= end-AY + exam month); don't add `expected_exam_date`. |
-| `is_dropper` (student) | **Don't store** | Pure derivation of `Current_Class = 'Dropper'`. Compute in queries. |
-| `program_duration_months` (course) | **Don't store** | `duration_years * 12`. Compute on read. |
+| `aspiration_target` (student) | **Store** | Not derivable; the 9/10 NEET/JEE goal (D11). |
+| `import_id` + `import_source_file` (student) | **Store** | Traceability; enables guarded "undo this import". |
+| `target_exam_date` (batch) | **Reuse existing column** | = end-AY + exam month; don't add a new field. |
+| `is_dropper` | **Don't store** | Derivation of `Current_Class = 'Dropper'`. |
+| `program_duration_months` | **Don't store** | `duration_years * 12`. |
 
-These unlock queries like *"droppers who started 2026-27 targeting NEET
-with incomplete syllabus coverage"* without redundant columns.
+> Note on rollback (D-review §2.2): per-import undo is only safe while no
+> downstream rows reference the created structure (e.g. a later syllabus
+> import added chapters, or another batch reuses a created course). The
+> safe guarantee is the **in-transaction** rollback in §7; post-hoc undo
+> must check for dependents first.
 
-## 10. Next steps (after §6 answered)
+## 10. Import preview UX
 
-1. **Dry-run diff + confirmation matrix** (§7.1) — highest leverage; stops accidental writes.
-2. **Batch-collision detection** keyed to the §6.7 namespace decision.
-3. **`syllabus_locked` flag** (§8) — protects curriculum from structure imports.
-4. **Single-transaction + `import_id`** (§7.2) for clean partial-failure rollback.
-5. Validated sample template (allowed-value dropdowns, one row per scenario).
-6. Extend the importer preview to upsert Courses / Academic Years / Subjects (not just batches), enforcing §3.
-7. Store `aspiration_target` + `import_source_file`/`import_id` (§9).
+Confirmation matrix the user must accept before any write:
+
+```
+Action              | Count | Examples              | Gate
+--------------------+-------+-----------------------+------
+New courses         |   3   | NEET 2-Year, JEE 1-Yr |
+Existing courses    |   5   | Foundation 9-10       |
+New academic years  |   2   | 2027-2028             |
+New batches         |   8   | NEET-11-A, JEE-12-B   |
+Batch collisions    |   1   | code↔diff course      | BLOCK
+Missing stable id   |   2   | (no Roll No / RFID)   | WARN
+Syllabus conflicts  |   0   |                       | BLOCK
+```
+
+Plus a sample-row transformation so the user sees what one row creates
+(course, AY rows, subjects, batch).
+
+## 11. Open decisions — master data only the coaching can define
+
+1. **Batch-code namespace** — *resolved to a default* in §7: identity is
+   `(branch, code, start_AY)`, so codes may repeat across intake years.
+   Confirm this matches their practice (vs year-suffixed unique codes).
+2. **MHT-CET split** — confirm separate Engg (PCM) / Pharm (PCB) tracks.
+3. **Foundation durations** — is class 9 a 2-year (9+10) or also 1-year?
+   (drives the §6 class-9 + 1-Year warn).
+4. **Subject set per syllabus** — Biology vs Botany+Zoology; MHT-CET naming.
+5. **Target exam dates per program/year** — for `target_exam_date` pacing.
+6. **Intake year(s)** — single 2026 intake or multiple.
+7. **Second-year joins** — if genuinely needed, add `join_academic_year_id`
+   to `StudentBatchMapping` (the schema change `End_AY_override` would have
+   required); otherwise mid-program joiners use the 1-Year course (D5).
+
+## 12. Sample template
+
+A clean, spec-compliant reference lives at
+`docs/students-master-import-template.sample.csv` — one row per valid
+scenario, canonical `1 Year`/`2 Years`, explicit MHT-CET streams, distinct
+non-overlapping phones, ISO dates, and `Course_opt` without embedded
+durations. (It deliberately contains **no** `1 Years`, `Auto`+MHT-CET,
+duplicate-phone, or duration-double-encoding traps.)
+
+## 13. Next steps (after §11 answered)
+
+1. Validation service running the §6 matrix before any write.
+2. Dry-run diff + confirmation matrix (§10) — highest ROI.
+3. Batch matching on the §7 canonical key; collision detection.
+4. `syllabus_locked` + additive-only state machine (§8).
+5. Single-transaction import + `import_id`/`import_source_file` (§7, §9).
+6. Extend the importer to upsert Courses / Academic Years / Subjects.
