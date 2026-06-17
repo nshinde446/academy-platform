@@ -373,12 +373,16 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                           <td className="px-2 py-1">
                             {b.exists ? (
                               <span className="text-emerald-600">Exists</span>
-                            ) : (
+                            ) : b.creatable ? (
                               <span className="text-amber-600">
                                 New → {b.suggested_course_code}
                                 {b.suggested_exam_date
                                   ? ` (${b.suggested_exam_date})`
                                   : ""}
+                              </span>
+                            ) : (
+                              <span className="text-destructive">
+                                Can&apos;t create — {b.blocker}
                               </span>
                             )}
                           </td>
@@ -405,6 +409,19 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                     rows pointing at a missing batch are skipped.
                   </span>
                 </label>
+              )}
+
+              {preview.blocked_batches > 0 && (
+                <p className="text-xs text-destructive">
+                  {preview.blocked_batches} batch(es) can&apos;t be
+                  auto-created (marked{" "}
+                  <span className="font-medium">Can&apos;t create</span>{" "}
+                  above). Create them on <span className="font-medium">
+                    Batches
+                  </span>{" "}
+                  first, or add the academic year they need — rows pointing at
+                  them will be skipped.
+                </p>
               )}
             </div>
           )}

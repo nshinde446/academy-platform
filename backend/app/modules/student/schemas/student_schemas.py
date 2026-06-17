@@ -118,6 +118,10 @@ class ImportPreviewBatch(BaseModel):
     suggested_course_code: str | None = None
     suggested_course_name: str | None = None
     suggested_exam_date: date | None = None
+    # Whether auto-create would succeed for a missing code, and why not.
+    # Existing batches are always creatable=True, blocker=None.
+    creatable: bool = True
+    blocker: str | None = None
 
 
 class ImportPreview(BaseModel):
@@ -131,6 +135,7 @@ class ImportPreview(BaseModel):
     unbatched_rows: int
     existing_batches: int
     missing_batches: int
+    blocked_batches: int = 0
     batches: list[ImportPreviewBatch] = []
     row_issues: list[str] = []
 

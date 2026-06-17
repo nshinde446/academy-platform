@@ -109,6 +109,19 @@ def _dominant_target(counter: Counter) -> str | None:
     return counter.most_common(1)[0][0]
 
 
+def _pick_academic_year(years: list):
+    """Deterministically choose the academic year new students enrol into.
+
+    ``list_academic_years`` has no ORDER BY, so indexing ``years[0]`` picked an
+    arbitrary row — with more than one year on a branch that silently pinned
+    every imported student (and every derived batch's start year) to the wrong
+    year, and could even differ between preview and import. Default to the most
+    recent year by ``start_year``."""
+    if not years:
+        return None
+    return max(years, key=lambda y: y.start_year)
+
+
 def _parse_csv(content: bytes) -> list[dict[str, Any]]:
     text = content.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
@@ -239,6 +252,31 @@ async def _create_derived_batch(
     )
 
 
+def _missing_batch_blocker(
+    target: str | None,
+    academic_year,
+    courses_by_code: dict[str, Any],
+    ay_start_years: set[int],
+) -> str | None:
+    """Dry-run the one precondition ``create_batch`` enforces: a batch needs
+    an academic year starting at ``start + duration - 1`` to exist. Returns a
+    human reason if creation *would* fail, else ``None`` — so the preview can
+    warn before the admin commits, instead of the import silently skipping.
+
+    Mirrors the course resolution in ``_create_derived_batch``: an existing
+    course with the derived code is reused (and its ``duration_years`` drives
+    the span); otherwise a fresh 1-year course is created."""
+    if academic_year is None:
+        return "no academic year exists for this branch"
+    course_code, _ = _course_for_target(target)
+    existing = courses_by_code.get(course_code.lower())
+    duration = max(int(existing.duration_years or 1), 1) if existing else 1
+    end_year_start = academic_year.start_year + duration - 1
+    if end_year_start not in ay_start_years:
+        return f"needs an academic year starting at {end_year_start} (create it first)"
+    return None
+
+
 async def preview_import(
     session: AsyncSession,
     file: UploadFile,
@@ -256,11 +294,14 @@ async def preview_import(
     rows = _parse_file(file.filename, content)
 
     years = await academic_repository.list_academic_years(session, branch_id)
-    academic_year = years[0] if years else None
+    academic_year = _pick_academic_year(years)
     end_year = academic_year.end_year if academic_year else None
     placeholder_year_id = academic_year.id if academic_year else uuid.uuid4()
 
     batch_index = await _load_batch_index(session, branch_id)
+    courses = await academic_repository.list_courses(session, branch_id)
+    courses_by_code = {c.code.strip().lower(): c for c in courses}
+    ay_start_years = {y.start_year for y in years}
 
     total_rows = 0
     rows_missing_name = 0
@@ -310,12 +351,24 @@ async def preview_import(
 
     batches: list[dict[str, Any]] = []
     existing = 0
+    blocked = 0
     for norm, display in code_display.items():
         exists = norm in batch_index
         if exists:
             existing += 1
         target = _dominant_target(code_targets.get(norm, Counter()))
         course_code, course_name = _course_for_target(target)
+        # For a missing batch, check up front whether auto-create would fail,
+        # so the admin sees the blocker before committing rather than after.
+        blocker = (
+            None
+            if exists
+            else _missing_batch_blocker(
+                target, academic_year, courses_by_code, ay_start_years
+            )
+        )
+        if blocker:
+            blocked += 1
         batches.append(
             {
                 "code": display,
@@ -327,11 +380,16 @@ async def preview_import(
                 "suggested_exam_date": (
                     None if exists else _suggested_exam_date(target, end_year)
                 ),
+                "creatable": exists or blocker is None,
+                "blocker": blocker,
             }
         )
 
-    # Missing batches first, then by how many students depend on them.
-    batches.sort(key=lambda b: (b["exists"], -b["student_count"]))
+    # Missing-and-blocked first (need attention), then missing, then existing;
+    # within each, by how many students depend on the code.
+    batches.sort(
+        key=lambda b: (b["exists"], b["creatable"], -b["student_count"])
+    )
 
     return {
         "total_rows": total_rows,
@@ -341,6 +399,7 @@ async def preview_import(
         "unbatched_rows": unbatched_rows,
         "existing_batches": existing,
         "missing_batches": len(code_display) - existing,
+        "blocked_batches": blocked,
         "batches": batches,
         "row_issues": row_issues,
     }
@@ -362,16 +421,19 @@ async def import_students(
     rows = _parse_file(file.filename, content)
 
     years = await academic_repository.list_academic_years(session, branch_id)
-    if not years:
+    academic_year = _pick_academic_year(years)
+    if academic_year is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No academic year exists for this branch. Create one first.",
         )
-    academic_year = years[0]
     academic_year_id = academic_year.id
 
     batch_index = await _load_batch_index(session, branch_id)
     batches_created: list[str] = []
+    # norm code -> human reason a missing batch could NOT be created, so rows
+    # pointing at it report *why* instead of a misleading "unknown batch code".
+    batch_create_errors: dict[str, str] = {}
 
     # Optionally create any referenced-but-missing batches up front, so the
     # course/exam-date is decided once per code from its dominant Target.
@@ -395,20 +457,27 @@ async def import_students(
                 counter[target] += 1
 
         for norm, (display, counter) in missing.items():
+            # Each creation runs in its own savepoint: a failure (e.g. a
+            # missing academic year for the derived course's span) rolls back
+            # just this batch + any course it created, leaving the outer
+            # import transaction usable for the remaining rows.
             try:
-                batch = await _create_derived_batch(
-                    session,
-                    branch_id,
-                    display,
-                    _dominant_target(counter),
-                    academic_year,
-                    current_user_id,
-                    ip_address,
-                )
+                async with session.begin_nested():
+                    batch = await _create_derived_batch(
+                        session,
+                        branch_id,
+                        display,
+                        _dominant_target(counter),
+                        academic_year,
+                        current_user_id,
+                        ip_address,
+                    )
                 batch_index[norm] = batch.id
                 batches_created.append(display)
-            except Exception:  # noqa: BLE001 - rows fall back to "unknown batch"
-                continue
+            except HTTPException as exc:
+                batch_create_errors[norm] = str(exc.detail)
+            except Exception as exc:  # noqa: BLE001
+                batch_create_errors[norm] = str(exc)
 
     imported = 0
     skipped = 0
@@ -433,23 +502,36 @@ async def import_students(
 
         batch_id: uuid.UUID | None = None
         if batch_code:
-            batch_id = batch_index.get(_norm_code(str(batch_code)))
+            norm = _norm_code(str(batch_code))
+            batch_id = batch_index.get(norm)
             if batch_id is None:
                 skipped += 1
-                errors.append(f"Row {idx}: unknown batch code '{batch_code}'")
+                reason = batch_create_errors.get(norm)
+                if reason:
+                    errors.append(
+                        f"Row {idx}: couldn't create batch '{batch_code}' — {reason}"
+                    )
+                else:
+                    errors.append(f"Row {idx}: unknown batch code '{batch_code}'")
                 continue
 
         try:
-            student = await student_repository.create(session, **kwargs)
-            if batch_id is not None:
-                session.add(
-                    StudentBatchMapping(
-                        student_id=student.id,
-                        batch_id=batch_id,
-                        branch_id=branch_id,
+            # Savepoint per row: a row that fails at flush (e.g. a value longer
+            # than its column, or any IntegrityError) rolls back on its own
+            # instead of poisoning the session — which previously cascaded
+            # PendingRollbackError into every remaining row, the audit log, and
+            # the final commit, turning one bad cell into a 500 that saved
+            # nothing. Exiting the savepoint flushes the mapping insert too.
+            async with session.begin_nested():
+                student = await student_repository.create(session, **kwargs)
+                if batch_id is not None:
+                    session.add(
+                        StudentBatchMapping(
+                            student_id=student.id,
+                            batch_id=batch_id,
+                            branch_id=branch_id,
+                        )
                     )
-                )
-                await session.flush()
             imported += 1
         except Exception as exc:  # noqa: BLE001
             skipped += 1

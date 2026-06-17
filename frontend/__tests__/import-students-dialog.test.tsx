@@ -124,6 +124,7 @@ describe("ImportStudentsDialog", () => {
         unbatched_rows: 0,
         existing_batches: 0,
         missing_batches: 1,
+        blocked_batches: 0,
         batches: [
           {
             code: "NEET-11-A",
@@ -133,6 +134,8 @@ describe("ImportStudentsDialog", () => {
             suggested_course_code: "NEET",
             suggested_course_name: "NEET Preparation",
             suggested_exam_date: "2026-05-04",
+            creatable: true,
+            blocker: null,
           },
         ],
         row_issues: [],
@@ -178,6 +181,54 @@ describe("ImportStudentsDialog", () => {
     );
   });
 
+  it("flags batches that can't be auto-created in the preview", async () => {
+    const user = userEvent.setup();
+    const post = apiClient.post as ReturnType<typeof vi.fn>;
+    post.mockResolvedValueOnce({
+      data: {
+        total_rows: 1,
+        importable_rows: 1,
+        rows_missing_name: 0,
+        rows_invalid_enrolment: 0,
+        unbatched_rows: 0,
+        existing_batches: 0,
+        missing_batches: 1,
+        blocked_batches: 1,
+        batches: [
+          {
+            code: "NEET-11-X",
+            student_count: 1,
+            exists: false,
+            target: "NEET",
+            suggested_course_code: "NEET",
+            suggested_course_name: "NEET Preparation",
+            suggested_exam_date: null,
+            creatable: false,
+            blocker: "needs an academic year starting at 2026 (create it first)",
+          },
+        ],
+        row_issues: [],
+      },
+    });
+
+    renderDialog();
+    await user.click(screen.getByRole("button", { name: /import students/i }));
+
+    const fileInput = screen.getByLabelText(/file/i) as HTMLInputElement;
+    const file = new File(["Name\nfoo"], "x.csv", { type: "text/csv" });
+    await user.upload(fileInput, file);
+    await user.click(screen.getByRole("button", { name: /preview import/i }));
+
+    // The row shows WHY it can't be created, and a warning is surfaced.
+    expect(await screen.findByText(/can't create —/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/academic year starting at 2026/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 batch\(es\) can't be\s+auto-created/i),
+    ).toBeInTheDocument();
+  });
+
   it("shows partial-failure feedback when the server skips rows", async () => {
     const user = userEvent.setup();
     const post = apiClient.post as ReturnType<typeof vi.fn>;
@@ -190,6 +241,7 @@ describe("ImportStudentsDialog", () => {
         unbatched_rows: 0,
         existing_batches: 0,
         missing_batches: 1,
+        blocked_batches: 0,
         batches: [
           {
             code: "MHT-11-A",
@@ -199,6 +251,8 @@ describe("ImportStudentsDialog", () => {
             suggested_course_code: "MHT-CET",
             suggested_course_name: "MHT-CET Preparation",
             suggested_exam_date: "2026-04-24",
+            creatable: true,
+            blocker: null,
           },
         ],
         row_issues: ["Row 2: Invalid target_exam 'JEE'."],

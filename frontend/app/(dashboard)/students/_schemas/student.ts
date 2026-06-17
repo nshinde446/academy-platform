@@ -136,6 +136,10 @@ export interface ImportPreviewBatch {
   suggested_course_code: string | null;
   suggested_course_name: string | null;
   suggested_exam_date: string | null;
+  // Whether auto-create would succeed for a missing code, and why not.
+  // Existing batches are always creatable=true, blocker=null.
+  creatable: boolean;
+  blocker: string | null;
 }
 
 // Dry-run of a student upload from POST /students/import/preview.
@@ -147,6 +151,7 @@ export interface ImportPreview {
   unbatched_rows: number;
   existing_batches: number;
   missing_batches: number;
+  blocked_batches: number;
   batches: ImportPreviewBatch[];
   row_issues: string[];
 }
