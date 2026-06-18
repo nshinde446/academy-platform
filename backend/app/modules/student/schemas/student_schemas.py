@@ -163,6 +163,17 @@ class ImportPreview(BaseModel):
     row_issues: list[str] = []
 
 
+class StudentUpcomingTest(BaseModel):
+    """A scheduled test for the student's batch they haven't taken yet —
+    drives the Tier 13 'upcoming tests' section (soonest first)."""
+
+    test_id: uuid.UUID
+    test_name: str
+    paper_type: str
+    subject_name: str
+    scheduled_at: datetime | None = None
+
+
 class StudentTopicMastery(BaseModel):
     """Per-topic accuracy from a student's per-question responses — drives the
     Tier 13 weakness map (weakest topics first)."""

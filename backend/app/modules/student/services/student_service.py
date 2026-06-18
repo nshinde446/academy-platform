@@ -97,6 +97,14 @@ async def get_topic_mastery(
     return await student_repository.get_topic_mastery(session, student_id, branch_id)
 
 
+async def get_upcoming_tests(
+    session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
+):
+    # Ownership check — surfaces 404 the same way get_student does.
+    await get_student(session, student_id, branch_id)
+    return await student_repository.get_upcoming_tests(session, student_id, branch_id)
+
+
 async def update_student(
     session: AsyncSession,
     student_id: uuid.UUID,

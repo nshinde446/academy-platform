@@ -13,6 +13,7 @@ from app.modules.student.schemas.student_schemas import (
     StudentResponse,
     StudentTestHistoryRow,
     StudentTopicMastery,
+    StudentUpcomingTest,
     StudentUpdate,
     StudentWithStats,
 )
@@ -94,6 +95,21 @@ async def get_student_topic_mastery(
     """Per-topic accuracy (weakest first) from the student's per-question
     responses — the Tier 13 weakness map."""
     return await student_service.get_topic_mastery(session, student_id, branch_id)
+
+
+@router.get(
+    "/{student_id}/upcoming-tests",
+    response_model=list[StudentUpcomingTest],
+)
+async def get_student_upcoming_tests(
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Future-scheduled tests for the student's batch they haven't taken yet
+    (soonest first) — the Tier 13 'upcoming tests' section."""
+    return await student_service.get_upcoming_tests(session, student_id, branch_id)
 
 
 @router.patch("/{student_id}", response_model=StudentResponse)

@@ -99,6 +99,15 @@ export interface StudentUpdate {
   fees_status?: FeesStatus | null;
 }
 
+// A scheduled, not-yet-taken test for the student's batch (soonest first).
+export interface StudentUpcomingTest {
+  test_id: string;
+  test_name: string;
+  paper_type: string;
+  subject_name: string;
+  scheduled_at: string | null;
+}
+
 // Per-topic accuracy for the Tier 13 weakness map (weakest first).
 export interface StudentTopicMastery {
   topic_id: string;

@@ -287,3 +287,113 @@ async def test_topic_mastery_aggregates_and_sorts_weakest_first(
     assert rows[1]["topic_name"] == "Kinematics"
     assert rows[1]["accuracy_pct"] == 50.0
     assert rows[1]["attempted"] == 2 and rows[1]["correct"] == 1
+
+
+async def _seed_scheduled_test(
+    session: AsyncSession, test_id: str, name: str, scheduled_at
+):
+    from app.modules.tests.models.test_models import Test
+
+    session.add(
+        Test(
+            id=uuid.UUID(test_id),
+            name=name,
+            batch_id=uuid.UUID(BATCH_A_ID),
+            subject_id=uuid.UUID(SUBJECT_ID),
+            scheduled_at=scheduled_at,
+            branch_id=uuid.UUID(BRANCH_A_ID),
+            academic_year_id=uuid.UUID(ACADEMIC_YEAR_ID),
+        )
+    )
+    await session.commit()
+
+
+async def _seed_mark(session: AsyncSession, test_id: str, student_id: str):
+    from app.modules.tests.models.test_models import StudentMark
+
+    session.add(
+        StudentMark(
+            student_id=uuid.UUID(student_id),
+            test_id=uuid.UUID(test_id),
+            marks_obtained=50.0,
+            max_marks=100.0,
+            percentage=50.0,
+            branch_id=uuid.UUID(BRANCH_A_ID),
+            academic_year_id=uuid.UUID(ACADEMIC_YEAR_ID),
+        )
+    )
+    await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_upcoming_tests_empty_without_batch(client: AsyncClient, seed_data):
+    await _login_admin(client)
+    resp = await client.get(
+        f"/api/v1/students/{STUDENT_A_ID}/upcoming-tests",
+        params={"branch_id": BRANCH_A_ID},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_upcoming_tests_lists_future_untaken_soonest_first(
+    client: AsyncClient, db_session: AsyncSession, seed_data
+):
+    from datetime import datetime, timezone
+
+    await _login_admin(client)
+    await _seed_extra_students(db_session)  # maps STUDENT_A -> BATCH_A
+    await _seed_scheduled_test(
+        db_session,
+        "00000000-0000-0000-0000-0000000000e1",
+        "Future Test",
+        datetime(2030, 1, 1, tzinfo=timezone.utc),
+    )
+    await _seed_scheduled_test(
+        db_session,
+        "00000000-0000-0000-0000-0000000000e2",
+        "Past Test",
+        datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+    await _seed_scheduled_test(
+        db_session,
+        "00000000-0000-0000-0000-0000000000e3",
+        "Sooner Test",
+        datetime(2029, 1, 1, tzinfo=timezone.utc),
+    )
+
+    resp = await client.get(
+        f"/api/v1/students/{STUDENT_A_ID}/upcoming-tests",
+        params={"branch_id": BRANCH_A_ID},
+    )
+    assert resp.status_code == 200
+    names = [r["test_name"] for r in resp.json()]
+    # Soonest first; the past test is excluded.
+    assert names == ["Sooner Test", "Future Test"]
+
+
+@pytest.mark.asyncio
+async def test_upcoming_tests_excludes_already_taken(
+    client: AsyncClient, db_session: AsyncSession, seed_data
+):
+    from datetime import datetime, timezone
+
+    await _login_admin(client)
+    await _seed_extra_students(db_session)
+    await _seed_scheduled_test(
+        db_session,
+        "00000000-0000-0000-0000-0000000000e4",
+        "Taken Future Test",
+        datetime(2031, 1, 1, tzinfo=timezone.utc),
+    )
+    await _seed_mark(
+        db_session, "00000000-0000-0000-0000-0000000000e4", STUDENT_A_ID
+    )
+
+    resp = await client.get(
+        f"/api/v1/students/{STUDENT_A_ID}/upcoming-tests",
+        params={"branch_id": BRANCH_A_ID},
+    )
+    assert resp.status_code == 200
+    assert all(r["test_name"] != "Taken Future Test" for r in resp.json())
