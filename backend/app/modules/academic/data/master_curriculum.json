@@ -1,0 +1,3347 @@
+{
+ "MHTCET_Physics": [
+  {
+   "main": "Units and Measurements",
+   "sub": "Physical Quantities",
+   "class": "11"
+  },
+  {
+   "main": "Units and Measurements",
+   "sub": "SI Units",
+   "class": "11"
+  },
+  {
+   "main": "Units and Measurements",
+   "sub": "Dimensions",
+   "class": "11"
+  },
+  {
+   "main": "Units and Measurements",
+   "sub": "Dimensional Analysis",
+   "class": "11"
+  },
+  {
+   "main": "Units and Measurements",
+   "sub": "Errors in Measurement",
+   "class": "11"
+  },
+  {
+   "main": "Units and Measurements",
+   "sub": "Significant Figures",
+   "class": "11"
+  },
+  {
+   "main": "Motion in a Plane",
+   "sub": "Scalars and Vectors",
+   "class": "11"
+  },
+  {
+   "main": "Motion in a Plane",
+   "sub": "Vector Addition and Subtraction",
+   "class": "11"
+  },
+  {
+   "main": "Motion in a Plane",
+   "sub": "Resolution of Vectors",
+   "class": "11"
+  },
+  {
+   "main": "Motion in a Plane",
+   "sub": "Projectile Motion",
+   "class": "11"
+  },
+  {
+   "main": "Motion in a Plane",
+   "sub": "Relative Velocity",
+   "class": "11"
+  },
+  {
+   "main": "Laws of Motion",
+   "sub": "Newton's First Law",
+   "class": "11"
+  },
+  {
+   "main": "Laws of Motion",
+   "sub": "Newton's Second Law",
+   "class": "11"
+  },
+  {
+   "main": "Laws of Motion",
+   "sub": "Newton's Third Law",
+   "class": "11"
+  },
+  {
+   "main": "Laws of Motion",
+   "sub": "Friction",
+   "class": "11"
+  },
+  {
+   "main": "Laws of Motion",
+   "sub": "Circular Motion",
+   "class": "11"
+  },
+  {
+   "main": "Gravitation",
+   "sub": "Universal Law of Gravitation",
+   "class": "11"
+  },
+  {
+   "main": "Gravitation",
+   "sub": "Acceleration due to Gravity",
+   "class": "11"
+  },
+  {
+   "main": "Gravitation",
+   "sub": "Escape Velocity",
+   "class": "11"
+  },
+  {
+   "main": "Gravitation",
+   "sub": "Satellites",
+   "class": "11"
+  },
+  {
+   "main": "Thermal Properties of Matter",
+   "sub": "Heat and Temperature",
+   "class": "11"
+  },
+  {
+   "main": "Thermal Properties of Matter",
+   "sub": "Thermal Expansion",
+   "class": "11"
+  },
+  {
+   "main": "Thermal Properties of Matter",
+   "sub": "Specific Heat Capacity",
+   "class": "11"
+  },
+  {
+   "main": "Thermal Properties of Matter",
+   "sub": "Calorimetry",
+   "class": "11"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "First Law of Thermodynamics",
+   "class": "12"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "Second Law of Thermodynamics",
+   "class": "12"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "Heat Engines",
+   "class": "12"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "Carnot Engine",
+   "class": "12"
+  },
+  {
+   "main": "Kinetic Theory of Gases",
+   "sub": "Gas Laws",
+   "class": "12"
+  },
+  {
+   "main": "Kinetic Theory of Gases",
+   "sub": "Ideal Gas Equation",
+   "class": "12"
+  },
+  {
+   "main": "Kinetic Theory of Gases",
+   "sub": "RMS Velocity",
+   "class": "12"
+  },
+  {
+   "main": "Kinetic Theory of Gases",
+   "sub": "Degrees of Freedom",
+   "class": "12"
+  },
+  {
+   "main": "Oscillations",
+   "sub": "Simple Harmonic Motion",
+   "class": "12"
+  },
+  {
+   "main": "Oscillations",
+   "sub": "Energy in SHM",
+   "class": "12"
+  },
+  {
+   "main": "Oscillations",
+   "sub": "Damped Oscillations",
+   "class": "12"
+  },
+  {
+   "main": "Oscillations",
+   "sub": "Forced Oscillations",
+   "class": "12"
+  },
+  {
+   "main": "Waves",
+   "sub": "Wave Motion",
+   "class": "11"
+  },
+  {
+   "main": "Waves",
+   "sub": "Speed of Wave",
+   "class": "11"
+  },
+  {
+   "main": "Waves",
+   "sub": "Superposition Principle",
+   "class": "12"
+  },
+  {
+   "main": "Waves",
+   "sub": "Stationary Waves",
+   "class": "12"
+  },
+  {
+   "main": "Waves",
+   "sub": "Doppler Effect",
+   "class": "11"
+  },
+  {
+   "main": "Electrostatics",
+   "sub": "Electric Charge",
+   "class": "11"
+  },
+  {
+   "main": "Electrostatics",
+   "sub": "Coulomb's Law",
+   "class": "11"
+  },
+  {
+   "main": "Electrostatics",
+   "sub": "Electric Field",
+   "class": "11"
+  },
+  {
+   "main": "Electrostatics",
+   "sub": "Electric Potential",
+   "class": "11"
+  },
+  {
+   "main": "Electrostatics",
+   "sub": "Capacitors",
+   "class": "12"
+  },
+  {
+   "main": "Current Electricity",
+   "sub": "Electric Current",
+   "class": "11"
+  },
+  {
+   "main": "Current Electricity",
+   "sub": "Ohm's Law",
+   "class": "11"
+  },
+  {
+   "main": "Current Electricity",
+   "sub": "Kirchhoff's Laws",
+   "class": "12"
+  },
+  {
+   "main": "Current Electricity",
+   "sub": "Wheatstone Bridge",
+   "class": "12"
+  },
+  {
+   "main": "Current Electricity",
+   "sub": "Potentiometer",
+   "class": "12"
+  },
+  {
+   "main": "Magnetic Effects of Current",
+   "sub": "Biot-Savart Law",
+   "class": "12"
+  },
+  {
+   "main": "Magnetic Effects of Current",
+   "sub": "Ampere's Circuital Law",
+   "class": "12"
+  },
+  {
+   "main": "Magnetic Effects of Current",
+   "sub": "Force on Moving Charge",
+   "class": "12"
+  },
+  {
+   "main": "Magnetic Effects of Current",
+   "sub": "Cyclotron",
+   "class": "12"
+  },
+  {
+   "main": "Magnetism",
+   "sub": "Bar Magnet",
+   "class": "11"
+  },
+  {
+   "main": "Magnetism",
+   "sub": "Magnetic Field Lines",
+   "class": "11"
+  },
+  {
+   "main": "Magnetism",
+   "sub": "Earth's Magnetism",
+   "class": "11"
+  },
+  {
+   "main": "Electromagnetic Induction",
+   "sub": "Faraday's Laws",
+   "class": "12"
+  },
+  {
+   "main": "Electromagnetic Induction",
+   "sub": "Lenz's Law",
+   "class": "12"
+  },
+  {
+   "main": "Electromagnetic Induction",
+   "sub": "Self Induction",
+   "class": "12"
+  },
+  {
+   "main": "Electromagnetic Induction",
+   "sub": "Mutual Induction",
+   "class": "12"
+  },
+  {
+   "main": "Alternating Current",
+   "sub": "AC Voltage and Current",
+   "class": "12"
+  },
+  {
+   "main": "Alternating Current",
+   "sub": "RMS Value",
+   "class": "12"
+  },
+  {
+   "main": "Alternating Current",
+   "sub": "LC Oscillations",
+   "class": "12"
+  },
+  {
+   "main": "Alternating Current",
+   "sub": "Transformer",
+   "class": "12"
+  },
+  {
+   "main": "Electromagnetic Waves",
+   "sub": "Displacement Current",
+   "class": "11"
+  },
+  {
+   "main": "Electromagnetic Waves",
+   "sub": "Electromagnetic Spectrum",
+   "class": "11"
+  },
+  {
+   "main": "Ray Optics",
+   "sub": "Reflection of Light",
+   "class": "11"
+  },
+  {
+   "main": "Ray Optics",
+   "sub": "Refraction",
+   "class": "11"
+  },
+  {
+   "main": "Ray Optics",
+   "sub": "Total Internal Reflection",
+   "class": "11"
+  },
+  {
+   "main": "Ray Optics",
+   "sub": "Mirrors",
+   "class": "11"
+  },
+  {
+   "main": "Ray Optics",
+   "sub": "Lenses",
+   "class": "11"
+  },
+  {
+   "main": "Wave Optics",
+   "sub": "Huygens Principle",
+   "class": "12"
+  },
+  {
+   "main": "Wave Optics",
+   "sub": "Interference",
+   "class": "12"
+  },
+  {
+   "main": "Wave Optics",
+   "sub": "Diffraction",
+   "class": "12"
+  },
+  {
+   "main": "Wave Optics",
+   "sub": "Polarization",
+   "class": "12"
+  },
+  {
+   "main": "Dual Nature of Radiation and Matter",
+   "sub": "Photoelectric Effect",
+   "class": "12"
+  },
+  {
+   "main": "Dual Nature of Radiation and Matter",
+   "sub": "Einstein's Equation",
+   "class": "12"
+  },
+  {
+   "main": "Dual Nature of Radiation and Matter",
+   "sub": "de Broglie Wavelength",
+   "class": "12"
+  },
+  {
+   "main": "Atoms",
+   "sub": "Rutherford Model",
+   "class": "12"
+  },
+  {
+   "main": "Atoms",
+   "sub": "Bohr's Atomic Model",
+   "class": "12"
+  },
+  {
+   "main": "Atoms",
+   "sub": "Energy Levels",
+   "class": "12"
+  },
+  {
+   "main": "Nuclei",
+   "sub": "Nuclear Structure",
+   "class": "12"
+  },
+  {
+   "main": "Nuclei",
+   "sub": "Radioactivity",
+   "class": "12"
+  },
+  {
+   "main": "Nuclei",
+   "sub": "Nuclear Fission",
+   "class": "12"
+  },
+  {
+   "main": "Nuclei",
+   "sub": "Nuclear Fusion",
+   "class": "12"
+  },
+  {
+   "main": "Semiconductor Devices",
+   "sub": "Energy Bands",
+   "class": "11"
+  },
+  {
+   "main": "Semiconductor Devices",
+   "sub": "Intrinsic Semiconductor",
+   "class": "11"
+  },
+  {
+   "main": "Semiconductor Devices",
+   "sub": "Extrinsic Semiconductor",
+   "class": "11"
+  },
+  {
+   "main": "Semiconductor Devices",
+   "sub": "PN Junction Diode",
+   "class": "11"
+  },
+  {
+   "main": "Semiconductor Devices",
+   "sub": "Rectifiers",
+   "class": "12"
+  },
+  {
+   "main": "Semiconductor Devices",
+   "sub": "Transistors",
+   "class": "12"
+  },
+  {
+   "main": "Communication Systems",
+   "sub": "Communication Process",
+   "class": "11"
+  },
+  {
+   "main": "Communication Systems",
+   "sub": "Modulation",
+   "class": "11"
+  },
+  {
+   "main": "Communication Systems",
+   "sub": "AM and FM Transmission",
+   "class": "11"
+  },
+  {
+   "main": "Mathematical Methods",
+   "sub": "Scalars and Vectors",
+   "class": "11"
+  },
+  {
+   "main": "Mathematical Methods",
+   "sub": "Addition and Subtraction of Vectors",
+   "class": "11"
+  },
+  {
+   "main": "Mathematical Methods",
+   "sub": "Scalar and Vector Products",
+   "class": "11"
+  },
+  {
+   "main": "Mechanical Properties of Solids",
+   "sub": "Stress and Strain",
+   "class": "11"
+  },
+  {
+   "main": "Mechanical Properties of Solids",
+   "sub": "Hooke's Law and Elastic Moduli",
+   "class": "11"
+  },
+  {
+   "main": "Mechanical Properties of Solids",
+   "sub": "Elastic Behaviour of Materials",
+   "class": "11"
+  },
+  {
+   "main": "Rotational Dynamics",
+   "sub": "Moment of Inertia",
+   "class": "12"
+  },
+  {
+   "main": "Rotational Dynamics",
+   "sub": "Torque and Angular Momentum",
+   "class": "12"
+  },
+  {
+   "main": "Rotational Dynamics",
+   "sub": "Rolling Motion",
+   "class": "12"
+  },
+  {
+   "main": "Mechanical Properties of Fluids",
+   "sub": "Pressure and Pascal's Law",
+   "class": "12"
+  },
+  {
+   "main": "Mechanical Properties of Fluids",
+   "sub": "Surface Tension",
+   "class": "12"
+  },
+  {
+   "main": "Mechanical Properties of Fluids",
+   "sub": "Viscosity and Bernoulli's Principle",
+   "class": "12"
+  },
+  {
+   "main": "Magnetic Materials",
+   "sub": "Magnetic Properties of Materials",
+   "class": "12"
+  },
+  {
+   "main": "Magnetic Materials",
+   "sub": "Dia, Para and Ferromagnetism",
+   "class": "12"
+  }
+ ],
+ "MHTCET_Chemistry": [
+  {
+   "main": "Solid State",
+   "sub": "Classification of Solids",
+   "class": "12"
+  },
+  {
+   "main": "Solid State",
+   "sub": "Crystal Lattice",
+   "class": "12"
+  },
+  {
+   "main": "Solid State",
+   "sub": "Unit Cell",
+   "class": "12"
+  },
+  {
+   "main": "Solid State",
+   "sub": "Packing in Solids",
+   "class": "12"
+  },
+  {
+   "main": "Solutions",
+   "sub": "Types of Solutions",
+   "class": "12"
+  },
+  {
+   "main": "Solutions",
+   "sub": "Concentration Terms",
+   "class": "12"
+  },
+  {
+   "main": "Solutions",
+   "sub": "Raoult’s Law",
+   "class": "12"
+  },
+  {
+   "main": "Solutions",
+   "sub": "Colligative Properties",
+   "class": "12"
+  },
+  {
+   "main": "Chemical Thermodynamics",
+   "sub": "System and Surroundings",
+   "class": "12"
+  },
+  {
+   "main": "Chemical Thermodynamics",
+   "sub": "Enthalpy",
+   "class": "12"
+  },
+  {
+   "main": "Chemical Thermodynamics",
+   "sub": "Entropy",
+   "class": "12"
+  },
+  {
+   "main": "Chemical Thermodynamics",
+   "sub": "Gibbs Free Energy",
+   "class": "12"
+  },
+  {
+   "main": "Electrochemistry",
+   "sub": "Conductance",
+   "class": "12"
+  },
+  {
+   "main": "Electrochemistry",
+   "sub": "Kohlrausch Law",
+   "class": "12"
+  },
+  {
+   "main": "Electrochemistry",
+   "sub": "Electrochemical Cell",
+   "class": "12"
+  },
+  {
+   "main": "Electrochemistry",
+   "sub": "Nernst Equation",
+   "class": "12"
+  },
+  {
+   "main": "Chemical Kinetics",
+   "sub": "Rate of Reaction",
+   "class": "12"
+  },
+  {
+   "main": "Chemical Kinetics",
+   "sub": "Order of Reaction",
+   "class": "12"
+  },
+  {
+   "main": "Chemical Kinetics",
+   "sub": "Half Life",
+   "class": "12"
+  },
+  {
+   "main": "Chemical Kinetics",
+   "sub": "Arrhenius Equation",
+   "class": "12"
+  },
+  {
+   "main": "Surface Chemistry",
+   "sub": "Adsorption",
+   "class": "11"
+  },
+  {
+   "main": "Surface Chemistry",
+   "sub": "Catalysis",
+   "class": "11"
+  },
+  {
+   "main": "Surface Chemistry",
+   "sub": "Colloids",
+   "class": "11"
+  },
+  {
+   "main": "Surface Chemistry",
+   "sub": "Emulsions",
+   "class": "11"
+  },
+  {
+   "main": "General Principles and Processes of Isolation of Elements",
+   "sub": "Metallurgy",
+   "class": "12"
+  },
+  {
+   "main": "General Principles and Processes of Isolation of Elements",
+   "sub": "Concentration of Ore",
+   "class": "12"
+  },
+  {
+   "main": "General Principles and Processes of Isolation of Elements",
+   "sub": "Extraction of Metals",
+   "class": "12"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 15 Elements",
+   "class": "11"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 16 Elements",
+   "class": "12"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 17 Elements",
+   "class": "12"
+  },
+  {
+   "main": "d and f Block Elements",
+   "sub": "Transition Elements",
+   "class": "12"
+  },
+  {
+   "main": "d and f Block Elements",
+   "sub": "Lanthanides",
+   "class": "12"
+  },
+  {
+   "main": "d and f Block Elements",
+   "sub": "Actinides",
+   "class": "12"
+  },
+  {
+   "main": "Coordination Compounds",
+   "sub": "Werner’s Theory",
+   "class": "12"
+  },
+  {
+   "main": "Coordination Compounds",
+   "sub": "Coordination Number",
+   "class": "12"
+  },
+  {
+   "main": "Coordination Compounds",
+   "sub": "Isomerism",
+   "class": "12"
+  },
+  {
+   "main": "Coordination Compounds",
+   "sub": "Bonding in Coordination Compounds",
+   "class": "12"
+  },
+  {
+   "main": "Haloalkanes and Haloarenes",
+   "sub": "Nomenclature",
+   "class": "12"
+  },
+  {
+   "main": "Haloalkanes and Haloarenes",
+   "sub": "Preparation Methods",
+   "class": "12"
+  },
+  {
+   "main": "Haloalkanes and Haloarenes",
+   "sub": "Physical Properties",
+   "class": "12"
+  },
+  {
+   "main": "Haloalkanes and Haloarenes",
+   "sub": "Chemical Reactions",
+   "class": "12"
+  },
+  {
+   "main": "Alcohols Phenols and Ethers",
+   "sub": "Classification",
+   "class": "12"
+  },
+  {
+   "main": "Alcohols Phenols and Ethers",
+   "sub": "Preparation",
+   "class": "12"
+  },
+  {
+   "main": "Alcohols Phenols and Ethers",
+   "sub": "Properties",
+   "class": "12"
+  },
+  {
+   "main": "Alcohols Phenols and Ethers",
+   "sub": "Reactions",
+   "class": "12"
+  },
+  {
+   "main": "Aldehydes Ketones and Carboxylic Acids",
+   "sub": "Nomenclature",
+   "class": "12"
+  },
+  {
+   "main": "Aldehydes Ketones and Carboxylic Acids",
+   "sub": "Preparation Methods",
+   "class": "12"
+  },
+  {
+   "main": "Aldehydes Ketones and Carboxylic Acids",
+   "sub": "Reactions",
+   "class": "12"
+  },
+  {
+   "main": "Organic Compounds Containing Nitrogen",
+   "sub": "Amines",
+   "class": "12"
+  },
+  {
+   "main": "Organic Compounds Containing Nitrogen",
+   "sub": "Diazonium Salts",
+   "class": "12"
+  },
+  {
+   "main": "Biomolecules",
+   "sub": "Carbohydrates",
+   "class": "12"
+  },
+  {
+   "main": "Biomolecules",
+   "sub": "Proteins",
+   "class": "12"
+  },
+  {
+   "main": "Biomolecules",
+   "sub": "Vitamins",
+   "class": "12"
+  },
+  {
+   "main": "Biomolecules",
+   "sub": "Nucleic Acids",
+   "class": "12"
+  },
+  {
+   "main": "Polymers",
+   "sub": "Types of Polymers",
+   "class": "12"
+  },
+  {
+   "main": "Polymers",
+   "sub": "Polymerization",
+   "class": "12"
+  },
+  {
+   "main": "Chemistry in Everyday Life",
+   "sub": "Drugs and Medicines",
+   "class": "11"
+  },
+  {
+   "main": "Chemistry in Everyday Life",
+   "sub": "Cleansing Agents",
+   "class": "11"
+  },
+  {
+   "main": "Some Basic Concepts of Chemistry",
+   "sub": "Mole Concept",
+   "class": "11"
+  },
+  {
+   "main": "Some Basic Concepts of Chemistry",
+   "sub": "Stoichiometry",
+   "class": "11"
+  },
+  {
+   "main": "Structure of Atom",
+   "sub": "Atomic Models",
+   "class": "11"
+  },
+  {
+   "main": "Structure of Atom",
+   "sub": "Quantum Numbers",
+   "class": "11"
+  },
+  {
+   "main": "Classification of Elements and Periodicity",
+   "sub": "Modern Periodic Table",
+   "class": "11"
+  },
+  {
+   "main": "Classification of Elements and Periodicity",
+   "sub": "Periodic Trends",
+   "class": "11"
+  },
+  {
+   "main": "Chemical Bonding and Molecular Structure",
+   "sub": "Ionic Bond",
+   "class": "11"
+  },
+  {
+   "main": "Chemical Bonding and Molecular Structure",
+   "sub": "Covalent Bond",
+   "class": "11"
+  },
+  {
+   "main": "Chemical Bonding and Molecular Structure",
+   "sub": "VSEPR Theory",
+   "class": "11"
+  },
+  {
+   "main": "States of Matter",
+   "sub": "Gas Laws",
+   "class": "11"
+  },
+  {
+   "main": "States of Matter",
+   "sub": "Ideal Gas Equation",
+   "class": "11"
+  },
+  {
+   "main": "Equilibrium",
+   "sub": "Chemical Equilibrium",
+   "class": "11"
+  },
+  {
+   "main": "Equilibrium",
+   "sub": "Ionic Equilibrium",
+   "class": "12"
+  },
+  {
+   "main": "Redox Reactions",
+   "sub": "Oxidation",
+   "class": "11"
+  },
+  {
+   "main": "Redox Reactions",
+   "sub": "Reduction",
+   "class": "11"
+  },
+  {
+   "main": "Hydrogen",
+   "sub": "Preparation of Hydrogen",
+   "class": "11"
+  },
+  {
+   "main": "Hydrogen",
+   "sub": "Properties of Hydrogen",
+   "class": "11"
+  },
+  {
+   "main": "Hydrocarbons",
+   "sub": "Alkanes",
+   "class": "11"
+  },
+  {
+   "main": "Hydrocarbons",
+   "sub": "Alkenes",
+   "class": "11"
+  },
+  {
+   "main": "Hydrocarbons",
+   "sub": "Alkynes",
+   "class": "11"
+  },
+  {
+   "main": "Environmental Chemistry",
+   "sub": "Air Pollution",
+   "class": "11"
+  },
+  {
+   "main": "Environmental Chemistry",
+   "sub": "Water Pollution",
+   "class": "11"
+  },
+  {
+   "main": "Introduction to Analytical Chemistry",
+   "sub": "Concentration of Solutions",
+   "class": "11"
+  },
+  {
+   "main": "Introduction to Analytical Chemistry",
+   "sub": "Errors and Significant Figures",
+   "class": "11"
+  },
+  {
+   "main": "Basic Analytical Techniques",
+   "sub": "Purification of Compounds",
+   "class": "11"
+  },
+  {
+   "main": "Basic Analytical Techniques",
+   "sub": "Qualitative and Quantitative Analysis",
+   "class": "11"
+  },
+  {
+   "main": "s-Block Elements",
+   "sub": "Alkali Metals (Group 1)",
+   "class": "11"
+  },
+  {
+   "main": "s-Block Elements",
+   "sub": "Alkaline Earth Metals (Group 2)",
+   "class": "11"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 13 Elements",
+   "class": "11"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 14 Elements",
+   "class": "11"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 18 Elements (Noble Gases)",
+   "class": "12"
+  },
+  {
+   "main": "Nuclear Chemistry and Radioactivity",
+   "sub": "Radioactive Decay",
+   "class": "11"
+  },
+  {
+   "main": "Nuclear Chemistry and Radioactivity",
+   "sub": "Nuclear Reactions and Applications",
+   "class": "11"
+  },
+  {
+   "main": "Basic Principles of Organic Chemistry",
+   "sub": "Classification and Nomenclature",
+   "class": "11"
+  },
+  {
+   "main": "Basic Principles of Organic Chemistry",
+   "sub": "Electronic Effects and Reaction Intermediates",
+   "class": "11"
+  },
+  {
+   "main": "Basic Principles of Organic Chemistry",
+   "sub": "Isomerism",
+   "class": "11"
+  },
+  {
+   "main": "Green Chemistry and Nanochemistry",
+   "sub": "Principles of Green Chemistry",
+   "class": "12"
+  },
+  {
+   "main": "Green Chemistry and Nanochemistry",
+   "sub": "Nanochemistry and Nanomaterials",
+   "class": "12"
+  }
+ ],
+ "MHTCET_Maths": [
+  {
+   "main": "Sets and Relations",
+   "sub": "Types of Sets",
+   "class": "11"
+  },
+  {
+   "main": "Sets and Relations",
+   "sub": "Venn Diagrams",
+   "class": "11"
+  },
+  {
+   "main": "Sets and Relations",
+   "sub": "Relations and Functions",
+   "class": "11"
+  },
+  {
+   "main": "Complex Numbers",
+   "sub": "Algebra of Complex Numbers",
+   "class": "11"
+  },
+  {
+   "main": "Complex Numbers",
+   "sub": "Argand Plane",
+   "class": "11"
+  },
+  {
+   "main": "Complex Numbers",
+   "sub": "Modulus and Amplitude",
+   "class": "11"
+  },
+  {
+   "main": "Quadratic Equations",
+   "sub": "Nature of Roots",
+   "class": "11"
+  },
+  {
+   "main": "Quadratic Equations",
+   "sub": "Solution of Quadratic Equations",
+   "class": "11"
+  },
+  {
+   "main": "Quadratic Equations",
+   "sub": "Relation Between Roots and Coefficients",
+   "class": "11"
+  },
+  {
+   "main": "Matrices",
+   "sub": "Types of Matrices",
+   "class": "11"
+  },
+  {
+   "main": "Matrices",
+   "sub": "Matrix Operations",
+   "class": "11"
+  },
+  {
+   "main": "Matrices",
+   "sub": "Determinants",
+   "class": "11"
+  },
+  {
+   "main": "Matrices",
+   "sub": "Inverse of Matrix",
+   "class": "12"
+  },
+  {
+   "main": "Permutation and Combination",
+   "sub": "Fundamental Principle of Counting",
+   "class": "11"
+  },
+  {
+   "main": "Permutation and Combination",
+   "sub": "Permutations",
+   "class": "11"
+  },
+  {
+   "main": "Permutation and Combination",
+   "sub": "Combinations",
+   "class": "11"
+  },
+  {
+   "main": "Binomial Theorem",
+   "sub": "Binomial Expansion",
+   "class": "11"
+  },
+  {
+   "main": "Binomial Theorem",
+   "sub": "General Term",
+   "class": "11"
+  },
+  {
+   "main": "Sequences and Series",
+   "sub": "Arithmetic Progression",
+   "class": "11"
+  },
+  {
+   "main": "Sequences and Series",
+   "sub": "Geometric Progression",
+   "class": "11"
+  },
+  {
+   "main": "Sequences and Series",
+   "sub": "Harmonic Progression",
+   "class": "11"
+  },
+  {
+   "main": "Probability",
+   "sub": "Conditional Probability",
+   "class": "11"
+  },
+  {
+   "main": "Probability",
+   "sub": "Bayes Theorem",
+   "class": "11"
+  },
+  {
+   "main": "Probability",
+   "sub": "Random Variables",
+   "class": "12"
+  },
+  {
+   "main": "Trigonometry",
+   "sub": "Trigonometric Ratios",
+   "class": "11"
+  },
+  {
+   "main": "Trigonometry",
+   "sub": "Trigonometric Identities",
+   "class": "11"
+  },
+  {
+   "main": "Trigonometry",
+   "sub": "Inverse Trigonometric Functions",
+   "class": "12"
+  },
+  {
+   "main": "Straight Line",
+   "sub": "Slope of Line",
+   "class": "11"
+  },
+  {
+   "main": "Straight Line",
+   "sub": "Equation of Straight Line",
+   "class": "11"
+  },
+  {
+   "main": "Straight Line",
+   "sub": "Distance Between Two Points",
+   "class": "11"
+  },
+  {
+   "main": "Circle",
+   "sub": "Equation of Circle",
+   "class": "11"
+  },
+  {
+   "main": "Circle",
+   "sub": "Tangent and Normal",
+   "class": "11"
+  },
+  {
+   "main": "Conic Sections",
+   "sub": "Parabola",
+   "class": "11"
+  },
+  {
+   "main": "Conic Sections",
+   "sub": "Ellipse",
+   "class": "11"
+  },
+  {
+   "main": "Conic Sections",
+   "sub": "Hyperbola",
+   "class": "11"
+  },
+  {
+   "main": "Vectors",
+   "sub": "Vector Algebra",
+   "class": "12"
+  },
+  {
+   "main": "Vectors",
+   "sub": "Dot Product",
+   "class": "12"
+  },
+  {
+   "main": "Vectors",
+   "sub": "Cross Product",
+   "class": "12"
+  },
+  {
+   "main": "Three Dimensional Geometry",
+   "sub": "Direction Cosines",
+   "class": "12"
+  },
+  {
+   "main": "Three Dimensional Geometry",
+   "sub": "Equation of Plane",
+   "class": "12"
+  },
+  {
+   "main": "Three Dimensional Geometry",
+   "sub": "Equation of Line",
+   "class": "12"
+  },
+  {
+   "main": "Limits",
+   "sub": "Evaluation of Limits",
+   "class": "11"
+  },
+  {
+   "main": "Limits",
+   "sub": "Continuity",
+   "class": "11"
+  },
+  {
+   "main": "Differentiation",
+   "sub": "Derivative of Functions",
+   "class": "11"
+  },
+  {
+   "main": "Differentiation",
+   "sub": "Chain Rule",
+   "class": "11"
+  },
+  {
+   "main": "Differentiation",
+   "sub": "Applications of Derivatives",
+   "class": "12"
+  },
+  {
+   "main": "Integration",
+   "sub": "Indefinite Integration",
+   "class": "12"
+  },
+  {
+   "main": "Integration",
+   "sub": "Definite Integration",
+   "class": "12"
+  },
+  {
+   "main": "Integration",
+   "sub": "Applications of Integration",
+   "class": "12"
+  },
+  {
+   "main": "Differential Equations",
+   "sub": "Formation of Differential Equations",
+   "class": "12"
+  },
+  {
+   "main": "Differential Equations",
+   "sub": "Solution of Differential Equations",
+   "class": "12"
+  },
+  {
+   "main": "Statistics",
+   "sub": "Measures of Dispersion",
+   "class": "11"
+  },
+  {
+   "main": "Statistics",
+   "sub": "Mean Median Mode",
+   "class": "11"
+  },
+  {
+   "main": "Statistics",
+   "sub": "Standard Deviation",
+   "class": "11"
+  },
+  {
+   "main": "Linear Programming",
+   "sub": "Linear Inequalities",
+   "class": "12"
+  },
+  {
+   "main": "Linear Programming",
+   "sub": "Optimization Problems",
+   "class": "12"
+  },
+  {
+   "main": "Functions",
+   "sub": "Types of Functions",
+   "class": "11"
+  },
+  {
+   "main": "Functions",
+   "sub": "Composite and Inverse Functions",
+   "class": "11"
+  },
+  {
+   "main": "Trigonometry",
+   "sub": "Angle and its Measurement",
+   "class": "11"
+  },
+  {
+   "main": "Methods of Induction",
+   "sub": "Principle of Mathematical Induction",
+   "class": "11"
+  },
+  {
+   "main": "Mathematical Logic",
+   "sub": "Statements and Logical Connectives",
+   "class": "12"
+  },
+  {
+   "main": "Mathematical Logic",
+   "sub": "Truth Tables",
+   "class": "12"
+  },
+  {
+   "main": "Pair of Straight Lines",
+   "sub": "Combined Equation of Lines",
+   "class": "12"
+  },
+  {
+   "main": "Pair of Straight Lines",
+   "sub": "Angle Between Lines",
+   "class": "12"
+  },
+  {
+   "main": "Probability Distributions",
+   "sub": "Random Variables and Distributions",
+   "class": "12"
+  },
+  {
+   "main": "Probability Distributions",
+   "sub": "Expected Value and Variance",
+   "class": "12"
+  },
+  {
+   "main": "Binomial Distribution",
+   "sub": "Bernoulli Trials",
+   "class": "12"
+  },
+  {
+   "main": "Binomial Distribution",
+   "sub": "Binomial Distribution",
+   "class": "12"
+  }
+ ],
+ "JEE_Main_Physics": [
+  {
+   "main": "Physics and Measurement",
+   "sub": "Units and Dimensions",
+   "class": "11"
+  },
+  {
+   "main": "Physics and Measurement",
+   "sub": "Errors in Measurement",
+   "class": "11"
+  },
+  {
+   "main": "Kinematics",
+   "sub": "Motion in One Dimension",
+   "class": "11"
+  },
+  {
+   "main": "Kinematics",
+   "sub": "Motion in Two Dimensions",
+   "class": "11"
+  },
+  {
+   "main": "Kinematics",
+   "sub": "Projectile Motion",
+   "class": "11"
+  },
+  {
+   "main": "Laws of Motion",
+   "sub": "Newton's Laws",
+   "class": "11"
+  },
+  {
+   "main": "Laws of Motion",
+   "sub": "Friction",
+   "class": "11"
+  },
+  {
+   "main": "Laws of Motion",
+   "sub": "Circular Motion",
+   "class": "11"
+  },
+  {
+   "main": "Work, Energy and Power",
+   "sub": "Kinetic Energy",
+   "class": "11"
+  },
+  {
+   "main": "Work, Energy and Power",
+   "sub": "Potential Energy",
+   "class": "11"
+  },
+  {
+   "main": "Work, Energy and Power",
+   "sub": "Conservation of Energy",
+   "class": "11"
+  },
+  {
+   "main": "Rotational Motion",
+   "sub": "Moment of Inertia",
+   "class": "11"
+  },
+  {
+   "main": "Rotational Motion",
+   "sub": "Torque",
+   "class": "11"
+  },
+  {
+   "main": "Rotational Motion",
+   "sub": "Angular Momentum",
+   "class": "11"
+  },
+  {
+   "main": "Gravitation",
+   "sub": "Universal Law of Gravitation",
+   "class": "11"
+  },
+  {
+   "main": "Gravitation",
+   "sub": "Satellite Motion",
+   "class": "11"
+  },
+  {
+   "main": "Properties of Solids and Liquids",
+   "sub": "Elasticity",
+   "class": "11"
+  },
+  {
+   "main": "Properties of Solids and Liquids",
+   "sub": "Surface Tension",
+   "class": "11"
+  },
+  {
+   "main": "Properties of Solids and Liquids",
+   "sub": "Viscosity",
+   "class": "11"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "First Law of Thermodynamics",
+   "class": "11"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "Second Law of Thermodynamics",
+   "class": "11"
+  },
+  {
+   "main": "Kinetic Theory of Gases",
+   "sub": "Ideal Gas Equation",
+   "class": "11"
+  },
+  {
+   "main": "Kinetic Theory of Gases",
+   "sub": "RMS Velocity",
+   "class": "11"
+  },
+  {
+   "main": "Oscillations and Waves",
+   "sub": "Simple Harmonic Motion",
+   "class": "11"
+  },
+  {
+   "main": "Oscillations and Waves",
+   "sub": "Wave Motion",
+   "class": "11"
+  },
+  {
+   "main": "Oscillations and Waves",
+   "sub": "Doppler Effect",
+   "class": "11"
+  },
+  {
+   "main": "Electrostatics",
+   "sub": "Coulomb's Law",
+   "class": "12"
+  },
+  {
+   "main": "Electrostatics",
+   "sub": "Electric Field",
+   "class": "12"
+  },
+  {
+   "main": "Electrostatics",
+   "sub": "Capacitance",
+   "class": "12"
+  },
+  {
+   "main": "Current Electricity",
+   "sub": "Ohm's Law",
+   "class": "12"
+  },
+  {
+   "main": "Current Electricity",
+   "sub": "Kirchhoff's Laws",
+   "class": "12"
+  },
+  {
+   "main": "Current Electricity",
+   "sub": "Potentiometer",
+   "class": "12"
+  },
+  {
+   "main": "Magnetic Effects of Current and Magnetism",
+   "sub": "Biot Savart Law",
+   "class": "12"
+  },
+  {
+   "main": "Magnetic Effects of Current and Magnetism",
+   "sub": "Ampere's Law",
+   "class": "12"
+  },
+  {
+   "main": "Magnetic Effects of Current and Magnetism",
+   "sub": "Moving Coil Galvanometer",
+   "class": "12"
+  },
+  {
+   "main": "Electromagnetic Induction and Alternating Currents",
+   "sub": "Faraday's Law",
+   "class": "12"
+  },
+  {
+   "main": "Electromagnetic Induction and Alternating Currents",
+   "sub": "Lenz Law",
+   "class": "12"
+  },
+  {
+   "main": "Electromagnetic Induction and Alternating Currents",
+   "sub": "Transformer",
+   "class": "12"
+  },
+  {
+   "main": "Electromagnetic Waves",
+   "sub": "Electromagnetic Spectrum",
+   "class": "12"
+  },
+  {
+   "main": "Optics",
+   "sub": "Reflection and Refraction",
+   "class": "12"
+  },
+  {
+   "main": "Optics",
+   "sub": "Wave Optics",
+   "class": "12"
+  },
+  {
+   "main": "Optics",
+   "sub": "Optical Instruments",
+   "class": "12"
+  },
+  {
+   "main": "Dual Nature of Matter and Radiation",
+   "sub": "Photoelectric Effect",
+   "class": "12"
+  },
+  {
+   "main": "Dual Nature of Matter and Radiation",
+   "sub": "de Broglie Hypothesis",
+   "class": "12"
+  },
+  {
+   "main": "Atoms and Nuclei",
+   "sub": "Bohr Model",
+   "class": "12"
+  },
+  {
+   "main": "Atoms and Nuclei",
+   "sub": "Radioactivity",
+   "class": "12"
+  },
+  {
+   "main": "Electronic Devices",
+   "sub": "Semiconductors",
+   "class": "12"
+  },
+  {
+   "main": "Electronic Devices",
+   "sub": "Logic Gates",
+   "class": "12"
+  },
+  {
+   "main": "Communication Systems",
+   "sub": "Modulation",
+   "class": "12"
+  },
+  {
+   "main": "Experimental Skills",
+   "sub": "Vernier Calipers",
+   "class": "11"
+  },
+  {
+   "main": "Experimental Skills",
+   "sub": "Screw Gauge",
+   "class": "11"
+  }
+ ],
+ "JEE_Main_Chemistry": [
+  {
+   "main": "Some Basic Concepts of Chemistry",
+   "sub": "Mole Concept",
+   "class": "11"
+  },
+  {
+   "main": "Some Basic Concepts of Chemistry",
+   "sub": "Stoichiometry",
+   "class": "11"
+  },
+  {
+   "main": "Atomic Structure",
+   "sub": "Bohr Model",
+   "class": "11"
+  },
+  {
+   "main": "Atomic Structure",
+   "sub": "Quantum Numbers",
+   "class": "11"
+  },
+  {
+   "main": "Chemical Bonding",
+   "sub": "Ionic Bond",
+   "class": "11"
+  },
+  {
+   "main": "Chemical Bonding",
+   "sub": "Covalent Bond",
+   "class": "11"
+  },
+  {
+   "main": "Chemical Bonding",
+   "sub": "Hybridization",
+   "class": "11"
+  },
+  {
+   "main": "States of Matter",
+   "sub": "Gas Laws",
+   "class": "11"
+  },
+  {
+   "main": "States of Matter",
+   "sub": "Kinetic Theory of Gases",
+   "class": "11"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "First Law of Thermodynamics",
+   "class": "11"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "Entropy",
+   "class": "11"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "Gibbs Free Energy",
+   "class": "11"
+  },
+  {
+   "main": "Equilibrium",
+   "sub": "Chemical Equilibrium",
+   "class": "11"
+  },
+  {
+   "main": "Equilibrium",
+   "sub": "Ionic Equilibrium",
+   "class": "11"
+  },
+  {
+   "main": "Redox Reactions",
+   "sub": "Oxidation and Reduction",
+   "class": "11"
+  },
+  {
+   "main": "Hydrogen",
+   "sub": "Properties of Hydrogen",
+   "class": "11"
+  },
+  {
+   "main": "Hydrogen",
+   "sub": "Hydrides",
+   "class": "11"
+  },
+  {
+   "main": "s-Block Elements",
+   "sub": "Alkali Metals",
+   "class": "11"
+  },
+  {
+   "main": "s-Block Elements",
+   "sub": "Alkaline Earth Metals",
+   "class": "11"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 13 Elements",
+   "class": "11"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 14 Elements",
+   "class": "11"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 15 Elements",
+   "class": "12"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 16 Elements",
+   "class": "12"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 17 Elements",
+   "class": "12"
+  },
+  {
+   "main": "Organic Chemistry",
+   "sub": "General Organic Chemistry",
+   "class": "11"
+  },
+  {
+   "main": "Organic Chemistry",
+   "sub": "Isomerism",
+   "class": "11"
+  },
+  {
+   "main": "Hydrocarbons",
+   "sub": "Alkanes",
+   "class": "11"
+  },
+  {
+   "main": "Hydrocarbons",
+   "sub": "Alkenes",
+   "class": "11"
+  },
+  {
+   "main": "Hydrocarbons",
+   "sub": "Alkynes",
+   "class": "11"
+  },
+  {
+   "main": "Environmental Chemistry",
+   "sub": "Air Pollution",
+   "class": "11"
+  },
+  {
+   "main": "Environmental Chemistry",
+   "sub": "Water Pollution",
+   "class": "11"
+  },
+  {
+   "main": "Solid State",
+   "sub": "Crystal Lattice",
+   "class": "12"
+  },
+  {
+   "main": "Solid State",
+   "sub": "Packing Efficiency",
+   "class": "12"
+  },
+  {
+   "main": "Solutions",
+   "sub": "Concentration Terms",
+   "class": "12"
+  },
+  {
+   "main": "Solutions",
+   "sub": "Colligative Properties",
+   "class": "12"
+  },
+  {
+   "main": "Electrochemistry",
+   "sub": "Electrochemical Cells",
+   "class": "12"
+  },
+  {
+   "main": "Electrochemistry",
+   "sub": "Nernst Equation",
+   "class": "12"
+  },
+  {
+   "main": "Chemical Kinetics",
+   "sub": "Rate of Reaction",
+   "class": "12"
+  },
+  {
+   "main": "Chemical Kinetics",
+   "sub": "Order of Reaction",
+   "class": "12"
+  },
+  {
+   "main": "Surface Chemistry",
+   "sub": "Adsorption",
+   "class": "12"
+  },
+  {
+   "main": "Surface Chemistry",
+   "sub": "Catalysis",
+   "class": "12"
+  },
+  {
+   "main": "d and f Block Elements",
+   "sub": "Transition Elements",
+   "class": "12"
+  },
+  {
+   "main": "d and f Block Elements",
+   "sub": "Lanthanides",
+   "class": "12"
+  },
+  {
+   "main": "Coordination Compounds",
+   "sub": "Werner Theory",
+   "class": "12"
+  },
+  {
+   "main": "Coordination Compounds",
+   "sub": "Isomerism",
+   "class": "12"
+  },
+  {
+   "main": "Haloalkanes and Haloarenes",
+   "sub": "Preparation",
+   "class": "12"
+  },
+  {
+   "main": "Haloalkanes and Haloarenes",
+   "sub": "Reactions",
+   "class": "12"
+  },
+  {
+   "main": "Alcohols Phenols and Ethers",
+   "sub": "Preparation",
+   "class": "12"
+  },
+  {
+   "main": "Alcohols Phenols and Ethers",
+   "sub": "Chemical Properties",
+   "class": "12"
+  },
+  {
+   "main": "Aldehydes Ketones and Carboxylic Acids",
+   "sub": "Nucleophilic Addition",
+   "class": "12"
+  },
+  {
+   "main": "Aldehydes Ketones and Carboxylic Acids",
+   "sub": "Carboxylic Acid Reactions",
+   "class": "12"
+  },
+  {
+   "main": "Organic Compounds Containing Nitrogen",
+   "sub": "Amines",
+   "class": "12"
+  },
+  {
+   "main": "Organic Compounds Containing Nitrogen",
+   "sub": "Diazonium Salts",
+   "class": "12"
+  },
+  {
+   "main": "Biomolecules",
+   "sub": "Proteins",
+   "class": "12"
+  },
+  {
+   "main": "Biomolecules",
+   "sub": "Carbohydrates",
+   "class": "12"
+  },
+  {
+   "main": "Polymers",
+   "sub": "Addition Polymers",
+   "class": "12"
+  },
+  {
+   "main": "Polymers",
+   "sub": "Condensation Polymers",
+   "class": "12"
+  },
+  {
+   "main": "Chemistry in Everyday Life",
+   "sub": "Drugs",
+   "class": "12"
+  },
+  {
+   "main": "Chemistry in Everyday Life",
+   "sub": "Cleansing Agents",
+   "class": "12"
+  }
+ ],
+ "JEE_Main_Maths": [
+  {
+   "main": "Sets, Relations and Functions",
+   "sub": "Types of Sets",
+   "class": "11"
+  },
+  {
+   "main": "Sets, Relations and Functions",
+   "sub": "Relations and Functions",
+   "class": "11"
+  },
+  {
+   "main": "Complex Numbers and Quadratic Equations",
+   "sub": "Complex Numbers",
+   "class": "11"
+  },
+  {
+   "main": "Complex Numbers and Quadratic Equations",
+   "sub": "Quadratic Equations",
+   "class": "11"
+  },
+  {
+   "main": "Matrices and Determinants",
+   "sub": "Types of Matrices",
+   "class": "12"
+  },
+  {
+   "main": "Matrices and Determinants",
+   "sub": "Determinants",
+   "class": "12"
+  },
+  {
+   "main": "Matrices and Determinants",
+   "sub": "Inverse of Matrix",
+   "class": "12"
+  },
+  {
+   "main": "Permutations and Combinations",
+   "sub": "Fundamental Principle of Counting",
+   "class": "11"
+  },
+  {
+   "main": "Permutations and Combinations",
+   "sub": "Permutations",
+   "class": "11"
+  },
+  {
+   "main": "Permutations and Combinations",
+   "sub": "Combinations",
+   "class": "11"
+  },
+  {
+   "main": "Mathematical Induction",
+   "sub": "Principle of Mathematical Induction",
+   "class": "11"
+  },
+  {
+   "main": "Binomial Theorem",
+   "sub": "Binomial Expansion",
+   "class": "11"
+  },
+  {
+   "main": "Binomial Theorem",
+   "sub": "General Term",
+   "class": "11"
+  },
+  {
+   "main": "Sequences and Series",
+   "sub": "Arithmetic Progression",
+   "class": "11"
+  },
+  {
+   "main": "Sequences and Series",
+   "sub": "Geometric Progression",
+   "class": "11"
+  },
+  {
+   "main": "Sequences and Series",
+   "sub": "Harmonic Progression",
+   "class": "11"
+  },
+  {
+   "main": "Limit, Continuity and Differentiability",
+   "sub": "Limits",
+   "class": "12"
+  },
+  {
+   "main": "Limit, Continuity and Differentiability",
+   "sub": "Continuity",
+   "class": "12"
+  },
+  {
+   "main": "Limit, Continuity and Differentiability",
+   "sub": "Differentiability",
+   "class": "12"
+  },
+  {
+   "main": "Integral Calculus",
+   "sub": "Indefinite Integration",
+   "class": "12"
+  },
+  {
+   "main": "Integral Calculus",
+   "sub": "Definite Integration",
+   "class": "12"
+  },
+  {
+   "main": "Integral Calculus",
+   "sub": "Area Under Curves",
+   "class": "12"
+  },
+  {
+   "main": "Differential Equations",
+   "sub": "Formation of Differential Equations",
+   "class": "12"
+  },
+  {
+   "main": "Differential Equations",
+   "sub": "Solution of Differential Equations",
+   "class": "12"
+  },
+  {
+   "main": "Coordinate Geometry",
+   "sub": "Straight Lines",
+   "class": "11"
+  },
+  {
+   "main": "Coordinate Geometry",
+   "sub": "Circle",
+   "class": "11"
+  },
+  {
+   "main": "Coordinate Geometry",
+   "sub": "Parabola",
+   "class": "11"
+  },
+  {
+   "main": "Coordinate Geometry",
+   "sub": "Ellipse",
+   "class": "11"
+  },
+  {
+   "main": "Coordinate Geometry",
+   "sub": "Hyperbola",
+   "class": "11"
+  },
+  {
+   "main": "Three Dimensional Geometry",
+   "sub": "Direction Cosines",
+   "class": "12"
+  },
+  {
+   "main": "Three Dimensional Geometry",
+   "sub": "Equation of Plane",
+   "class": "12"
+  },
+  {
+   "main": "Three Dimensional Geometry",
+   "sub": "Equation of Line",
+   "class": "12"
+  },
+  {
+   "main": "Vector Algebra",
+   "sub": "Vector Addition",
+   "class": "12"
+  },
+  {
+   "main": "Vector Algebra",
+   "sub": "Dot Product",
+   "class": "12"
+  },
+  {
+   "main": "Vector Algebra",
+   "sub": "Cross Product",
+   "class": "12"
+  },
+  {
+   "main": "Statistics and Probability",
+   "sub": "Mean Median Mode",
+   "class": "11"
+  },
+  {
+   "main": "Statistics and Probability",
+   "sub": "Standard Deviation",
+   "class": "11"
+  },
+  {
+   "main": "Statistics and Probability",
+   "sub": "Probability",
+   "class": "12"
+  },
+  {
+   "main": "Trigonometry",
+   "sub": "Trigonometric Ratios",
+   "class": "11"
+  },
+  {
+   "main": "Trigonometry",
+   "sub": "Trigonometric Identities",
+   "class": "11"
+  },
+  {
+   "main": "Trigonometry",
+   "sub": "Inverse Trigonometric Functions",
+   "class": "12"
+  },
+  {
+   "main": "Mathematical Reasoning",
+   "sub": "Statements",
+   "class": "11"
+  },
+  {
+   "main": "Mathematical Reasoning",
+   "sub": "Logical Operations",
+   "class": "11"
+  }
+ ],
+ "NEET_Physics": [
+  {
+   "main": "Physical World and Measurement",
+   "sub": "Units and Measurements",
+   "class": "11"
+  },
+  {
+   "main": "Physical World and Measurement",
+   "sub": "Dimensional Analysis",
+   "class": "11"
+  },
+  {
+   "main": "Kinematics",
+   "sub": "Motion in a Straight Line",
+   "class": "11"
+  },
+  {
+   "main": "Kinematics",
+   "sub": "Motion in a Plane",
+   "class": "11"
+  },
+  {
+   "main": "Kinematics",
+   "sub": "Projectile Motion",
+   "class": "11"
+  },
+  {
+   "main": "Laws of Motion",
+   "sub": "Newton's Laws of Motion",
+   "class": "11"
+  },
+  {
+   "main": "Laws of Motion",
+   "sub": "Friction",
+   "class": "11"
+  },
+  {
+   "main": "Laws of Motion",
+   "sub": "Circular Motion",
+   "class": "11"
+  },
+  {
+   "main": "Work, Energy and Power",
+   "sub": "Kinetic Energy",
+   "class": "11"
+  },
+  {
+   "main": "Work, Energy and Power",
+   "sub": "Potential Energy",
+   "class": "11"
+  },
+  {
+   "main": "Work, Energy and Power",
+   "sub": "Conservation of Energy",
+   "class": "11"
+  },
+  {
+   "main": "System of Particles and Rotational Motion",
+   "sub": "Center of Mass",
+   "class": "11"
+  },
+  {
+   "main": "System of Particles and Rotational Motion",
+   "sub": "Moment of Inertia",
+   "class": "11"
+  },
+  {
+   "main": "System of Particles and Rotational Motion",
+   "sub": "Torque and Angular Momentum",
+   "class": "11"
+  },
+  {
+   "main": "Gravitation",
+   "sub": "Universal Law of Gravitation",
+   "class": "11"
+  },
+  {
+   "main": "Gravitation",
+   "sub": "Acceleration Due to Gravity",
+   "class": "11"
+  },
+  {
+   "main": "Properties of Bulk Matter",
+   "sub": "Elasticity",
+   "class": "11"
+  },
+  {
+   "main": "Properties of Bulk Matter",
+   "sub": "Surface Tension",
+   "class": "11"
+  },
+  {
+   "main": "Properties of Bulk Matter",
+   "sub": "Viscosity",
+   "class": "11"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "First Law of Thermodynamics",
+   "class": "11"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "Second Law of Thermodynamics",
+   "class": "11"
+  },
+  {
+   "main": "Kinetic Theory",
+   "sub": "Ideal Gas Equation",
+   "class": "11"
+  },
+  {
+   "main": "Kinetic Theory",
+   "sub": "Kinetic Theory of Gases",
+   "class": "11"
+  },
+  {
+   "main": "Oscillations and Waves",
+   "sub": "Simple Harmonic Motion",
+   "class": "11"
+  },
+  {
+   "main": "Oscillations and Waves",
+   "sub": "Wave Motion",
+   "class": "11"
+  },
+  {
+   "main": "Oscillations and Waves",
+   "sub": "Doppler Effect",
+   "class": "11"
+  },
+  {
+   "main": "Electrostatics",
+   "sub": "Electric Charges and Fields",
+   "class": "12"
+  },
+  {
+   "main": "Electrostatics",
+   "sub": "Electrostatic Potential and Capacitance",
+   "class": "12"
+  },
+  {
+   "main": "Current Electricity",
+   "sub": "Ohm's Law",
+   "class": "12"
+  },
+  {
+   "main": "Current Electricity",
+   "sub": "Kirchhoff’s Laws",
+   "class": "12"
+  },
+  {
+   "main": "Current Electricity",
+   "sub": "Potentiometer",
+   "class": "12"
+  },
+  {
+   "main": "Magnetic Effects of Current and Magnetism",
+   "sub": "Biot-Savart Law",
+   "class": "12"
+  },
+  {
+   "main": "Magnetic Effects of Current and Magnetism",
+   "sub": "Ampere’s Circuital Law",
+   "class": "12"
+  },
+  {
+   "main": "Magnetic Effects of Current and Magnetism",
+   "sub": "Moving Coil Galvanometer",
+   "class": "12"
+  },
+  {
+   "main": "Electromagnetic Induction and Alternating Currents",
+   "sub": "Faraday’s Laws",
+   "class": "12"
+  },
+  {
+   "main": "Electromagnetic Induction and Alternating Currents",
+   "sub": "Lenz’s Law",
+   "class": "12"
+  },
+  {
+   "main": "Electromagnetic Induction and Alternating Currents",
+   "sub": "Alternating Current",
+   "class": "12"
+  },
+  {
+   "main": "Electromagnetic Waves",
+   "sub": "Electromagnetic Spectrum",
+   "class": "12"
+  },
+  {
+   "main": "Optics",
+   "sub": "Ray Optics",
+   "class": "12"
+  },
+  {
+   "main": "Optics",
+   "sub": "Wave Optics",
+   "class": "12"
+  },
+  {
+   "main": "Dual Nature of Radiation and Matter",
+   "sub": "Photoelectric Effect",
+   "class": "12"
+  },
+  {
+   "main": "Dual Nature of Radiation and Matter",
+   "sub": "de Broglie Hypothesis",
+   "class": "12"
+  },
+  {
+   "main": "Atoms and Nuclei",
+   "sub": "Bohr’s Atomic Model",
+   "class": "12"
+  },
+  {
+   "main": "Atoms and Nuclei",
+   "sub": "Radioactivity",
+   "class": "12"
+  },
+  {
+   "main": "Electronic Devices",
+   "sub": "Semiconductors",
+   "class": "12"
+  },
+  {
+   "main": "Electronic Devices",
+   "sub": "Logic Gates",
+   "class": "12"
+  }
+ ],
+ "NEET_Chemistry": [
+  {
+   "main": "Some Basic Concepts of Chemistry",
+   "sub": "Mole Concept",
+   "class": "11"
+  },
+  {
+   "main": "Some Basic Concepts of Chemistry",
+   "sub": "Stoichiometry",
+   "class": "11"
+  },
+  {
+   "main": "Structure of Atom",
+   "sub": "Atomic Models",
+   "class": "11"
+  },
+  {
+   "main": "Structure of Atom",
+   "sub": "Quantum Numbers",
+   "class": "11"
+  },
+  {
+   "main": "Classification of Elements and Periodicity",
+   "sub": "Periodic Table",
+   "class": "11"
+  },
+  {
+   "main": "Classification of Elements and Periodicity",
+   "sub": "Periodic Trends",
+   "class": "11"
+  },
+  {
+   "main": "Chemical Bonding and Molecular Structure",
+   "sub": "Ionic Bond",
+   "class": "11"
+  },
+  {
+   "main": "Chemical Bonding and Molecular Structure",
+   "sub": "Covalent Bond",
+   "class": "11"
+  },
+  {
+   "main": "Chemical Bonding and Molecular Structure",
+   "sub": "Hybridization",
+   "class": "11"
+  },
+  {
+   "main": "States of Matter",
+   "sub": "Gas Laws",
+   "class": "11"
+  },
+  {
+   "main": "States of Matter",
+   "sub": "Ideal Gas Equation",
+   "class": "11"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "First Law of Thermodynamics",
+   "class": "11"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "Entropy",
+   "class": "11"
+  },
+  {
+   "main": "Thermodynamics",
+   "sub": "Gibbs Free Energy",
+   "class": "11"
+  },
+  {
+   "main": "Equilibrium",
+   "sub": "Chemical Equilibrium",
+   "class": "11"
+  },
+  {
+   "main": "Equilibrium",
+   "sub": "Ionic Equilibrium",
+   "class": "11"
+  },
+  {
+   "main": "Redox Reactions",
+   "sub": "Oxidation and Reduction",
+   "class": "11"
+  },
+  {
+   "main": "Hydrogen",
+   "sub": "Properties of Hydrogen",
+   "class": "11"
+  },
+  {
+   "main": "s-Block Elements",
+   "sub": "Alkali Metals",
+   "class": "11"
+  },
+  {
+   "main": "s-Block Elements",
+   "sub": "Alkaline Earth Metals",
+   "class": "11"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 13 Elements",
+   "class": "11"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 14 Elements",
+   "class": "11"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 15 Elements",
+   "class": "12"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 16 Elements",
+   "class": "12"
+  },
+  {
+   "main": "p-Block Elements",
+   "sub": "Group 17 Elements",
+   "class": "12"
+  },
+  {
+   "main": "Organic Chemistry",
+   "sub": "General Organic Chemistry",
+   "class": "11"
+  },
+  {
+   "main": "Organic Chemistry",
+   "sub": "Isomerism",
+   "class": "11"
+  },
+  {
+   "main": "Hydrocarbons",
+   "sub": "Alkanes",
+   "class": "11"
+  },
+  {
+   "main": "Hydrocarbons",
+   "sub": "Alkenes",
+   "class": "11"
+  },
+  {
+   "main": "Hydrocarbons",
+   "sub": "Alkynes",
+   "class": "11"
+  },
+  {
+   "main": "Environmental Chemistry",
+   "sub": "Air Pollution",
+   "class": "11"
+  },
+  {
+   "main": "Environmental Chemistry",
+   "sub": "Water Pollution",
+   "class": "11"
+  },
+  {
+   "main": "Solid State",
+   "sub": "Crystal Lattice",
+   "class": "12"
+  },
+  {
+   "main": "Solid State",
+   "sub": "Packing Efficiency",
+   "class": "12"
+  },
+  {
+   "main": "Solutions",
+   "sub": "Concentration Terms",
+   "class": "12"
+  },
+  {
+   "main": "Solutions",
+   "sub": "Colligative Properties",
+   "class": "12"
+  },
+  {
+   "main": "Electrochemistry",
+   "sub": "Electrochemical Cells",
+   "class": "12"
+  },
+  {
+   "main": "Electrochemistry",
+   "sub": "Nernst Equation",
+   "class": "12"
+  },
+  {
+   "main": "Chemical Kinetics",
+   "sub": "Rate of Reaction",
+   "class": "12"
+  },
+  {
+   "main": "Chemical Kinetics",
+   "sub": "Order of Reaction",
+   "class": "12"
+  },
+  {
+   "main": "Surface Chemistry",
+   "sub": "Adsorption",
+   "class": "12"
+  },
+  {
+   "main": "Surface Chemistry",
+   "sub": "Catalysis",
+   "class": "12"
+  },
+  {
+   "main": "d and f Block Elements",
+   "sub": "Transition Elements",
+   "class": "12"
+  },
+  {
+   "main": "d and f Block Elements",
+   "sub": "Lanthanides",
+   "class": "12"
+  },
+  {
+   "main": "Coordination Compounds",
+   "sub": "Werner Theory",
+   "class": "12"
+  },
+  {
+   "main": "Coordination Compounds",
+   "sub": "Isomerism",
+   "class": "12"
+  },
+  {
+   "main": "Haloalkanes and Haloarenes",
+   "sub": "Preparation",
+   "class": "12"
+  },
+  {
+   "main": "Haloalkanes and Haloarenes",
+   "sub": "Reactions",
+   "class": "12"
+  },
+  {
+   "main": "Alcohols Phenols and Ethers",
+   "sub": "Preparation",
+   "class": "12"
+  },
+  {
+   "main": "Alcohols Phenols and Ethers",
+   "sub": "Chemical Properties",
+   "class": "12"
+  },
+  {
+   "main": "Aldehydes Ketones and Carboxylic Acids",
+   "sub": "Nucleophilic Addition",
+   "class": "12"
+  },
+  {
+   "main": "Aldehydes Ketones and Carboxylic Acids",
+   "sub": "Carboxylic Acid Reactions",
+   "class": "12"
+  },
+  {
+   "main": "Organic Compounds Containing Nitrogen",
+   "sub": "Amines",
+   "class": "12"
+  },
+  {
+   "main": "Organic Compounds Containing Nitrogen",
+   "sub": "Diazonium Salts",
+   "class": "12"
+  },
+  {
+   "main": "Biomolecules",
+   "sub": "Proteins",
+   "class": "12"
+  },
+  {
+   "main": "Biomolecules",
+   "sub": "Carbohydrates",
+   "class": "12"
+  },
+  {
+   "main": "Polymers",
+   "sub": "Addition Polymers",
+   "class": "12"
+  },
+  {
+   "main": "Polymers",
+   "sub": "Condensation Polymers",
+   "class": "12"
+  },
+  {
+   "main": "Chemistry in Everyday Life",
+   "sub": "Drugs",
+   "class": "12"
+  },
+  {
+   "main": "Chemistry in Everyday Life",
+   "sub": "Cleansing Agents",
+   "class": "12"
+  }
+ ],
+ "NEET_Biology": [
+  {
+   "main": "Diversity in Living World",
+   "sub": "Living Organisms",
+   "class": "11"
+  },
+  {
+   "main": "Diversity in Living World",
+   "sub": "Biological Classification",
+   "class": "11"
+  },
+  {
+   "main": "Diversity in Living World",
+   "sub": "Plant Kingdom",
+   "class": "11"
+  },
+  {
+   "main": "Diversity in Living World",
+   "sub": "Animal Kingdom",
+   "class": "11"
+  },
+  {
+   "main": "Structural Organisation in Animals and Plants",
+   "sub": "Morphology of Flowering Plants",
+   "class": "11"
+  },
+  {
+   "main": "Structural Organisation in Animals and Plants",
+   "sub": "Anatomy of Flowering Plants",
+   "class": "11"
+  },
+  {
+   "main": "Structural Organisation in Animals and Plants",
+   "sub": "Structural Organisation in Animals",
+   "class": "11"
+  },
+  {
+   "main": "Cell Structure and Function",
+   "sub": "Cell Theory",
+   "class": "11"
+  },
+  {
+   "main": "Cell Structure and Function",
+   "sub": "Cell Organelles",
+   "class": "11"
+  },
+  {
+   "main": "Cell Structure and Function",
+   "sub": "Biomolecules",
+   "class": "11"
+  },
+  {
+   "main": "Cell Structure and Function",
+   "sub": "Cell Cycle and Cell Division",
+   "class": "11"
+  },
+  {
+   "main": "Plant Physiology",
+   "sub": "Transport in Plants",
+   "class": "11"
+  },
+  {
+   "main": "Plant Physiology",
+   "sub": "Mineral Nutrition",
+   "class": "11"
+  },
+  {
+   "main": "Plant Physiology",
+   "sub": "Photosynthesis",
+   "class": "11"
+  },
+  {
+   "main": "Plant Physiology",
+   "sub": "Respiration in Plants",
+   "class": "11"
+  },
+  {
+   "main": "Plant Physiology",
+   "sub": "Plant Growth and Development",
+   "class": "11"
+  },
+  {
+   "main": "Human Physiology",
+   "sub": "Digestion and Absorption",
+   "class": "11"
+  },
+  {
+   "main": "Human Physiology",
+   "sub": "Breathing and Exchange of Gases",
+   "class": "11"
+  },
+  {
+   "main": "Human Physiology",
+   "sub": "Body Fluids and Circulation",
+   "class": "11"
+  },
+  {
+   "main": "Human Physiology",
+   "sub": "Excretory Products and Elimination",
+   "class": "11"
+  },
+  {
+   "main": "Human Physiology",
+   "sub": "Locomotion and Movement",
+   "class": "11"
+  },
+  {
+   "main": "Human Physiology",
+   "sub": "Neural Control and Coordination",
+   "class": "11"
+  },
+  {
+   "main": "Human Physiology",
+   "sub": "Chemical Coordination and Integration",
+   "class": "11"
+  },
+  {
+   "main": "Reproduction",
+   "sub": "Reproduction in Organisms",
+   "class": "12"
+  },
+  {
+   "main": "Reproduction",
+   "sub": "Sexual Reproduction in Flowering Plants",
+   "class": "12"
+  },
+  {
+   "main": "Reproduction",
+   "sub": "Human Reproduction",
+   "class": "12"
+  },
+  {
+   "main": "Reproduction",
+   "sub": "Reproductive Health",
+   "class": "12"
+  },
+  {
+   "main": "Genetics and Evolution",
+   "sub": "Principles of Inheritance and Variation",
+   "class": "12"
+  },
+  {
+   "main": "Genetics and Evolution",
+   "sub": "Molecular Basis of Inheritance",
+   "class": "12"
+  },
+  {
+   "main": "Genetics and Evolution",
+   "sub": "Evolution",
+   "class": "12"
+  },
+  {
+   "main": "Biology and Human Welfare",
+   "sub": "Human Health and Disease",
+   "class": "12"
+  },
+  {
+   "main": "Biology and Human Welfare",
+   "sub": "Strategies for Enhancement in Food Production",
+   "class": "12"
+  },
+  {
+   "main": "Biology and Human Welfare",
+   "sub": "Microbes in Human Welfare",
+   "class": "12"
+  },
+  {
+   "main": "Biotechnology and Its Applications",
+   "sub": "Biotechnology Principles and Processes",
+   "class": "12"
+  },
+  {
+   "main": "Biotechnology and Its Applications",
+   "sub": "Biotechnology and Human Welfare",
+   "class": "12"
+  },
+  {
+   "main": "Ecology and Environment",
+   "sub": "Organisms and Populations",
+   "class": "12"
+  },
+  {
+   "main": "Ecology and Environment",
+   "sub": "Ecosystem",
+   "class": "12"
+  },
+  {
+   "main": "Ecology and Environment",
+   "sub": "Biodiversity and Conservation",
+   "class": "12"
+  },
+  {
+   "main": "Ecology and Environment",
+   "sub": "Environmental Issues",
+   "class": "12"
+  }
+ ],
+ "MHTCET_Biology": [
+  {
+   "main": "Living World",
+   "sub": "Concept of Living",
+   "class": "11"
+  },
+  {
+   "main": "Living World",
+   "sub": "Biodiversity and Nomenclature",
+   "class": "11"
+  },
+  {
+   "main": "Living World",
+   "sub": "Taxonomic Aids",
+   "class": "11"
+  },
+  {
+   "main": "Systematics of Living Organisms",
+   "sub": "Five Kingdom Classification",
+   "class": "11"
+  },
+  {
+   "main": "Systematics of Living Organisms",
+   "sub": "Kingdom Monera",
+   "class": "11"
+  },
+  {
+   "main": "Systematics of Living Organisms",
+   "sub": "Kingdom Protista and Fungi",
+   "class": "11"
+  },
+  {
+   "main": "Kingdom Plantae",
+   "sub": "Classification of Kingdom Plantae",
+   "class": "11"
+  },
+  {
+   "main": "Kingdom Plantae",
+   "sub": "Thallophyta (Algae)",
+   "class": "11"
+  },
+  {
+   "main": "Kingdom Plantae",
+   "sub": "Bryophyta, Pteridophyta and Spermatophyta",
+   "class": "11"
+  },
+  {
+   "main": "Kingdom Animalia",
+   "sub": "Basis of Classification",
+   "class": "11"
+  },
+  {
+   "main": "Kingdom Animalia",
+   "sub": "Non-Chordates (Invertebrata)",
+   "class": "11"
+  },
+  {
+   "main": "Kingdom Animalia",
+   "sub": "Phylum Chordata",
+   "class": "11"
+  },
+  {
+   "main": "Organization of Cell",
+   "sub": "Prokaryotic and Eukaryotic Cells",
+   "class": "11"
+  },
+  {
+   "main": "Organization of Cell",
+   "sub": "Cell Organelles",
+   "class": "11"
+  },
+  {
+   "main": "Organization of Cell",
+   "sub": "Cell Membrane and Nucleus",
+   "class": "11"
+  },
+  {
+   "main": "Biomolecules",
+   "sub": "Carbohydrates, Proteins and Lipids",
+   "class": "11"
+  },
+  {
+   "main": "Biomolecules",
+   "sub": "Nucleic Acids",
+   "class": "11"
+  },
+  {
+   "main": "Biomolecules",
+   "sub": "Enzymes and Metabolism",
+   "class": "11"
+  },
+  {
+   "main": "Cell Division",
+   "sub": "Cell Cycle",
+   "class": "11"
+  },
+  {
+   "main": "Cell Division",
+   "sub": "Mitosis",
+   "class": "11"
+  },
+  {
+   "main": "Cell Division",
+   "sub": "Meiosis",
+   "class": "11"
+  },
+  {
+   "main": "Plant Tissues and Anatomy",
+   "sub": "Meristematic and Permanent Tissues",
+   "class": "11"
+  },
+  {
+   "main": "Plant Tissues and Anatomy",
+   "sub": "Xylem and Phloem",
+   "class": "11"
+  },
+  {
+   "main": "Plant Tissues and Anatomy",
+   "sub": "Secondary Growth in Plants",
+   "class": "11"
+  },
+  {
+   "main": "Morphology of Flowering Plants",
+   "sub": "Root, Stem and Leaf",
+   "class": "11"
+  },
+  {
+   "main": "Morphology of Flowering Plants",
+   "sub": "Inflorescence and Flower",
+   "class": "11"
+  },
+  {
+   "main": "Morphology of Flowering Plants",
+   "sub": "Fruit and Seed",
+   "class": "11"
+  },
+  {
+   "main": "Animal Tissues",
+   "sub": "Epithelial Tissue",
+   "class": "11"
+  },
+  {
+   "main": "Animal Tissues",
+   "sub": "Connective Tissue",
+   "class": "11"
+  },
+  {
+   "main": "Animal Tissues",
+   "sub": "Muscular and Nervous Tissue",
+   "class": "11"
+  },
+  {
+   "main": "Study of Animal Type: Cockroach",
+   "sub": "External Morphology",
+   "class": "11"
+  },
+  {
+   "main": "Study of Animal Type: Cockroach",
+   "sub": "Digestive and Circulatory System",
+   "class": "11"
+  },
+  {
+   "main": "Study of Animal Type: Cockroach",
+   "sub": "Nervous and Reproductive System",
+   "class": "11"
+  },
+  {
+   "main": "Photosynthesis in Higher Plants",
+   "sub": "Light Reaction",
+   "class": "11"
+  },
+  {
+   "main": "Photosynthesis in Higher Plants",
+   "sub": "Calvin Cycle (Dark Reaction)",
+   "class": "11"
+  },
+  {
+   "main": "Photosynthesis in Higher Plants",
+   "sub": "C4, CAM Pathway and Photorespiration",
+   "class": "11"
+  },
+  {
+   "main": "Respiration and Energy Transfer",
+   "sub": "Glycolysis",
+   "class": "11"
+  },
+  {
+   "main": "Respiration and Energy Transfer",
+   "sub": "Tricarboxylic Acid (Krebs) Cycle",
+   "class": "11"
+  },
+  {
+   "main": "Respiration and Energy Transfer",
+   "sub": "Electron Transport Chain and ATP Synthesis",
+   "class": "11"
+  },
+  {
+   "main": "Human Nutrition",
+   "sub": "Digestive System and Glands",
+   "class": "11"
+  },
+  {
+   "main": "Human Nutrition",
+   "sub": "Physiology of Digestion",
+   "class": "11"
+  },
+  {
+   "main": "Human Nutrition",
+   "sub": "Absorption, Assimilation and Disorders",
+   "class": "11"
+  },
+  {
+   "main": "Excretion and Osmoregulation",
+   "sub": "Human Excretory System",
+   "class": "11"
+  },
+  {
+   "main": "Excretion and Osmoregulation",
+   "sub": "Urine Formation",
+   "class": "11"
+  },
+  {
+   "main": "Excretion and Osmoregulation",
+   "sub": "Dialysis and Kidney Disorders",
+   "class": "11"
+  },
+  {
+   "main": "Skeleton and Movement",
+   "sub": "Types of Movement and Locomotion",
+   "class": "11"
+  },
+  {
+   "main": "Skeleton and Movement",
+   "sub": "Human Skeletal System",
+   "class": "11"
+  },
+  {
+   "main": "Skeleton and Movement",
+   "sub": "Joint and Bone Disorders",
+   "class": "11"
+  },
+  {
+   "main": "Reproduction in Lower and Higher Plants",
+   "sub": "Asexual and Sexual Reproduction",
+   "class": "12"
+  },
+  {
+   "main": "Reproduction in Lower and Higher Plants",
+   "sub": "Microsporogenesis and Megasporogenesis",
+   "class": "12"
+  },
+  {
+   "main": "Reproduction in Lower and Higher Plants",
+   "sub": "Pollination, Double Fertilization and Seed Formation",
+   "class": "12"
+  },
+  {
+   "main": "Reproduction in Lower and Higher Animals",
+   "sub": "Human Reproductive Systems",
+   "class": "12"
+  },
+  {
+   "main": "Reproduction in Lower and Higher Animals",
+   "sub": "Gametogenesis and Menstrual Cycle",
+   "class": "12"
+  },
+  {
+   "main": "Reproduction in Lower and Higher Animals",
+   "sub": "Fertilization, Pregnancy and Reproductive Health",
+   "class": "12"
+  },
+  {
+   "main": "Inheritance and Variation",
+   "sub": "Mendelian Inheritance",
+   "class": "12"
+  },
+  {
+   "main": "Inheritance and Variation",
+   "sub": "Deviations from Mendelism",
+   "class": "12"
+  },
+  {
+   "main": "Inheritance and Variation",
+   "sub": "Linkage, Sex Determination and Genetic Disorders",
+   "class": "12"
+  },
+  {
+   "main": "Molecular Basis of Inheritance",
+   "sub": "DNA Structure and Replication",
+   "class": "12"
+  },
+  {
+   "main": "Molecular Basis of Inheritance",
+   "sub": "Transcription and Translation",
+   "class": "12"
+  },
+  {
+   "main": "Molecular Basis of Inheritance",
+   "sub": "Gene Regulation and Human Genome Project",
+   "class": "12"
+  },
+  {
+   "main": "Origin and Evolution of Life",
+   "sub": "Origin of Life and Chemical Evolution",
+   "class": "12"
+  },
+  {
+   "main": "Origin and Evolution of Life",
+   "sub": "Theories of Evolution",
+   "class": "12"
+  },
+  {
+   "main": "Origin and Evolution of Life",
+   "sub": "Hardy-Weinberg Principle and Human Evolution",
+   "class": "12"
+  },
+  {
+   "main": "Plant Water Relation",
+   "sub": "Diffusion, Osmosis and Water Potential",
+   "class": "12"
+  },
+  {
+   "main": "Plant Water Relation",
+   "sub": "Absorption and Translocation of Water",
+   "class": "12"
+  },
+  {
+   "main": "Plant Water Relation",
+   "sub": "Transpiration and Stomatal Apparatus",
+   "class": "12"
+  },
+  {
+   "main": "Plant Growth and Mineral Nutrition",
+   "sub": "Plant Growth and Growth Curve",
+   "class": "12"
+  },
+  {
+   "main": "Plant Growth and Mineral Nutrition",
+   "sub": "Plant Hormones",
+   "class": "12"
+  },
+  {
+   "main": "Plant Growth and Mineral Nutrition",
+   "sub": "Mineral Nutrition and Nitrogen Cycle",
+   "class": "12"
+  },
+  {
+   "main": "Respiration and Circulation",
+   "sub": "Human Respiratory System and Breathing",
+   "class": "12"
+  },
+  {
+   "main": "Respiration and Circulation",
+   "sub": "Circulatory System and Blood",
+   "class": "12"
+  },
+  {
+   "main": "Respiration and Circulation",
+   "sub": "Human Heart, ECG and Disorders",
+   "class": "12"
+  },
+  {
+   "main": "Control and Co-ordination",
+   "sub": "Nervous Tissue and Nerve Impulse",
+   "class": "12"
+  },
+  {
+   "main": "Control and Co-ordination",
+   "sub": "Human Nervous System and Brain",
+   "class": "12"
+  },
+  {
+   "main": "Control and Co-ordination",
+   "sub": "Endocrine System and Hormones",
+   "class": "12"
+  },
+  {
+   "main": "Human Health and Diseases",
+   "sub": "Immunity and Immune System",
+   "class": "12"
+  },
+  {
+   "main": "Human Health and Diseases",
+   "sub": "Infectious Diseases",
+   "class": "12"
+  },
+  {
+   "main": "Human Health and Diseases",
+   "sub": "Cancer, AIDS and Drug Abuse",
+   "class": "12"
+  },
+  {
+   "main": "Enhancement of Food Production",
+   "sub": "Plant Breeding and Tissue Culture",
+   "class": "12"
+  },
+  {
+   "main": "Enhancement of Food Production",
+   "sub": "Animal Husbandry",
+   "class": "12"
+  },
+  {
+   "main": "Enhancement of Food Production",
+   "sub": "Microbes in Human Welfare",
+   "class": "12"
+  },
+  {
+   "main": "Biotechnology",
+   "sub": "Principles of Biotechnology",
+   "class": "12"
+  },
+  {
+   "main": "Biotechnology",
+   "sub": "rDNA Technology and Gene Cloning",
+   "class": "12"
+  },
+  {
+   "main": "Biotechnology",
+   "sub": "Applications and Bioethics",
+   "class": "12"
+  },
+  {
+   "main": "Organisms and Populations",
+   "sub": "Organisms and Environment",
+   "class": "12"
+  },
+  {
+   "main": "Organisms and Populations",
+   "sub": "Adaptations",
+   "class": "12"
+  },
+  {
+   "main": "Organisms and Populations",
+   "sub": "Population Attributes and Interactions",
+   "class": "12"
+  },
+  {
+   "main": "Ecosystems and Energy Flow",
+   "sub": "Ecosystem Structure and Function",
+   "class": "12"
+  },
+  {
+   "main": "Ecosystems and Energy Flow",
+   "sub": "Energy Flow and Ecological Pyramids",
+   "class": "12"
+  },
+  {
+   "main": "Ecosystems and Energy Flow",
+   "sub": "Biogeochemical Cycles and Succession",
+   "class": "12"
+  },
+  {
+   "main": "Biodiversity, Conservation and Environmental Issues",
+   "sub": "Levels and Patterns of Biodiversity",
+   "class": "12"
+  },
+  {
+   "main": "Biodiversity, Conservation and Environmental Issues",
+   "sub": "Conservation of Biodiversity",
+   "class": "12"
+  },
+  {
+   "main": "Biodiversity, Conservation and Environmental Issues",
+   "sub": "Environmental Pollution and Global Warming",
+   "class": "12"
+  }
+ ]
+}

@@ -6,6 +6,8 @@ import type {
   StudentUpdate,
   StudentWithStats,
   StudentTestHistoryRow,
+  StudentTopicMastery,
+  StudentUpcomingTest,
   AcademicYearResponse,
 } from "../_schemas/student";
 
@@ -18,6 +20,10 @@ export const studentKeys = {
     [...studentKeys.all, "detail", branchId, id] as const,
   testHistory: (branchId: string, id: string) =>
     [...studentKeys.all, "test-history", branchId, id] as const,
+  topicMastery: (branchId: string, id: string) =>
+    [...studentKeys.all, "topic-mastery", branchId, id] as const,
+  upcomingTests: (branchId: string, id: string) =>
+    [...studentKeys.all, "upcoming-tests", branchId, id] as const,
 };
 
 export const academicYearKeys = {
@@ -149,6 +155,40 @@ export function useStudentTestHistory(
     queryFn: async () => {
       const res = await apiClient.get<StudentTestHistoryRow[]>(
         `/api/v1/students/${studentId}/test-history`,
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!studentId,
+  });
+}
+
+export function useStudentTopicMastery(
+  branchId: string | undefined,
+  studentId: string,
+) {
+  return useQuery<StudentTopicMastery[]>({
+    queryKey: studentKeys.topicMastery(branchId!, studentId),
+    queryFn: async () => {
+      const res = await apiClient.get<StudentTopicMastery[]>(
+        `/api/v1/students/${studentId}/topic-mastery`,
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!studentId,
+  });
+}
+
+export function useStudentUpcomingTests(
+  branchId: string | undefined,
+  studentId: string,
+) {
+  return useQuery<StudentUpcomingTest[]>({
+    queryKey: studentKeys.upcomingTests(branchId!, studentId),
+    queryFn: async () => {
+      const res = await apiClient.get<StudentUpcomingTest[]>(
+        `/api/v1/students/${studentId}/upcoming-tests`,
         { params: { branch_id: branchId } },
       );
       return res.data;

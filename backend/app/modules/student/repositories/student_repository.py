@@ -203,6 +203,133 @@ async def list_with_stats(
     return raw_rows
 
 
+async def get_topic_mastery(
+    session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
+) -> list[dict]:
+    """Per-topic accuracy for a student, aggregated from their per-question
+    responses (Tier 13 weakness map). Returns weakest topics first so the UI
+    can lead with where the student is struggling. Questions with no topic tag
+    are excluded (the inner join drops them)."""
+    from app.modules.academic.models.academic_models import Subject, Topic
+    from app.modules.tests.models.test_models import Question, StudentResponse
+
+    student = await get_by_id(session, student_id)
+    if student is None or student.branch_id != branch_id:
+        return []
+
+    rows = (
+        await session.execute(
+            select(
+                Topic.id,
+                Topic.name,
+                Subject.name,
+                func.count(StudentResponse.id),
+                func.count().filter(StudentResponse.is_correct == True),  # noqa: E712
+            )
+            .join(Question, StudentResponse.question_id == Question.id)
+            .join(Topic, Question.topic_id == Topic.id)
+            .join(Subject, Question.subject_id == Subject.id)
+            .where(
+                StudentResponse.student_id == student_id,
+                StudentResponse.is_deleted == False,  # noqa: E712
+            )
+            .group_by(Topic.id, Topic.name, Subject.name)
+        )
+    ).all()
+
+    out: list[dict] = []
+    for r in rows:
+        attempted = int(r[3] or 0)
+        correct = int(r[4] or 0)
+        out.append(
+            {
+                "topic_id": r[0],
+                "topic_name": r[1],
+                "subject_name": r[2],
+                "attempted": attempted,
+                "correct": correct,
+                "accuracy_pct": (
+                    round(100.0 * correct / attempted, 1) if attempted else 0.0
+                ),
+            }
+        )
+    # Weakest first: lowest accuracy, ties broken by most-attempted (most signal).
+    out.sort(key=lambda x: (x["accuracy_pct"], -x["attempted"]))
+    return out
+
+
+async def get_upcoming_tests(
+    session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
+) -> list[dict]:
+    """Future-scheduled tests for the student's batch that they haven't taken
+    yet (no StudentMark). Soonest first. Dates are filtered in Python so the
+    comparison stays portable across Postgres and the SQLite test DB."""
+    from datetime import datetime, timezone
+
+    from app.modules.academic.models.academic_models import Subject
+    from app.modules.tests.models.test_models import StudentMark, Test
+
+    student = await get_by_id(session, student_id)
+    if student is None or student.branch_id != branch_id:
+        return []
+
+    batch_id = (
+        await session.execute(
+            select(StudentBatchMapping.batch_id).where(
+                StudentBatchMapping.student_id == student_id,
+                StudentBatchMapping.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalar_one_or_none()
+    if batch_id is None:
+        return []
+
+    taken = set(
+        (
+            await session.execute(
+                select(StudentMark.test_id).where(
+                    StudentMark.student_id == student_id,
+                    StudentMark.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalars().all()
+    )
+
+    rows = (
+        await session.execute(
+            select(Test, Subject.name)
+            .join(Subject, Test.subject_id == Subject.id)
+            .where(
+                Test.batch_id == batch_id,
+                Test.branch_id == branch_id,
+                Test.is_deleted == False,  # noqa: E712
+            )
+            .order_by(Test.scheduled_at.asc())
+        )
+    ).all()
+
+    now = datetime.now(timezone.utc)
+    out: list[dict] = []
+    for t, subject_name in rows:
+        if t.id in taken or t.scheduled_at is None:
+            continue
+        sched = t.scheduled_at
+        if sched.tzinfo is None:
+            sched = sched.replace(tzinfo=timezone.utc)
+        if sched < now:
+            continue
+        out.append(
+            {
+                "test_id": t.id,
+                "test_name": t.name,
+                "paper_type": t.paper_type,
+                "subject_name": subject_name,
+                "scheduled_at": t.scheduled_at,
+            }
+        )
+    return out
+
+
 async def get_test_history(
     session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
 ) -> list[dict]:

@@ -53,6 +53,11 @@ class Subject(BaseModel):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Set when a student import auto-created this subject as part of a course's
+    # skeleton, so "undo import" can reclaim it (only if no chapters loaded).
+    import_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, index=True
+    )
 
 
 class Chapter(BaseModel):
@@ -69,6 +74,11 @@ class Chapter(BaseModel):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Set when a student import auto-populated this chapter from the bundled
+    # master curriculum, so "undo import" can reclaim the curriculum it created.
+    import_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, index=True
+    )
 
 
 class Topic(BaseModel):
@@ -85,6 +95,11 @@ class Topic(BaseModel):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Set when a student import auto-populated this topic from the bundled
+    # master curriculum, so "undo import" can reclaim it.
+    import_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, index=True
+    )
 
 
 class Subtopic(BaseModel):

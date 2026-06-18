@@ -101,6 +101,89 @@ class ImportSummary(BaseModel):
     imported: int
     skipped: int
     errors: list[str] = []
+    # Non-blocking §3 advisories (e.g. 9th/10th targeting NEET) for rows that
+    # were still imported.
+    warnings: list[str] = []
+    # Codes of batches auto-created during this import (when the admin
+    # opted into "create missing batches").
+    batches_created: list[str] = []
+    # How many subject skeleton rows were auto-created for new courses (§8).
+    subjects_created: int = 0
+    # Handle to undo this import as a unit (design §9). Null when nothing
+    # persisted, so the UI only offers undo when there's something to undo.
+    import_id: uuid.UUID | None = None
+
+
+class ImportUndoSummary(BaseModel):
+    """Result of reversing a bulk import."""
+
+    students_deleted: int
+    batches_deleted: int
+    subjects_deleted: int = 0
+
+
+class ImportPreviewBatch(BaseModel):
+    """One distinct Batch code referenced by an upload, with whether it
+    already exists and — when it does not — the course/exam-date we would
+    derive from the rows' Target column if asked to create it."""
+
+    code: str
+    student_count: int
+    exists: bool
+    target: str | None = None
+    suggested_course_code: str | None = None
+    suggested_course_name: str | None = None
+    suggested_exam_date: date | None = None
+    # Whether auto-create would succeed for a missing code, and why not.
+    # Existing batches are always creatable=True, blocker=None.
+    creatable: bool = True
+    blocker: str | None = None
+
+
+class ImportPreview(BaseModel):
+    """Dry-run of a student upload — surfaces row issues and the
+    existing-vs-missing batch split before anything is written."""
+
+    total_rows: int
+    importable_rows: int
+    rows_missing_name: int
+    rows_invalid_enrolment: int
+    # §3 cross-field contradictions that block a row, and non-blocking advisories.
+    rows_invalid_consistency: int = 0
+    rows_with_warnings: int = 0
+    duplicate_rows: int = 0
+    unbatched_rows: int
+    existing_batches: int
+    missing_batches: int
+    blocked_batches: int = 0
+    # Set when the import can't run at all (e.g. no academic year on the
+    # branch); the UI shows it and disables the Import action.
+    blocking_error: str | None = None
+    batches: list[ImportPreviewBatch] = []
+    row_issues: list[str] = []
+
+
+class StudentUpcomingTest(BaseModel):
+    """A scheduled test for the student's batch they haven't taken yet —
+    drives the Tier 13 'upcoming tests' section (soonest first)."""
+
+    test_id: uuid.UUID
+    test_name: str
+    paper_type: str
+    subject_name: str
+    scheduled_at: datetime | None = None
+
+
+class StudentTopicMastery(BaseModel):
+    """Per-topic accuracy from a student's per-question responses — drives the
+    Tier 13 weakness map (weakest topics first)."""
+
+    topic_id: uuid.UUID
+    topic_name: str
+    subject_name: str
+    attempted: int
+    correct: int
+    accuracy_pct: float
 
 
 class StudentTestHistoryRow(BaseModel):

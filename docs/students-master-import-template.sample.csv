@@ -1,0 +1,12 @@
+Name,Current_Class,Target,Aspiration_Target,Batch,Roll No,Email,Phone,Parent Mobile,Gender,District,Caste,Username,RFIDNumber,Duration,Syllabus,Course_opt,Academic_year,Enrollment_Date
+Aarav Sharma,11,NEET,,NEET-11-A,R-001,aarav.sharma@example.edu,9000000001,9100000001,M,Pune,General,aarav.sharma,RF0001,2 Years,,NEET,2026-2028,2026-06-15
+Priya Singh,11,JEE-Main,,JEE-11-A,R-002,priya.singh@example.edu,9000000002,9100000002,F,Mumbai,OBC,priya.singh,RF0002,2 Years,,JEE,2026-2028,2026-06-15
+Rohan Patel,11,Both,,BOTH-11-A,R-003,rohan.patel@example.edu,9000000003,9100000003,M,Nashik,General,rohan.patel,RF0003,2 Years,PCMB,NEET+JEE,2026-2028,2026-06-16
+Kunal Desai,11,MHT-CET,,MHTE-11-A,R-004,kunal.desai@example.edu,9000000004,9100000004,M,Nagpur,SC,kunal.desai,RF0004,2 Years,MHT-CET-PCM,MHT-CET Engg,2026-2028,2026-06-16
+Sneha Joshi,11,MHT-CET,,MHTP-11-A,R-005,sneha.joshi@example.edu,9000000005,9100000005,F,Solapur,OBC,sneha.joshi,RF0005,2 Years,MHT-CET-PCB,MHT-CET Pharm,2026-2028,2026-06-17
+Aditya Rao,12,NEET,,NEET-12-A,R-006,aditya.rao@example.edu,9000000006,9100000006,M,Pune,General,aditya.rao,RF0006,1 Year,,NEET,2026-2027,2026-06-17
+Isha Mehta,12,JEE-Main,,JEE-12-A,R-007,isha.mehta@example.edu,9000000007,9100000007,F,Mumbai,General,isha.mehta,RF0007,1 Year,,JEE,2026-2027,2026-06-18
+Vikram Nair,Dropper,NEET,,NEET-DROP-A,R-008,vikram.nair@example.edu,9000000008,9100000008,M,Thane,OBC,vikram.nair,RF0008,1 Year,,NEET,2026-2027,2026-06-18
+Riya Kulkarni,Dropper,JEE-Main,,JEE-DROP-A,R-009,riya.kulkarni@example.edu,9000000009,9100000009,F,Pune,General,riya.kulkarni,RF0009,1 Year,,JEE,2026-2027,2026-06-19
+Aryan Gupta,9,Foundation,NEET,FDN-9-A,R-010,aryan.gupta@example.edu,9000000010,9100000010,M,Nagpur,General,aryan.gupta,RF0010,2 Years,Foundation,Foundation,2026-2028,2026-06-19
+Diya Shah,10,Foundation,JEE-Main,FDN-10-A,R-011,diya.shah@example.edu,9000000011,9100000011,F,Mumbai,OBC,diya.shah,RF0011,1 Year,Foundation,Foundation,2026-2027,2026-06-20

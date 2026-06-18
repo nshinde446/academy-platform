@@ -16,9 +16,15 @@ import {
 import {
   useStudent,
   useStudentTestHistory,
+  useStudentTopicMastery,
+  useStudentUpcomingTests,
   useStudentsWithStats,
 } from "../_hooks/use-students";
-import type { StudentTestHistoryRow } from "../_schemas/student";
+import type {
+  StudentTestHistoryRow,
+  StudentTopicMastery,
+  StudentUpcomingTest,
+} from "../_schemas/student";
 
 function formatScheduled(iso: string | null): string {
   if (!iso) return "—";
@@ -45,6 +51,18 @@ function paperTypeBadge(t: string): {
   return { label: t || "TEST", tone: "default" };
 }
 
+function masteryBar(pct: number): string {
+  if (pct < 40) return "bg-destructive";
+  if (pct < 75) return "bg-amber-500";
+  return "bg-emerald-500";
+}
+
+function masteryText(pct: number): string {
+  if (pct < 40) return "text-destructive";
+  if (pct < 75) return "text-amber-600 dark:text-amber-400";
+  return "text-emerald-600 dark:text-emerald-400";
+}
+
 export default function StudentDetailPage({
   params,
 }: {
@@ -56,6 +74,8 @@ export default function StudentDetailPage({
 
   const studentQuery = useStudent(branchId, studentId);
   const historyQuery = useStudentTestHistory(branchId, studentId);
+  const masteryQuery = useStudentTopicMastery(branchId, studentId);
+  const upcomingQuery = useStudentUpcomingTests(branchId, studentId);
   // Pulled for batch / attendance / current-batch-rank from the same
   // payload that backs /students — keeps numbers consistent.
   const statsQuery = useStudentsWithStats(branchId);
@@ -66,6 +86,8 @@ export default function StudentDetailPage({
     [statsQuery.data, studentId],
   );
   const history: StudentTestHistoryRow[] = historyQuery.data ?? [];
+  const mastery: StudentTopicMastery[] = masteryQuery.data ?? [];
+  const upcoming: StudentUpcomingTest[] = upcomingQuery.data ?? [];
 
   const presentRows = history.filter((r) => !r.is_absent);
   const avgPct =
@@ -156,6 +178,78 @@ export default function StudentDetailPage({
           </div>
         </CardContent>
       </Card>
+
+      {upcoming.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-lg font-semibold">Upcoming tests</h3>
+          <p className="text-sm text-muted-foreground">
+            Scheduled for this student&apos;s batch and not yet taken — soonest
+            first.
+          </p>
+          <div className="divide-y divide-border rounded-xl border ring-1 ring-foreground/10">
+            {upcoming.map((t) => {
+              const pt = paperTypeBadge(t.paper_type);
+              return (
+                <div
+                  key={t.test_id}
+                  className="flex items-center gap-3 px-3 py-2 text-sm"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium">{t.test_name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {t.subject_name || "—"}
+                    </div>
+                  </div>
+                  <Badge variant={pt.tone} className="text-[10px]">
+                    {pt.label}
+                  </Badge>
+                  <div className="w-24 whitespace-nowrap text-right text-sm tabular-nums text-muted-foreground">
+                    {formatScheduled(t.scheduled_at)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {mastery.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-lg font-semibold">Topic mastery</h3>
+          <p className="text-sm text-muted-foreground">
+            Accuracy per topic across every question this student has answered —
+            weakest first, so revision can target the gaps.
+          </p>
+          <div className="rounded-xl border ring-1 ring-foreground/10 divide-y divide-border">
+            {mastery.map((m) => (
+              <div
+                key={m.topic_id}
+                className="flex items-center gap-3 px-3 py-2 text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{m.topic_name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {m.subject_name} · {m.correct}/{m.attempted} correct
+                  </div>
+                </div>
+                <div className="hidden w-32 sm:block">
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={`h-full ${masteryBar(m.accuracy_pct)}`}
+                      style={{ width: `${Math.max(m.accuracy_pct, 3)}%` }}
+                    />
+                  </div>
+                </div>
+                <div
+                  className={`w-12 text-right font-semibold tabular-nums ${masteryText(m.accuracy_pct)}`}
+                >
+                  {m.accuracy_pct.toFixed(0)}%
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-2">
         <h3 className="text-lg font-semibold">Test history</h3>

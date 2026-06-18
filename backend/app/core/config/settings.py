@@ -1,6 +1,9 @@
+import json
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -25,7 +28,23 @@ class Settings(BaseSettings):
 
     COOKIE_SECURE: bool = False
     COOKIE_SAMESITE: str = "lax"
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    # NoDecode: don't let pydantic-settings JSON-decode the env value itself —
+    # the validator below handles both a JSON array (["a","b"]) and a plain
+    # comma-separated string (a,b). Without this a comma-separated CORS_ORIGINS
+    # in .env raises SettingsError at startup (the env source decodes first).
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v: object) -> object:
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return []
+            if s.startswith("["):
+                return json.loads(s)
+            return [o.strip() for o in s.split(",") if o.strip()]
+        return v
 
     ATTENDANCE_GRACE_PERIOD_MINUTES: int = 10
     ATTENDANCE_DUPLICATE_WINDOW_MINUTES: int = 5

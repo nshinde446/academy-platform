@@ -1,0 +1,666 @@
+Sheet,Class,Main Topic,Sub Topic
+MHTCET_Physics,11,Units and Measurements,Physical Quantities
+MHTCET_Physics,11,Units and Measurements,SI Units
+MHTCET_Physics,11,Units and Measurements,Dimensions
+MHTCET_Physics,11,Units and Measurements,Dimensional Analysis
+MHTCET_Physics,11,Units and Measurements,Errors in Measurement
+MHTCET_Physics,11,Units and Measurements,Significant Figures
+MHTCET_Physics,11,Motion in a Plane,Scalars and Vectors
+MHTCET_Physics,11,Motion in a Plane,Vector Addition and Subtraction
+MHTCET_Physics,11,Motion in a Plane,Resolution of Vectors
+MHTCET_Physics,11,Motion in a Plane,Projectile Motion
+MHTCET_Physics,11,Motion in a Plane,Relative Velocity
+MHTCET_Physics,11,Laws of Motion,Newton's First Law
+MHTCET_Physics,11,Laws of Motion,Newton's Second Law
+MHTCET_Physics,11,Laws of Motion,Newton's Third Law
+MHTCET_Physics,11,Laws of Motion,Friction
+MHTCET_Physics,11,Laws of Motion,Circular Motion
+MHTCET_Physics,11,Gravitation,Universal Law of Gravitation
+MHTCET_Physics,11,Gravitation,Acceleration due to Gravity
+MHTCET_Physics,11,Gravitation,Escape Velocity
+MHTCET_Physics,11,Gravitation,Satellites
+MHTCET_Physics,11,Thermal Properties of Matter,Heat and Temperature
+MHTCET_Physics,11,Thermal Properties of Matter,Thermal Expansion
+MHTCET_Physics,11,Thermal Properties of Matter,Specific Heat Capacity
+MHTCET_Physics,11,Thermal Properties of Matter,Calorimetry
+MHTCET_Physics,12,Thermodynamics,First Law of Thermodynamics
+MHTCET_Physics,12,Thermodynamics,Second Law of Thermodynamics
+MHTCET_Physics,12,Thermodynamics,Heat Engines
+MHTCET_Physics,12,Thermodynamics,Carnot Engine
+MHTCET_Physics,12,Kinetic Theory of Gases,Gas Laws
+MHTCET_Physics,12,Kinetic Theory of Gases,Ideal Gas Equation
+MHTCET_Physics,12,Kinetic Theory of Gases,RMS Velocity
+MHTCET_Physics,12,Kinetic Theory of Gases,Degrees of Freedom
+MHTCET_Physics,12,Oscillations,Simple Harmonic Motion
+MHTCET_Physics,12,Oscillations,Energy in SHM
+MHTCET_Physics,12,Oscillations,Damped Oscillations
+MHTCET_Physics,12,Oscillations,Forced Oscillations
+MHTCET_Physics,11,Waves,Wave Motion
+MHTCET_Physics,11,Waves,Speed of Wave
+MHTCET_Physics,12,Waves,Superposition Principle
+MHTCET_Physics,12,Waves,Stationary Waves
+MHTCET_Physics,11,Waves,Doppler Effect
+MHTCET_Physics,11,Electrostatics,Electric Charge
+MHTCET_Physics,11,Electrostatics,Coulomb's Law
+MHTCET_Physics,11,Electrostatics,Electric Field
+MHTCET_Physics,11,Electrostatics,Electric Potential
+MHTCET_Physics,12,Electrostatics,Capacitors
+MHTCET_Physics,11,Current Electricity,Electric Current
+MHTCET_Physics,11,Current Electricity,Ohm's Law
+MHTCET_Physics,12,Current Electricity,Kirchhoff's Laws
+MHTCET_Physics,12,Current Electricity,Wheatstone Bridge
+MHTCET_Physics,12,Current Electricity,Potentiometer
+MHTCET_Physics,12,Magnetic Effects of Current,Biot-Savart Law
+MHTCET_Physics,12,Magnetic Effects of Current,Ampere's Circuital Law
+MHTCET_Physics,12,Magnetic Effects of Current,Force on Moving Charge
+MHTCET_Physics,12,Magnetic Effects of Current,Cyclotron
+MHTCET_Physics,11,Magnetism,Bar Magnet
+MHTCET_Physics,11,Magnetism,Magnetic Field Lines
+MHTCET_Physics,11,Magnetism,Earth's Magnetism
+MHTCET_Physics,12,Electromagnetic Induction,Faraday's Laws
+MHTCET_Physics,12,Electromagnetic Induction,Lenz's Law
+MHTCET_Physics,12,Electromagnetic Induction,Self Induction
+MHTCET_Physics,12,Electromagnetic Induction,Mutual Induction
+MHTCET_Physics,12,Alternating Current,AC Voltage and Current
+MHTCET_Physics,12,Alternating Current,RMS Value
+MHTCET_Physics,12,Alternating Current,LC Oscillations
+MHTCET_Physics,12,Alternating Current,Transformer
+MHTCET_Physics,11,Electromagnetic Waves,Displacement Current
+MHTCET_Physics,11,Electromagnetic Waves,Electromagnetic Spectrum
+MHTCET_Physics,11,Ray Optics,Reflection of Light
+MHTCET_Physics,11,Ray Optics,Refraction
+MHTCET_Physics,11,Ray Optics,Total Internal Reflection
+MHTCET_Physics,11,Ray Optics,Mirrors
+MHTCET_Physics,11,Ray Optics,Lenses
+MHTCET_Physics,12,Wave Optics,Huygens Principle
+MHTCET_Physics,12,Wave Optics,Interference
+MHTCET_Physics,12,Wave Optics,Diffraction
+MHTCET_Physics,12,Wave Optics,Polarization
+MHTCET_Physics,12,Dual Nature of Radiation and Matter,Photoelectric Effect
+MHTCET_Physics,12,Dual Nature of Radiation and Matter,Einstein's Equation
+MHTCET_Physics,12,Dual Nature of Radiation and Matter,de Broglie Wavelength
+MHTCET_Physics,12,Atoms,Rutherford Model
+MHTCET_Physics,12,Atoms,Bohr's Atomic Model
+MHTCET_Physics,12,Atoms,Energy Levels
+MHTCET_Physics,12,Nuclei,Nuclear Structure
+MHTCET_Physics,12,Nuclei,Radioactivity
+MHTCET_Physics,12,Nuclei,Nuclear Fission
+MHTCET_Physics,12,Nuclei,Nuclear Fusion
+MHTCET_Physics,11,Semiconductor Devices,Energy Bands
+MHTCET_Physics,11,Semiconductor Devices,Intrinsic Semiconductor
+MHTCET_Physics,11,Semiconductor Devices,Extrinsic Semiconductor
+MHTCET_Physics,11,Semiconductor Devices,PN Junction Diode
+MHTCET_Physics,12,Semiconductor Devices,Rectifiers
+MHTCET_Physics,12,Semiconductor Devices,Transistors
+MHTCET_Physics,11,Communication Systems,Communication Process
+MHTCET_Physics,11,Communication Systems,Modulation
+MHTCET_Physics,11,Communication Systems,AM and FM Transmission
+MHTCET_Physics,11,Mathematical Methods,Scalars and Vectors
+MHTCET_Physics,11,Mathematical Methods,Addition and Subtraction of Vectors
+MHTCET_Physics,11,Mathematical Methods,Scalar and Vector Products
+MHTCET_Physics,11,Mechanical Properties of Solids,Stress and Strain
+MHTCET_Physics,11,Mechanical Properties of Solids,Hooke's Law and Elastic Moduli
+MHTCET_Physics,11,Mechanical Properties of Solids,Elastic Behaviour of Materials
+MHTCET_Physics,12,Rotational Dynamics,Moment of Inertia
+MHTCET_Physics,12,Rotational Dynamics,Torque and Angular Momentum
+MHTCET_Physics,12,Rotational Dynamics,Rolling Motion
+MHTCET_Physics,12,Mechanical Properties of Fluids,Pressure and Pascal's Law
+MHTCET_Physics,12,Mechanical Properties of Fluids,Surface Tension
+MHTCET_Physics,12,Mechanical Properties of Fluids,Viscosity and Bernoulli's Principle
+MHTCET_Physics,12,Magnetic Materials,Magnetic Properties of Materials
+MHTCET_Physics,12,Magnetic Materials,"Dia, Para and Ferromagnetism"
+MHTCET_Chemistry,12,Solid State,Classification of Solids
+MHTCET_Chemistry,12,Solid State,Crystal Lattice
+MHTCET_Chemistry,12,Solid State,Unit Cell
+MHTCET_Chemistry,12,Solid State,Packing in Solids
+MHTCET_Chemistry,12,Solutions,Types of Solutions
+MHTCET_Chemistry,12,Solutions,Concentration Terms
+MHTCET_Chemistry,12,Solutions,Raoult’s Law
+MHTCET_Chemistry,12,Solutions,Colligative Properties
+MHTCET_Chemistry,12,Chemical Thermodynamics,System and Surroundings
+MHTCET_Chemistry,12,Chemical Thermodynamics,Enthalpy
+MHTCET_Chemistry,12,Chemical Thermodynamics,Entropy
+MHTCET_Chemistry,12,Chemical Thermodynamics,Gibbs Free Energy
+MHTCET_Chemistry,12,Electrochemistry,Conductance
+MHTCET_Chemistry,12,Electrochemistry,Kohlrausch Law
+MHTCET_Chemistry,12,Electrochemistry,Electrochemical Cell
+MHTCET_Chemistry,12,Electrochemistry,Nernst Equation
+MHTCET_Chemistry,12,Chemical Kinetics,Rate of Reaction
+MHTCET_Chemistry,12,Chemical Kinetics,Order of Reaction
+MHTCET_Chemistry,12,Chemical Kinetics,Half Life
+MHTCET_Chemistry,12,Chemical Kinetics,Arrhenius Equation
+MHTCET_Chemistry,11,Surface Chemistry,Adsorption
+MHTCET_Chemistry,11,Surface Chemistry,Catalysis
+MHTCET_Chemistry,11,Surface Chemistry,Colloids
+MHTCET_Chemistry,11,Surface Chemistry,Emulsions
+MHTCET_Chemistry,12,General Principles and Processes of Isolation of Elements,Metallurgy
+MHTCET_Chemistry,12,General Principles and Processes of Isolation of Elements,Concentration of Ore
+MHTCET_Chemistry,12,General Principles and Processes of Isolation of Elements,Extraction of Metals
+MHTCET_Chemistry,11,p-Block Elements,Group 15 Elements
+MHTCET_Chemistry,12,p-Block Elements,Group 16 Elements
+MHTCET_Chemistry,12,p-Block Elements,Group 17 Elements
+MHTCET_Chemistry,12,d and f Block Elements,Transition Elements
+MHTCET_Chemistry,12,d and f Block Elements,Lanthanides
+MHTCET_Chemistry,12,d and f Block Elements,Actinides
+MHTCET_Chemistry,12,Coordination Compounds,Werner’s Theory
+MHTCET_Chemistry,12,Coordination Compounds,Coordination Number
+MHTCET_Chemistry,12,Coordination Compounds,Isomerism
+MHTCET_Chemistry,12,Coordination Compounds,Bonding in Coordination Compounds
+MHTCET_Chemistry,12,Haloalkanes and Haloarenes,Nomenclature
+MHTCET_Chemistry,12,Haloalkanes and Haloarenes,Preparation Methods
+MHTCET_Chemistry,12,Haloalkanes and Haloarenes,Physical Properties
+MHTCET_Chemistry,12,Haloalkanes and Haloarenes,Chemical Reactions
+MHTCET_Chemistry,12,Alcohols Phenols and Ethers,Classification
+MHTCET_Chemistry,12,Alcohols Phenols and Ethers,Preparation
+MHTCET_Chemistry,12,Alcohols Phenols and Ethers,Properties
+MHTCET_Chemistry,12,Alcohols Phenols and Ethers,Reactions
+MHTCET_Chemistry,12,Aldehydes Ketones and Carboxylic Acids,Nomenclature
+MHTCET_Chemistry,12,Aldehydes Ketones and Carboxylic Acids,Preparation Methods
+MHTCET_Chemistry,12,Aldehydes Ketones and Carboxylic Acids,Reactions
+MHTCET_Chemistry,12,Organic Compounds Containing Nitrogen,Amines
+MHTCET_Chemistry,12,Organic Compounds Containing Nitrogen,Diazonium Salts
+MHTCET_Chemistry,12,Biomolecules,Carbohydrates
+MHTCET_Chemistry,12,Biomolecules,Proteins
+MHTCET_Chemistry,12,Biomolecules,Vitamins
+MHTCET_Chemistry,12,Biomolecules,Nucleic Acids
+MHTCET_Chemistry,12,Polymers,Types of Polymers
+MHTCET_Chemistry,12,Polymers,Polymerization
+MHTCET_Chemistry,11,Chemistry in Everyday Life,Drugs and Medicines
+MHTCET_Chemistry,11,Chemistry in Everyday Life,Cleansing Agents
+MHTCET_Chemistry,11,Some Basic Concepts of Chemistry,Mole Concept
+MHTCET_Chemistry,11,Some Basic Concepts of Chemistry,Stoichiometry
+MHTCET_Chemistry,11,Structure of Atom,Atomic Models
+MHTCET_Chemistry,11,Structure of Atom,Quantum Numbers
+MHTCET_Chemistry,11,Classification of Elements and Periodicity,Modern Periodic Table
+MHTCET_Chemistry,11,Classification of Elements and Periodicity,Periodic Trends
+MHTCET_Chemistry,11,Chemical Bonding and Molecular Structure,Ionic Bond
+MHTCET_Chemistry,11,Chemical Bonding and Molecular Structure,Covalent Bond
+MHTCET_Chemistry,11,Chemical Bonding and Molecular Structure,VSEPR Theory
+MHTCET_Chemistry,11,States of Matter,Gas Laws
+MHTCET_Chemistry,11,States of Matter,Ideal Gas Equation
+MHTCET_Chemistry,11,Equilibrium,Chemical Equilibrium
+MHTCET_Chemistry,12,Equilibrium,Ionic Equilibrium
+MHTCET_Chemistry,11,Redox Reactions,Oxidation
+MHTCET_Chemistry,11,Redox Reactions,Reduction
+MHTCET_Chemistry,11,Hydrogen,Preparation of Hydrogen
+MHTCET_Chemistry,11,Hydrogen,Properties of Hydrogen
+MHTCET_Chemistry,11,Hydrocarbons,Alkanes
+MHTCET_Chemistry,11,Hydrocarbons,Alkenes
+MHTCET_Chemistry,11,Hydrocarbons,Alkynes
+MHTCET_Chemistry,11,Environmental Chemistry,Air Pollution
+MHTCET_Chemistry,11,Environmental Chemistry,Water Pollution
+MHTCET_Chemistry,11,Introduction to Analytical Chemistry,Concentration of Solutions
+MHTCET_Chemistry,11,Introduction to Analytical Chemistry,Errors and Significant Figures
+MHTCET_Chemistry,11,Basic Analytical Techniques,Purification of Compounds
+MHTCET_Chemistry,11,Basic Analytical Techniques,Qualitative and Quantitative Analysis
+MHTCET_Chemistry,11,s-Block Elements,Alkali Metals (Group 1)
+MHTCET_Chemistry,11,s-Block Elements,Alkaline Earth Metals (Group 2)
+MHTCET_Chemistry,11,p-Block Elements,Group 13 Elements
+MHTCET_Chemistry,11,p-Block Elements,Group 14 Elements
+MHTCET_Chemistry,12,p-Block Elements,Group 18 Elements (Noble Gases)
+MHTCET_Chemistry,11,Nuclear Chemistry and Radioactivity,Radioactive Decay
+MHTCET_Chemistry,11,Nuclear Chemistry and Radioactivity,Nuclear Reactions and Applications
+MHTCET_Chemistry,11,Basic Principles of Organic Chemistry,Classification and Nomenclature
+MHTCET_Chemistry,11,Basic Principles of Organic Chemistry,Electronic Effects and Reaction Intermediates
+MHTCET_Chemistry,11,Basic Principles of Organic Chemistry,Isomerism
+MHTCET_Chemistry,12,Green Chemistry and Nanochemistry,Principles of Green Chemistry
+MHTCET_Chemistry,12,Green Chemistry and Nanochemistry,Nanochemistry and Nanomaterials
+MHTCET_Maths,11,Sets and Relations,Types of Sets
+MHTCET_Maths,11,Sets and Relations,Venn Diagrams
+MHTCET_Maths,11,Sets and Relations,Relations and Functions
+MHTCET_Maths,11,Complex Numbers,Algebra of Complex Numbers
+MHTCET_Maths,11,Complex Numbers,Argand Plane
+MHTCET_Maths,11,Complex Numbers,Modulus and Amplitude
+MHTCET_Maths,11,Quadratic Equations,Nature of Roots
+MHTCET_Maths,11,Quadratic Equations,Solution of Quadratic Equations
+MHTCET_Maths,11,Quadratic Equations,Relation Between Roots and Coefficients
+MHTCET_Maths,11,Matrices,Types of Matrices
+MHTCET_Maths,11,Matrices,Matrix Operations
+MHTCET_Maths,11,Matrices,Determinants
+MHTCET_Maths,12,Matrices,Inverse of Matrix
+MHTCET_Maths,11,Permutation and Combination,Fundamental Principle of Counting
+MHTCET_Maths,11,Permutation and Combination,Permutations
+MHTCET_Maths,11,Permutation and Combination,Combinations
+MHTCET_Maths,11,Binomial Theorem,Binomial Expansion
+MHTCET_Maths,11,Binomial Theorem,General Term
+MHTCET_Maths,11,Sequences and Series,Arithmetic Progression
+MHTCET_Maths,11,Sequences and Series,Geometric Progression
+MHTCET_Maths,11,Sequences and Series,Harmonic Progression
+MHTCET_Maths,11,Probability,Conditional Probability
+MHTCET_Maths,11,Probability,Bayes Theorem
+MHTCET_Maths,12,Probability,Random Variables
+MHTCET_Maths,11,Trigonometry,Trigonometric Ratios
+MHTCET_Maths,11,Trigonometry,Trigonometric Identities
+MHTCET_Maths,12,Trigonometry,Inverse Trigonometric Functions
+MHTCET_Maths,11,Straight Line,Slope of Line
+MHTCET_Maths,11,Straight Line,Equation of Straight Line
+MHTCET_Maths,11,Straight Line,Distance Between Two Points
+MHTCET_Maths,11,Circle,Equation of Circle
+MHTCET_Maths,11,Circle,Tangent and Normal
+MHTCET_Maths,11,Conic Sections,Parabola
+MHTCET_Maths,11,Conic Sections,Ellipse
+MHTCET_Maths,11,Conic Sections,Hyperbola
+MHTCET_Maths,12,Vectors,Vector Algebra
+MHTCET_Maths,12,Vectors,Dot Product
+MHTCET_Maths,12,Vectors,Cross Product
+MHTCET_Maths,12,Three Dimensional Geometry,Direction Cosines
+MHTCET_Maths,12,Three Dimensional Geometry,Equation of Plane
+MHTCET_Maths,12,Three Dimensional Geometry,Equation of Line
+MHTCET_Maths,11,Limits,Evaluation of Limits
+MHTCET_Maths,11,Limits,Continuity
+MHTCET_Maths,11,Differentiation,Derivative of Functions
+MHTCET_Maths,11,Differentiation,Chain Rule
+MHTCET_Maths,12,Differentiation,Applications of Derivatives
+MHTCET_Maths,12,Integration,Indefinite Integration
+MHTCET_Maths,12,Integration,Definite Integration
+MHTCET_Maths,12,Integration,Applications of Integration
+MHTCET_Maths,12,Differential Equations,Formation of Differential Equations
+MHTCET_Maths,12,Differential Equations,Solution of Differential Equations
+MHTCET_Maths,11,Statistics,Measures of Dispersion
+MHTCET_Maths,11,Statistics,Mean Median Mode
+MHTCET_Maths,11,Statistics,Standard Deviation
+MHTCET_Maths,12,Linear Programming,Linear Inequalities
+MHTCET_Maths,12,Linear Programming,Optimization Problems
+MHTCET_Maths,11,Functions,Types of Functions
+MHTCET_Maths,11,Functions,Composite and Inverse Functions
+MHTCET_Maths,11,Trigonometry,Angle and its Measurement
+MHTCET_Maths,11,Methods of Induction,Principle of Mathematical Induction
+MHTCET_Maths,12,Mathematical Logic,Statements and Logical Connectives
+MHTCET_Maths,12,Mathematical Logic,Truth Tables
+MHTCET_Maths,12,Pair of Straight Lines,Combined Equation of Lines
+MHTCET_Maths,12,Pair of Straight Lines,Angle Between Lines
+MHTCET_Maths,12,Probability Distributions,Random Variables and Distributions
+MHTCET_Maths,12,Probability Distributions,Expected Value and Variance
+MHTCET_Maths,12,Binomial Distribution,Bernoulli Trials
+MHTCET_Maths,12,Binomial Distribution,Binomial Distribution
+JEE_Main_Physics,11,Physics and Measurement,Units and Dimensions
+JEE_Main_Physics,11,Physics and Measurement,Errors in Measurement
+JEE_Main_Physics,11,Kinematics,Motion in One Dimension
+JEE_Main_Physics,11,Kinematics,Motion in Two Dimensions
+JEE_Main_Physics,11,Kinematics,Projectile Motion
+JEE_Main_Physics,11,Laws of Motion,Newton's Laws
+JEE_Main_Physics,11,Laws of Motion,Friction
+JEE_Main_Physics,11,Laws of Motion,Circular Motion
+JEE_Main_Physics,11,"Work, Energy and Power",Kinetic Energy
+JEE_Main_Physics,11,"Work, Energy and Power",Potential Energy
+JEE_Main_Physics,11,"Work, Energy and Power",Conservation of Energy
+JEE_Main_Physics,11,Rotational Motion,Moment of Inertia
+JEE_Main_Physics,11,Rotational Motion,Torque
+JEE_Main_Physics,11,Rotational Motion,Angular Momentum
+JEE_Main_Physics,11,Gravitation,Universal Law of Gravitation
+JEE_Main_Physics,11,Gravitation,Satellite Motion
+JEE_Main_Physics,11,Properties of Solids and Liquids,Elasticity
+JEE_Main_Physics,11,Properties of Solids and Liquids,Surface Tension
+JEE_Main_Physics,11,Properties of Solids and Liquids,Viscosity
+JEE_Main_Physics,11,Thermodynamics,First Law of Thermodynamics
+JEE_Main_Physics,11,Thermodynamics,Second Law of Thermodynamics
+JEE_Main_Physics,11,Kinetic Theory of Gases,Ideal Gas Equation
+JEE_Main_Physics,11,Kinetic Theory of Gases,RMS Velocity
+JEE_Main_Physics,11,Oscillations and Waves,Simple Harmonic Motion
+JEE_Main_Physics,11,Oscillations and Waves,Wave Motion
+JEE_Main_Physics,11,Oscillations and Waves,Doppler Effect
+JEE_Main_Physics,12,Electrostatics,Coulomb's Law
+JEE_Main_Physics,12,Electrostatics,Electric Field
+JEE_Main_Physics,12,Electrostatics,Capacitance
+JEE_Main_Physics,12,Current Electricity,Ohm's Law
+JEE_Main_Physics,12,Current Electricity,Kirchhoff's Laws
+JEE_Main_Physics,12,Current Electricity,Potentiometer
+JEE_Main_Physics,12,Magnetic Effects of Current and Magnetism,Biot Savart Law
+JEE_Main_Physics,12,Magnetic Effects of Current and Magnetism,Ampere's Law
+JEE_Main_Physics,12,Magnetic Effects of Current and Magnetism,Moving Coil Galvanometer
+JEE_Main_Physics,12,Electromagnetic Induction and Alternating Currents,Faraday's Law
+JEE_Main_Physics,12,Electromagnetic Induction and Alternating Currents,Lenz Law
+JEE_Main_Physics,12,Electromagnetic Induction and Alternating Currents,Transformer
+JEE_Main_Physics,12,Electromagnetic Waves,Electromagnetic Spectrum
+JEE_Main_Physics,12,Optics,Reflection and Refraction
+JEE_Main_Physics,12,Optics,Wave Optics
+JEE_Main_Physics,12,Optics,Optical Instruments
+JEE_Main_Physics,12,Dual Nature of Matter and Radiation,Photoelectric Effect
+JEE_Main_Physics,12,Dual Nature of Matter and Radiation,de Broglie Hypothesis
+JEE_Main_Physics,12,Atoms and Nuclei,Bohr Model
+JEE_Main_Physics,12,Atoms and Nuclei,Radioactivity
+JEE_Main_Physics,12,Electronic Devices,Semiconductors
+JEE_Main_Physics,12,Electronic Devices,Logic Gates
+JEE_Main_Physics,12,Communication Systems,Modulation
+JEE_Main_Physics,11,Experimental Skills,Vernier Calipers
+JEE_Main_Physics,11,Experimental Skills,Screw Gauge
+JEE_Main_Chemistry,11,Some Basic Concepts of Chemistry,Mole Concept
+JEE_Main_Chemistry,11,Some Basic Concepts of Chemistry,Stoichiometry
+JEE_Main_Chemistry,11,Atomic Structure,Bohr Model
+JEE_Main_Chemistry,11,Atomic Structure,Quantum Numbers
+JEE_Main_Chemistry,11,Chemical Bonding,Ionic Bond
+JEE_Main_Chemistry,11,Chemical Bonding,Covalent Bond
+JEE_Main_Chemistry,11,Chemical Bonding,Hybridization
+JEE_Main_Chemistry,11,States of Matter,Gas Laws
+JEE_Main_Chemistry,11,States of Matter,Kinetic Theory of Gases
+JEE_Main_Chemistry,11,Thermodynamics,First Law of Thermodynamics
+JEE_Main_Chemistry,11,Thermodynamics,Entropy
+JEE_Main_Chemistry,11,Thermodynamics,Gibbs Free Energy
+JEE_Main_Chemistry,11,Equilibrium,Chemical Equilibrium
+JEE_Main_Chemistry,11,Equilibrium,Ionic Equilibrium
+JEE_Main_Chemistry,11,Redox Reactions,Oxidation and Reduction
+JEE_Main_Chemistry,11,Hydrogen,Properties of Hydrogen
+JEE_Main_Chemistry,11,Hydrogen,Hydrides
+JEE_Main_Chemistry,11,s-Block Elements,Alkali Metals
+JEE_Main_Chemistry,11,s-Block Elements,Alkaline Earth Metals
+JEE_Main_Chemistry,11,p-Block Elements,Group 13 Elements
+JEE_Main_Chemistry,11,p-Block Elements,Group 14 Elements
+JEE_Main_Chemistry,12,p-Block Elements,Group 15 Elements
+JEE_Main_Chemistry,12,p-Block Elements,Group 16 Elements
+JEE_Main_Chemistry,12,p-Block Elements,Group 17 Elements
+JEE_Main_Chemistry,11,Organic Chemistry,General Organic Chemistry
+JEE_Main_Chemistry,11,Organic Chemistry,Isomerism
+JEE_Main_Chemistry,11,Hydrocarbons,Alkanes
+JEE_Main_Chemistry,11,Hydrocarbons,Alkenes
+JEE_Main_Chemistry,11,Hydrocarbons,Alkynes
+JEE_Main_Chemistry,11,Environmental Chemistry,Air Pollution
+JEE_Main_Chemistry,11,Environmental Chemistry,Water Pollution
+JEE_Main_Chemistry,12,Solid State,Crystal Lattice
+JEE_Main_Chemistry,12,Solid State,Packing Efficiency
+JEE_Main_Chemistry,12,Solutions,Concentration Terms
+JEE_Main_Chemistry,12,Solutions,Colligative Properties
+JEE_Main_Chemistry,12,Electrochemistry,Electrochemical Cells
+JEE_Main_Chemistry,12,Electrochemistry,Nernst Equation
+JEE_Main_Chemistry,12,Chemical Kinetics,Rate of Reaction
+JEE_Main_Chemistry,12,Chemical Kinetics,Order of Reaction
+JEE_Main_Chemistry,12,Surface Chemistry,Adsorption
+JEE_Main_Chemistry,12,Surface Chemistry,Catalysis
+JEE_Main_Chemistry,12,d and f Block Elements,Transition Elements
+JEE_Main_Chemistry,12,d and f Block Elements,Lanthanides
+JEE_Main_Chemistry,12,Coordination Compounds,Werner Theory
+JEE_Main_Chemistry,12,Coordination Compounds,Isomerism
+JEE_Main_Chemistry,12,Haloalkanes and Haloarenes,Preparation
+JEE_Main_Chemistry,12,Haloalkanes and Haloarenes,Reactions
+JEE_Main_Chemistry,12,Alcohols Phenols and Ethers,Preparation
+JEE_Main_Chemistry,12,Alcohols Phenols and Ethers,Chemical Properties
+JEE_Main_Chemistry,12,Aldehydes Ketones and Carboxylic Acids,Nucleophilic Addition
+JEE_Main_Chemistry,12,Aldehydes Ketones and Carboxylic Acids,Carboxylic Acid Reactions
+JEE_Main_Chemistry,12,Organic Compounds Containing Nitrogen,Amines
+JEE_Main_Chemistry,12,Organic Compounds Containing Nitrogen,Diazonium Salts
+JEE_Main_Chemistry,12,Biomolecules,Proteins
+JEE_Main_Chemistry,12,Biomolecules,Carbohydrates
+JEE_Main_Chemistry,12,Polymers,Addition Polymers
+JEE_Main_Chemistry,12,Polymers,Condensation Polymers
+JEE_Main_Chemistry,12,Chemistry in Everyday Life,Drugs
+JEE_Main_Chemistry,12,Chemistry in Everyday Life,Cleansing Agents
+JEE_Main_Maths,11,"Sets, Relations and Functions",Types of Sets
+JEE_Main_Maths,11,"Sets, Relations and Functions",Relations and Functions
+JEE_Main_Maths,11,Complex Numbers and Quadratic Equations,Complex Numbers
+JEE_Main_Maths,11,Complex Numbers and Quadratic Equations,Quadratic Equations
+JEE_Main_Maths,12,Matrices and Determinants,Types of Matrices
+JEE_Main_Maths,12,Matrices and Determinants,Determinants
+JEE_Main_Maths,12,Matrices and Determinants,Inverse of Matrix
+JEE_Main_Maths,11,Permutations and Combinations,Fundamental Principle of Counting
+JEE_Main_Maths,11,Permutations and Combinations,Permutations
+JEE_Main_Maths,11,Permutations and Combinations,Combinations
+JEE_Main_Maths,11,Mathematical Induction,Principle of Mathematical Induction
+JEE_Main_Maths,11,Binomial Theorem,Binomial Expansion
+JEE_Main_Maths,11,Binomial Theorem,General Term
+JEE_Main_Maths,11,Sequences and Series,Arithmetic Progression
+JEE_Main_Maths,11,Sequences and Series,Geometric Progression
+JEE_Main_Maths,11,Sequences and Series,Harmonic Progression
+JEE_Main_Maths,12,"Limit, Continuity and Differentiability",Limits
+JEE_Main_Maths,12,"Limit, Continuity and Differentiability",Continuity
+JEE_Main_Maths,12,"Limit, Continuity and Differentiability",Differentiability
+JEE_Main_Maths,12,Integral Calculus,Indefinite Integration
+JEE_Main_Maths,12,Integral Calculus,Definite Integration
+JEE_Main_Maths,12,Integral Calculus,Area Under Curves
+JEE_Main_Maths,12,Differential Equations,Formation of Differential Equations
+JEE_Main_Maths,12,Differential Equations,Solution of Differential Equations
+JEE_Main_Maths,11,Coordinate Geometry,Straight Lines
+JEE_Main_Maths,11,Coordinate Geometry,Circle
+JEE_Main_Maths,11,Coordinate Geometry,Parabola
+JEE_Main_Maths,11,Coordinate Geometry,Ellipse
+JEE_Main_Maths,11,Coordinate Geometry,Hyperbola
+JEE_Main_Maths,12,Three Dimensional Geometry,Direction Cosines
+JEE_Main_Maths,12,Three Dimensional Geometry,Equation of Plane
+JEE_Main_Maths,12,Three Dimensional Geometry,Equation of Line
+JEE_Main_Maths,12,Vector Algebra,Vector Addition
+JEE_Main_Maths,12,Vector Algebra,Dot Product
+JEE_Main_Maths,12,Vector Algebra,Cross Product
+JEE_Main_Maths,11,Statistics and Probability,Mean Median Mode
+JEE_Main_Maths,11,Statistics and Probability,Standard Deviation
+JEE_Main_Maths,12,Statistics and Probability,Probability
+JEE_Main_Maths,11,Trigonometry,Trigonometric Ratios
+JEE_Main_Maths,11,Trigonometry,Trigonometric Identities
+JEE_Main_Maths,12,Trigonometry,Inverse Trigonometric Functions
+JEE_Main_Maths,11,Mathematical Reasoning,Statements
+JEE_Main_Maths,11,Mathematical Reasoning,Logical Operations
+NEET_Physics,11,Physical World and Measurement,Units and Measurements
+NEET_Physics,11,Physical World and Measurement,Dimensional Analysis
+NEET_Physics,11,Kinematics,Motion in a Straight Line
+NEET_Physics,11,Kinematics,Motion in a Plane
+NEET_Physics,11,Kinematics,Projectile Motion
+NEET_Physics,11,Laws of Motion,Newton's Laws of Motion
+NEET_Physics,11,Laws of Motion,Friction
+NEET_Physics,11,Laws of Motion,Circular Motion
+NEET_Physics,11,"Work, Energy and Power",Kinetic Energy
+NEET_Physics,11,"Work, Energy and Power",Potential Energy
+NEET_Physics,11,"Work, Energy and Power",Conservation of Energy
+NEET_Physics,11,System of Particles and Rotational Motion,Center of Mass
+NEET_Physics,11,System of Particles and Rotational Motion,Moment of Inertia
+NEET_Physics,11,System of Particles and Rotational Motion,Torque and Angular Momentum
+NEET_Physics,11,Gravitation,Universal Law of Gravitation
+NEET_Physics,11,Gravitation,Acceleration Due to Gravity
+NEET_Physics,11,Properties of Bulk Matter,Elasticity
+NEET_Physics,11,Properties of Bulk Matter,Surface Tension
+NEET_Physics,11,Properties of Bulk Matter,Viscosity
+NEET_Physics,11,Thermodynamics,First Law of Thermodynamics
+NEET_Physics,11,Thermodynamics,Second Law of Thermodynamics
+NEET_Physics,11,Kinetic Theory,Ideal Gas Equation
+NEET_Physics,11,Kinetic Theory,Kinetic Theory of Gases
+NEET_Physics,11,Oscillations and Waves,Simple Harmonic Motion
+NEET_Physics,11,Oscillations and Waves,Wave Motion
+NEET_Physics,11,Oscillations and Waves,Doppler Effect
+NEET_Physics,12,Electrostatics,Electric Charges and Fields
+NEET_Physics,12,Electrostatics,Electrostatic Potential and Capacitance
+NEET_Physics,12,Current Electricity,Ohm's Law
+NEET_Physics,12,Current Electricity,Kirchhoff’s Laws
+NEET_Physics,12,Current Electricity,Potentiometer
+NEET_Physics,12,Magnetic Effects of Current and Magnetism,Biot-Savart Law
+NEET_Physics,12,Magnetic Effects of Current and Magnetism,Ampere’s Circuital Law
+NEET_Physics,12,Magnetic Effects of Current and Magnetism,Moving Coil Galvanometer
+NEET_Physics,12,Electromagnetic Induction and Alternating Currents,Faraday’s Laws
+NEET_Physics,12,Electromagnetic Induction and Alternating Currents,Lenz’s Law
+NEET_Physics,12,Electromagnetic Induction and Alternating Currents,Alternating Current
+NEET_Physics,12,Electromagnetic Waves,Electromagnetic Spectrum
+NEET_Physics,12,Optics,Ray Optics
+NEET_Physics,12,Optics,Wave Optics
+NEET_Physics,12,Dual Nature of Radiation and Matter,Photoelectric Effect
+NEET_Physics,12,Dual Nature of Radiation and Matter,de Broglie Hypothesis
+NEET_Physics,12,Atoms and Nuclei,Bohr’s Atomic Model
+NEET_Physics,12,Atoms and Nuclei,Radioactivity
+NEET_Physics,12,Electronic Devices,Semiconductors
+NEET_Physics,12,Electronic Devices,Logic Gates
+NEET_Chemistry,11,Some Basic Concepts of Chemistry,Mole Concept
+NEET_Chemistry,11,Some Basic Concepts of Chemistry,Stoichiometry
+NEET_Chemistry,11,Structure of Atom,Atomic Models
+NEET_Chemistry,11,Structure of Atom,Quantum Numbers
+NEET_Chemistry,11,Classification of Elements and Periodicity,Periodic Table
+NEET_Chemistry,11,Classification of Elements and Periodicity,Periodic Trends
+NEET_Chemistry,11,Chemical Bonding and Molecular Structure,Ionic Bond
+NEET_Chemistry,11,Chemical Bonding and Molecular Structure,Covalent Bond
+NEET_Chemistry,11,Chemical Bonding and Molecular Structure,Hybridization
+NEET_Chemistry,11,States of Matter,Gas Laws
+NEET_Chemistry,11,States of Matter,Ideal Gas Equation
+NEET_Chemistry,11,Thermodynamics,First Law of Thermodynamics
+NEET_Chemistry,11,Thermodynamics,Entropy
+NEET_Chemistry,11,Thermodynamics,Gibbs Free Energy
+NEET_Chemistry,11,Equilibrium,Chemical Equilibrium
+NEET_Chemistry,11,Equilibrium,Ionic Equilibrium
+NEET_Chemistry,11,Redox Reactions,Oxidation and Reduction
+NEET_Chemistry,11,Hydrogen,Properties of Hydrogen
+NEET_Chemistry,11,s-Block Elements,Alkali Metals
+NEET_Chemistry,11,s-Block Elements,Alkaline Earth Metals
+NEET_Chemistry,11,p-Block Elements,Group 13 Elements
+NEET_Chemistry,11,p-Block Elements,Group 14 Elements
+NEET_Chemistry,12,p-Block Elements,Group 15 Elements
+NEET_Chemistry,12,p-Block Elements,Group 16 Elements
+NEET_Chemistry,12,p-Block Elements,Group 17 Elements
+NEET_Chemistry,11,Organic Chemistry,General Organic Chemistry
+NEET_Chemistry,11,Organic Chemistry,Isomerism
+NEET_Chemistry,11,Hydrocarbons,Alkanes
+NEET_Chemistry,11,Hydrocarbons,Alkenes
+NEET_Chemistry,11,Hydrocarbons,Alkynes
+NEET_Chemistry,11,Environmental Chemistry,Air Pollution
+NEET_Chemistry,11,Environmental Chemistry,Water Pollution
+NEET_Chemistry,12,Solid State,Crystal Lattice
+NEET_Chemistry,12,Solid State,Packing Efficiency
+NEET_Chemistry,12,Solutions,Concentration Terms
+NEET_Chemistry,12,Solutions,Colligative Properties
+NEET_Chemistry,12,Electrochemistry,Electrochemical Cells
+NEET_Chemistry,12,Electrochemistry,Nernst Equation
+NEET_Chemistry,12,Chemical Kinetics,Rate of Reaction
+NEET_Chemistry,12,Chemical Kinetics,Order of Reaction
+NEET_Chemistry,12,Surface Chemistry,Adsorption
+NEET_Chemistry,12,Surface Chemistry,Catalysis
+NEET_Chemistry,12,d and f Block Elements,Transition Elements
+NEET_Chemistry,12,d and f Block Elements,Lanthanides
+NEET_Chemistry,12,Coordination Compounds,Werner Theory
+NEET_Chemistry,12,Coordination Compounds,Isomerism
+NEET_Chemistry,12,Haloalkanes and Haloarenes,Preparation
+NEET_Chemistry,12,Haloalkanes and Haloarenes,Reactions
+NEET_Chemistry,12,Alcohols Phenols and Ethers,Preparation
+NEET_Chemistry,12,Alcohols Phenols and Ethers,Chemical Properties
+NEET_Chemistry,12,Aldehydes Ketones and Carboxylic Acids,Nucleophilic Addition
+NEET_Chemistry,12,Aldehydes Ketones and Carboxylic Acids,Carboxylic Acid Reactions
+NEET_Chemistry,12,Organic Compounds Containing Nitrogen,Amines
+NEET_Chemistry,12,Organic Compounds Containing Nitrogen,Diazonium Salts
+NEET_Chemistry,12,Biomolecules,Proteins
+NEET_Chemistry,12,Biomolecules,Carbohydrates
+NEET_Chemistry,12,Polymers,Addition Polymers
+NEET_Chemistry,12,Polymers,Condensation Polymers
+NEET_Chemistry,12,Chemistry in Everyday Life,Drugs
+NEET_Chemistry,12,Chemistry in Everyday Life,Cleansing Agents
+NEET_Biology,11,Diversity in Living World,Living Organisms
+NEET_Biology,11,Diversity in Living World,Biological Classification
+NEET_Biology,11,Diversity in Living World,Plant Kingdom
+NEET_Biology,11,Diversity in Living World,Animal Kingdom
+NEET_Biology,11,Structural Organisation in Animals and Plants,Morphology of Flowering Plants
+NEET_Biology,11,Structural Organisation in Animals and Plants,Anatomy of Flowering Plants
+NEET_Biology,11,Structural Organisation in Animals and Plants,Structural Organisation in Animals
+NEET_Biology,11,Cell Structure and Function,Cell Theory
+NEET_Biology,11,Cell Structure and Function,Cell Organelles
+NEET_Biology,11,Cell Structure and Function,Biomolecules
+NEET_Biology,11,Cell Structure and Function,Cell Cycle and Cell Division
+NEET_Biology,11,Plant Physiology,Transport in Plants
+NEET_Biology,11,Plant Physiology,Mineral Nutrition
+NEET_Biology,11,Plant Physiology,Photosynthesis
+NEET_Biology,11,Plant Physiology,Respiration in Plants
+NEET_Biology,11,Plant Physiology,Plant Growth and Development
+NEET_Biology,11,Human Physiology,Digestion and Absorption
+NEET_Biology,11,Human Physiology,Breathing and Exchange of Gases
+NEET_Biology,11,Human Physiology,Body Fluids and Circulation
+NEET_Biology,11,Human Physiology,Excretory Products and Elimination
+NEET_Biology,11,Human Physiology,Locomotion and Movement
+NEET_Biology,11,Human Physiology,Neural Control and Coordination
+NEET_Biology,11,Human Physiology,Chemical Coordination and Integration
+NEET_Biology,12,Reproduction,Reproduction in Organisms
+NEET_Biology,12,Reproduction,Sexual Reproduction in Flowering Plants
+NEET_Biology,12,Reproduction,Human Reproduction
+NEET_Biology,12,Reproduction,Reproductive Health
+NEET_Biology,12,Genetics and Evolution,Principles of Inheritance and Variation
+NEET_Biology,12,Genetics and Evolution,Molecular Basis of Inheritance
+NEET_Biology,12,Genetics and Evolution,Evolution
+NEET_Biology,12,Biology and Human Welfare,Human Health and Disease
+NEET_Biology,12,Biology and Human Welfare,Strategies for Enhancement in Food Production
+NEET_Biology,12,Biology and Human Welfare,Microbes in Human Welfare
+NEET_Biology,12,Biotechnology and Its Applications,Biotechnology Principles and Processes
+NEET_Biology,12,Biotechnology and Its Applications,Biotechnology and Human Welfare
+NEET_Biology,12,Ecology and Environment,Organisms and Populations
+NEET_Biology,12,Ecology and Environment,Ecosystem
+NEET_Biology,12,Ecology and Environment,Biodiversity and Conservation
+NEET_Biology,12,Ecology and Environment,Environmental Issues
+MHTCET_Biology,11,Living World,Concept of Living
+MHTCET_Biology,11,Living World,Biodiversity and Nomenclature
+MHTCET_Biology,11,Living World,Taxonomic Aids
+MHTCET_Biology,11,Systematics of Living Organisms,Five Kingdom Classification
+MHTCET_Biology,11,Systematics of Living Organisms,Kingdom Monera
+MHTCET_Biology,11,Systematics of Living Organisms,Kingdom Protista and Fungi
+MHTCET_Biology,11,Kingdom Plantae,Classification of Kingdom Plantae
+MHTCET_Biology,11,Kingdom Plantae,Thallophyta (Algae)
+MHTCET_Biology,11,Kingdom Plantae,"Bryophyta, Pteridophyta and Spermatophyta"
+MHTCET_Biology,11,Kingdom Animalia,Basis of Classification
+MHTCET_Biology,11,Kingdom Animalia,Non-Chordates (Invertebrata)
+MHTCET_Biology,11,Kingdom Animalia,Phylum Chordata
+MHTCET_Biology,11,Organization of Cell,Prokaryotic and Eukaryotic Cells
+MHTCET_Biology,11,Organization of Cell,Cell Organelles
+MHTCET_Biology,11,Organization of Cell,Cell Membrane and Nucleus
+MHTCET_Biology,11,Biomolecules,"Carbohydrates, Proteins and Lipids"
+MHTCET_Biology,11,Biomolecules,Nucleic Acids
+MHTCET_Biology,11,Biomolecules,Enzymes and Metabolism
+MHTCET_Biology,11,Cell Division,Cell Cycle
+MHTCET_Biology,11,Cell Division,Mitosis
+MHTCET_Biology,11,Cell Division,Meiosis
+MHTCET_Biology,11,Plant Tissues and Anatomy,Meristematic and Permanent Tissues
+MHTCET_Biology,11,Plant Tissues and Anatomy,Xylem and Phloem
+MHTCET_Biology,11,Plant Tissues and Anatomy,Secondary Growth in Plants
+MHTCET_Biology,11,Morphology of Flowering Plants,"Root, Stem and Leaf"
+MHTCET_Biology,11,Morphology of Flowering Plants,Inflorescence and Flower
+MHTCET_Biology,11,Morphology of Flowering Plants,Fruit and Seed
+MHTCET_Biology,11,Animal Tissues,Epithelial Tissue
+MHTCET_Biology,11,Animal Tissues,Connective Tissue
+MHTCET_Biology,11,Animal Tissues,Muscular and Nervous Tissue
+MHTCET_Biology,11,Study of Animal Type: Cockroach,External Morphology
+MHTCET_Biology,11,Study of Animal Type: Cockroach,Digestive and Circulatory System
+MHTCET_Biology,11,Study of Animal Type: Cockroach,Nervous and Reproductive System
+MHTCET_Biology,11,Photosynthesis in Higher Plants,Light Reaction
+MHTCET_Biology,11,Photosynthesis in Higher Plants,Calvin Cycle (Dark Reaction)
+MHTCET_Biology,11,Photosynthesis in Higher Plants,"C4, CAM Pathway and Photorespiration"
+MHTCET_Biology,11,Respiration and Energy Transfer,Glycolysis
+MHTCET_Biology,11,Respiration and Energy Transfer,Tricarboxylic Acid (Krebs) Cycle
+MHTCET_Biology,11,Respiration and Energy Transfer,Electron Transport Chain and ATP Synthesis
+MHTCET_Biology,11,Human Nutrition,Digestive System and Glands
+MHTCET_Biology,11,Human Nutrition,Physiology of Digestion
+MHTCET_Biology,11,Human Nutrition,"Absorption, Assimilation and Disorders"
+MHTCET_Biology,11,Excretion and Osmoregulation,Human Excretory System
+MHTCET_Biology,11,Excretion and Osmoregulation,Urine Formation
+MHTCET_Biology,11,Excretion and Osmoregulation,Dialysis and Kidney Disorders
+MHTCET_Biology,11,Skeleton and Movement,Types of Movement and Locomotion
+MHTCET_Biology,11,Skeleton and Movement,Human Skeletal System
+MHTCET_Biology,11,Skeleton and Movement,Joint and Bone Disorders
+MHTCET_Biology,12,Reproduction in Lower and Higher Plants,Asexual and Sexual Reproduction
+MHTCET_Biology,12,Reproduction in Lower and Higher Plants,Microsporogenesis and Megasporogenesis
+MHTCET_Biology,12,Reproduction in Lower and Higher Plants,"Pollination, Double Fertilization and Seed Formation"
+MHTCET_Biology,12,Reproduction in Lower and Higher Animals,Human Reproductive Systems
+MHTCET_Biology,12,Reproduction in Lower and Higher Animals,Gametogenesis and Menstrual Cycle
+MHTCET_Biology,12,Reproduction in Lower and Higher Animals,"Fertilization, Pregnancy and Reproductive Health"
+MHTCET_Biology,12,Inheritance and Variation,Mendelian Inheritance
+MHTCET_Biology,12,Inheritance and Variation,Deviations from Mendelism
+MHTCET_Biology,12,Inheritance and Variation,"Linkage, Sex Determination and Genetic Disorders"
+MHTCET_Biology,12,Molecular Basis of Inheritance,DNA Structure and Replication
+MHTCET_Biology,12,Molecular Basis of Inheritance,Transcription and Translation
+MHTCET_Biology,12,Molecular Basis of Inheritance,Gene Regulation and Human Genome Project
+MHTCET_Biology,12,Origin and Evolution of Life,Origin of Life and Chemical Evolution
+MHTCET_Biology,12,Origin and Evolution of Life,Theories of Evolution
+MHTCET_Biology,12,Origin and Evolution of Life,Hardy-Weinberg Principle and Human Evolution
+MHTCET_Biology,12,Plant Water Relation,"Diffusion, Osmosis and Water Potential"
+MHTCET_Biology,12,Plant Water Relation,Absorption and Translocation of Water
+MHTCET_Biology,12,Plant Water Relation,Transpiration and Stomatal Apparatus
+MHTCET_Biology,12,Plant Growth and Mineral Nutrition,Plant Growth and Growth Curve
+MHTCET_Biology,12,Plant Growth and Mineral Nutrition,Plant Hormones
+MHTCET_Biology,12,Plant Growth and Mineral Nutrition,Mineral Nutrition and Nitrogen Cycle
+MHTCET_Biology,12,Respiration and Circulation,Human Respiratory System and Breathing
+MHTCET_Biology,12,Respiration and Circulation,Circulatory System and Blood
+MHTCET_Biology,12,Respiration and Circulation,"Human Heart, ECG and Disorders"
+MHTCET_Biology,12,Control and Co-ordination,Nervous Tissue and Nerve Impulse
+MHTCET_Biology,12,Control and Co-ordination,Human Nervous System and Brain
+MHTCET_Biology,12,Control and Co-ordination,Endocrine System and Hormones
+MHTCET_Biology,12,Human Health and Diseases,Immunity and Immune System
+MHTCET_Biology,12,Human Health and Diseases,Infectious Diseases
+MHTCET_Biology,12,Human Health and Diseases,"Cancer, AIDS and Drug Abuse"
+MHTCET_Biology,12,Enhancement of Food Production,Plant Breeding and Tissue Culture
+MHTCET_Biology,12,Enhancement of Food Production,Animal Husbandry
+MHTCET_Biology,12,Enhancement of Food Production,Microbes in Human Welfare
+MHTCET_Biology,12,Biotechnology,Principles of Biotechnology
+MHTCET_Biology,12,Biotechnology,rDNA Technology and Gene Cloning
+MHTCET_Biology,12,Biotechnology,Applications and Bioethics
+MHTCET_Biology,12,Organisms and Populations,Organisms and Environment
+MHTCET_Biology,12,Organisms and Populations,Adaptations
+MHTCET_Biology,12,Organisms and Populations,Population Attributes and Interactions
+MHTCET_Biology,12,Ecosystems and Energy Flow,Ecosystem Structure and Function
+MHTCET_Biology,12,Ecosystems and Energy Flow,Energy Flow and Ecological Pyramids
+MHTCET_Biology,12,Ecosystems and Energy Flow,Biogeochemical Cycles and Succession
+MHTCET_Biology,12,"Biodiversity, Conservation and Environmental Issues",Levels and Patterns of Biodiversity
+MHTCET_Biology,12,"Biodiversity, Conservation and Environmental Issues",Conservation of Biodiversity
+MHTCET_Biology,12,"Biodiversity, Conservation and Environmental Issues",Environmental Pollution and Global Warming

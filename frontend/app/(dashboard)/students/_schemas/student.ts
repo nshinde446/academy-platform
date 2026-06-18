@@ -99,6 +99,25 @@ export interface StudentUpdate {
   fees_status?: FeesStatus | null;
 }
 
+// A scheduled, not-yet-taken test for the student's batch (soonest first).
+export interface StudentUpcomingTest {
+  test_id: string;
+  test_name: string;
+  paper_type: string;
+  subject_name: string;
+  scheduled_at: string | null;
+}
+
+// Per-topic accuracy for the Tier 13 weakness map (weakest first).
+export interface StudentTopicMastery {
+  topic_id: string;
+  topic_name: string;
+  subject_name: string;
+  attempted: number;
+  correct: number;
+  accuracy_pct: number;
+}
+
 // One row per test the student has taken — powers /students/[id].
 export interface StudentTestHistoryRow {
   test_id: string;
@@ -123,6 +142,55 @@ export interface ImportSummary {
   imported: number;
   skipped: number;
   errors: string[];
+  // Non-blocking §3 advisories for rows that were still imported.
+  warnings: string[];
+  batches_created: string[];
+  // Subject skeleton rows auto-created for new courses (§8).
+  subjects_created: number;
+  // Handle to undo this import as a unit. Null when nothing persisted.
+  import_id: string | null;
+}
+
+export interface ImportUndoSummary {
+  students_deleted: number;
+  batches_deleted: number;
+  subjects_deleted: number;
+}
+
+// One distinct Batch code referenced by an upload — whether it already
+// exists and, if not, the course/exam-date derived from the Target column.
+export interface ImportPreviewBatch {
+  code: string;
+  student_count: number;
+  exists: boolean;
+  target: string | null;
+  suggested_course_code: string | null;
+  suggested_course_name: string | null;
+  suggested_exam_date: string | null;
+  // Whether auto-create would succeed for a missing code, and why not.
+  // Existing batches are always creatable=true, blocker=null.
+  creatable: boolean;
+  blocker: string | null;
+}
+
+// Dry-run of a student upload from POST /students/import/preview.
+export interface ImportPreview {
+  total_rows: number;
+  importable_rows: number;
+  rows_missing_name: number;
+  rows_invalid_enrolment: number;
+  // §3 cross-field contradictions (block) and non-blocking advisories.
+  rows_invalid_consistency: number;
+  rows_with_warnings: number;
+  duplicate_rows: number;
+  unbatched_rows: number;
+  existing_batches: number;
+  missing_batches: number;
+  blocked_batches: number;
+  // Set when the import can't run at all (e.g. no academic year on the branch).
+  blocking_error: string | null;
+  batches: ImportPreviewBatch[];
+  row_issues: string[];
 }
 
 export interface AcademicYearResponse {
