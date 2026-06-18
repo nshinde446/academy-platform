@@ -383,7 +383,11 @@ class TestStudentImportTraceabilityAndUndo:
             f"/api/v1/students/import/{import_id}/undo?branch_id={BRANCH}",
             cookies={"access_token": token},
         )
-        assert again.json() == {"students_deleted": 0, "batches_deleted": 0}
+        assert again.json() == {
+            "students_deleted": 0,
+            "batches_deleted": 0,
+            "subjects_deleted": 0,
+        }
 
     @pytest.mark.usefixtures("seed_data")
     async def test_undo_keeps_batch_that_has_other_students(
@@ -659,3 +663,189 @@ class TestStudentImportConsistency:
         assert data["rows_with_warnings"] == 1
         # The error row is not importable; the warning row still is.
         assert data["importable_rows"] == 1
+
+
+class TestStudentImportSubjectSkeleton:
+    """§8: a new course gets its subject skeleton from the Syllabus/Target, but
+    an existing course's subjects are never overwritten."""
+
+    @staticmethod
+    async def _course_subjects(db_session, code):
+        import uuid as _uuid
+
+        from sqlalchemy import select
+
+        from app.modules.academic.models.academic_models import Course, Subject
+
+        course = (
+            await db_session.execute(
+                select(Course).where(
+                    Course.code == code, Course.branch_id == _uuid.UUID(BRANCH)
+                )
+            )
+        ).scalar_one()
+        subs = (
+            await db_session.execute(
+                select(Subject).where(Subject.course_id == course.id)
+            )
+        ).scalars().all()
+        return {s.name for s in subs}
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_new_neet_batch_creates_subject_skeleton(
+        self, client, seed_data, db_session
+    ):
+        token = await _login(client)
+        content = _csv("Asha,11,NEET,SKEL-A,SK-001")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("s.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["subjects_created"] == 4
+        assert await self._course_subjects(db_session, "NEET") == {
+            "Physics",
+            "Chemistry",
+            "Botany",
+            "Zoology",
+        }
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_skeleton_created_once_per_course(self, client, seed_data):
+        token = await _login(client)
+        content = _csv(
+            "Asha,11,NEET,SK-A,SK-010",
+            "Bina,11,NEET,SK-B,SK-011",  # same NEET course, different batch
+        )
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("s.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert sorted(data["batches_created"]) == ["SK-A", "SK-B"]
+        # Both batches share the NEET course, so its skeleton is made just once.
+        assert data["subjects_created"] == 4
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_explicit_syllabus_overrides_subject_set(
+        self, client, seed_data, db_session
+    ):
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No,Syllabus\n"
+            "Cara,11,Other,OTH-A,SK-020,JEE\n"  # Other has no default set
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("s.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["subjects_created"] == 3
+        assert await self._course_subjects(db_session, "GEN") == {
+            "Physics",
+            "Chemistry",
+            "Mathematics",
+        }
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_mht_cet_without_syllabus_creates_no_subjects(
+        self, client, seed_data
+    ):
+        token = await _login(client)
+        content = _csv("Dev,11,MHT-CET,MHT-A,SK-030")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("s.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["batches_created"] == ["MHT-A"]
+        assert data["subjects_created"] == 0  # ambiguous stream, no guess
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_neet_with_pcm_syllabus_is_error(self, client, seed_data):
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No,Syllabus\n"
+            "Eve,11,NEET,BATCH-A,SK-040,PCM\n"  # NEET needs biology
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("s.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["imported"] == 0
+        assert any("needs a Biology syllabus" in e for e in data["errors"])
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_undo_removes_skeleton_but_keeps_chaptered_subject(
+        self, client, seed_data, db_session
+    ):
+        import uuid as _uuid
+
+        from sqlalchemy import select
+
+        from app.modules.academic.models.academic_models import (
+            Chapter,
+            Course,
+            Subject,
+        )
+
+        token = await _login(client)
+        content = _csv("Fae,11,NEET,UND-SK,SK-050")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("s.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        import_id = data["import_id"]
+        assert data["subjects_created"] == 4
+
+        # A syllabus import later loads a chapter onto one subject.
+        course = (
+            await db_session.execute(
+                select(Course).where(
+                    Course.code == "NEET", Course.branch_id == _uuid.UUID(BRANCH)
+                )
+            )
+        ).scalar_one()
+        physics = (
+            await db_session.execute(
+                select(Subject).where(
+                    Subject.course_id == course.id, Subject.name == "Physics"
+                )
+            )
+        ).scalar_one()
+        db_session.add(
+            Chapter(
+                id=_uuid.uuid4(),
+                branch_id=_uuid.UUID(BRANCH),
+                academic_year_id=physics.academic_year_id,
+                subject_id=physics.id,
+                name="Kinematics",
+                order=0,
+                is_deleted=False,
+            )
+        )
+        await db_session.commit()
+
+        undo = await client.post(
+            f"/api/v1/students/import/{import_id}/undo?branch_id={BRANCH}",
+            cookies={"access_token": token},
+        )
+        u = undo.json()
+        # The 3 bare subjects go; Physics (now has a chapter) is protected.
+        assert u["subjects_deleted"] == 3
+        remaining = (
+            await db_session.execute(
+                select(Subject).where(
+                    Subject.course_id == course.id, Subject.is_deleted == False
+                )
+            )
+        ).scalars().all()
+        assert {s.name for s in remaining} == {"Physics"}

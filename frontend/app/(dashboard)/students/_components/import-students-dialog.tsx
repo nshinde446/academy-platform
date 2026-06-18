@@ -174,7 +174,12 @@ const SAMPLE_ROWS: string[][] = [
 // length, and intake year, set them here and a newly-created batch uses them.
 // Left blank, the batch falls back to Target-derived defaults (a 1-year course
 // in the branch's current academic year).
-const OPTIONAL_OVERRIDE_HEADERS = ["Course_opt", "Duration", "Academic_year"];
+const OPTIONAL_OVERRIDE_HEADERS = [
+  "Course_opt",
+  "Duration",
+  "Academic_year",
+  "Syllabus",
+];
 
 function downloadSampleTemplate() {
   const headers = [...SAMPLE_HEADERS, ...OPTIONAL_OVERRIDE_HEADERS];
@@ -182,8 +187,8 @@ function downloadSampleTemplate() {
   // empty so the example reads as "these are optional".
   const rows = SAMPLE_ROWS.map((r, i) =>
     i === 0
-      ? [...r, "NEET 2-Year", "2 Years", "2025-2027"]
-      : [...r, "", "", ""],
+      ? [...r, "NEET 2-Year", "2 Years", "2025-2027", "NEET"]
+      : [...r, "", "", "", ""],
   );
   downloadCsvTemplate("students-import-template.csv", headers, rows);
 }
@@ -339,9 +344,11 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
           Phone, Parent Mobile, Gender, District, Caste, Username, RFIDNumber.{" "}
           To control how a <strong>new</strong> batch is built, also add{" "}
           <strong>Course_opt</strong> (course name),{" "}
-          <strong>Duration</strong> (e.g. 1 Year / 2 Years), and{" "}
-          <strong>Academic_year</strong> (e.g. 2025-2027) — left blank, batches
-          fall back to a 1-year course in the current year.
+          <strong>Duration</strong> (e.g. 1 Year / 2 Years),{" "}
+          <strong>Academic_year</strong> (e.g. 2025-2027), and{" "}
+          <strong>Syllabus</strong> (e.g. NEET / JEE / PCMB) — left blank,
+          batches fall back to a 1-year course in the current year with subjects
+          derived from Target.
         </DialogDescription>
 
         <div className="mt-4 flex flex-col gap-4">
@@ -531,6 +538,8 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                 <p className="mt-1 text-xs text-muted-foreground">
                   Created {summary.batches_created.length} batch(es):{" "}
                   {summary.batches_created.join(", ")}
+                  {summary.subjects_created > 0 &&
+                    ` · ${summary.subjects_created} subject(s) for new course(s)`}
                 </p>
               )}
               {summary.errors.length > 0 && (
@@ -563,6 +572,8 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                   Undone — removed {undone.students_deleted} student(s)
                   {undone.batches_deleted > 0 &&
                     ` and ${undone.batches_deleted} auto-created batch(es)`}
+                  {undone.subjects_deleted > 0 &&
+                    ` and ${undone.subjects_deleted} subject(s)`}
                   .
                 </p>
               )}

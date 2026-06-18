@@ -107,6 +107,8 @@ class ImportSummary(BaseModel):
     # Codes of batches auto-created during this import (when the admin
     # opted into "create missing batches").
     batches_created: list[str] = []
+    # How many subject skeleton rows were auto-created for new courses (§8).
+    subjects_created: int = 0
     # Handle to undo this import as a unit (design §9). Null when nothing
     # persisted, so the UI only offers undo when there's something to undo.
     import_id: uuid.UUID | None = None
@@ -117,6 +119,7 @@ class ImportUndoSummary(BaseModel):
 
     students_deleted: int
     batches_deleted: int
+    subjects_deleted: int = 0
 
 
 class ImportPreviewBatch(BaseModel):

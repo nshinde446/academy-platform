@@ -348,6 +348,40 @@ def _validate_row_consistency(
             f"supported, enrolling as-is"
         )
 
+    # Target × Syllabus conflicts (§3): only when an explicit Syllabus is given.
+    syllabus_raw = overrides.get("syllabus")
+    if syllabus_raw:
+        key = _SYLLABUS_ALIASES.get(syllabus_raw.strip().lower())
+        if key is None:
+            warnings.append(
+                f"Unrecognized Syllabus '{syllabus_raw}' — no subjects will be "
+                f"auto-created for this batch"
+            )
+        else:
+            subjects = {s.lower() for s in SUBJECT_SETS.get(key, [])}
+            has_bio = bool(subjects & _BIO_SUBJECTS)
+            has_maths = bool(subjects & _MATHS_SUBJECTS)
+            if tgt == "NEET" and not has_bio:
+                errors.append(
+                    f"Target NEET needs a Biology syllabus, but Syllabus "
+                    f"'{syllabus_raw}' has none"
+                )
+            if tgt in {"JEE-Main", "JEE-Advanced"} and not has_maths:
+                errors.append(
+                    f"Target {tgt} needs Maths, but Syllabus '{syllabus_raw}' "
+                    f"has none"
+                )
+            if tgt == "Both" and not (has_bio and has_maths):
+                errors.append(
+                    f"Target Both needs PCMB (incl. Biology and Maths), but "
+                    f"Syllabus '{syllabus_raw}' is incomplete"
+                )
+            if tgt == "NEET" and has_maths:
+                warnings.append(
+                    "Target NEET with a Maths syllabus — extra Maths the "
+                    "student won't sit (allowed but inefficient)"
+                )
+
     return errors, warnings
 
 
@@ -805,13 +839,17 @@ async def preview_import(
             code_display.setdefault(norm, str(code).strip())
             code_counts[norm] += 1
             code_targets.setdefault(norm, Counter())
-            if target:
-                code_targets[norm][target] += 1
-            _merge_overrides(code_overrides.setdefault(norm, {}), row_ov)
-            _track_override_values(
-                code_override_values.setdefault(norm, {}), row_ov
-            )
+            # Only rows that will actually be imported drive the batch's derived
+            # course / overrides — a row we're going to skip (bad enrolment, a
+            # §3 contradiction, or a duplicate) must not skew the Target or
+            # fabricate an override conflict that blocks the valid rows.
             if will_import:
+                if target:
+                    code_targets[norm][target] += 1
+                _merge_overrides(code_overrides.setdefault(norm, {}), row_ov)
+                _track_override_values(
+                    code_override_values.setdefault(norm, {}), row_ov
+                )
                 code_ok_counts[norm] += 1
         else:
             unbatched_rows += 1
@@ -949,6 +987,10 @@ async def import_students(
         # code whose rows disagree can be rejected instead of silently guessed.
         code_overrides: dict[str, dict[str, str]] = {}
         code_override_values: dict[str, dict[str, set[str]]] = {}
+        # Mirror the main loop's skip logic (invalid enrolment, §3 contradiction,
+        # duplicate) so a row we're going to skip never drives a batch's derived
+        # course or fabricates an override conflict that blocks the valid rows.
+        seen_e, seen_m = set(seen_enrols), set(seen_emails)
         for row in rows:
             kwargs = _row_to_student_kwargs(row, branch_id, academic_year_id)
             if kwargs is None:
@@ -956,8 +998,28 @@ async def import_students(
             code = kwargs.get("_batch_code")
             if not code:
                 continue
-            norm = _norm_code(str(code))
+            try:
+                _validate_enrolment_fields(
+                    kwargs.get("standard"), kwargs.get("target_exam")
+                )
+            except HTTPException:
+                continue
             row_ov = _row_overrides(row)
+            c_errors, _ = _validate_row_consistency(
+                kwargs.get("standard"), kwargs.get("target_exam"), row_ov
+            )
+            if c_errors:
+                continue
+            enr_key, em_key = _dup_keys(kwargs)
+            if (enr_key is not None and enr_key in seen_e) or (
+                em_key is not None and em_key in seen_m
+            ):
+                continue
+            if enr_key is not None:
+                seen_e.add(enr_key)
+            if em_key is not None:
+                seen_m.add(em_key)
+            norm = _norm_code(str(code))
             _merge_overrides(code_overrides.setdefault(norm, {}), row_ov)
             _track_override_values(
                 code_override_values.setdefault(norm, {}), row_ov

@@ -126,6 +126,8 @@ export interface ImportSummary {
   // Non-blocking §3 advisories for rows that were still imported.
   warnings: string[];
   batches_created: string[];
+  // Subject skeleton rows auto-created for new courses (§8).
+  subjects_created: number;
   // Handle to undo this import as a unit. Null when nothing persisted.
   import_id: string | null;
 }
@@ -133,6 +135,7 @@ export interface ImportSummary {
 export interface ImportUndoSummary {
   students_deleted: number;
   batches_deleted: number;
+  subjects_deleted: number;
 }
 
 // One distinct Batch code referenced by an upload — whether it already

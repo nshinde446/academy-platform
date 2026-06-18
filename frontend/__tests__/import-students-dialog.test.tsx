@@ -67,6 +67,7 @@ describe("ImportStudentsDialog", () => {
     expect(text).toContain("Course_opt");
     expect(text).toContain("Duration");
     expect(text).toContain("Academic_year");
+    expect(text).toContain("Syllabus");
     // Sample rows exercise common class / exam / batch values.
     expect(text).toMatch(/NEET/);
     expect(text).toMatch(/JEE-Main/);
@@ -154,6 +155,7 @@ describe("ImportStudentsDialog", () => {
         errors: [],
         warnings: [],
         batches_created: ["NEET-11-A"],
+        subjects_created: 4,
         import_id: "imp-1",
       },
     });
@@ -232,7 +234,7 @@ describe("ImportStudentsDialog", () => {
       },
     });
     post.mockResolvedValueOnce({
-      data: { students_deleted: 2, batches_deleted: 0 },
+      data: { students_deleted: 2, batches_deleted: 0, subjects_deleted: 0 },
     });
 
     renderDialog();

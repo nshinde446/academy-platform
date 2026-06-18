@@ -53,6 +53,11 @@ class Subject(BaseModel):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Set when a student import auto-created this subject as part of a course's
+    # skeleton, so "undo import" can reclaim it (only if no chapters loaded).
+    import_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, index=True
+    )
 
 
 class Chapter(BaseModel):
