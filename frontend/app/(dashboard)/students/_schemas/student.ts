@@ -99,6 +99,16 @@ export interface StudentUpdate {
   fees_status?: FeesStatus | null;
 }
 
+// Per-topic accuracy for the Tier 13 weakness map (weakest first).
+export interface StudentTopicMastery {
+  topic_id: string;
+  topic_name: string;
+  subject_name: string;
+  attempted: number;
+  correct: number;
+  accuracy_pct: number;
+}
+
 // One row per test the student has taken — powers /students/[id].
 export interface StudentTestHistoryRow {
   test_id: string;

@@ -163,6 +163,18 @@ class ImportPreview(BaseModel):
     row_issues: list[str] = []
 
 
+class StudentTopicMastery(BaseModel):
+    """Per-topic accuracy from a student's per-question responses — drives the
+    Tier 13 weakness map (weakest topics first)."""
+
+    topic_id: uuid.UUID
+    topic_name: str
+    subject_name: str
+    attempted: int
+    correct: int
+    accuracy_pct: float
+
+
 class StudentTestHistoryRow(BaseModel):
     """One row per test the student has taken — drives the per-student
     dashboard test series + rankings (Tier 13)."""

@@ -203,6 +203,61 @@ async def list_with_stats(
     return raw_rows
 
 
+async def get_topic_mastery(
+    session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
+) -> list[dict]:
+    """Per-topic accuracy for a student, aggregated from their per-question
+    responses (Tier 13 weakness map). Returns weakest topics first so the UI
+    can lead with where the student is struggling. Questions with no topic tag
+    are excluded (the inner join drops them)."""
+    from app.modules.academic.models.academic_models import Subject, Topic
+    from app.modules.tests.models.test_models import Question, StudentResponse
+
+    student = await get_by_id(session, student_id)
+    if student is None or student.branch_id != branch_id:
+        return []
+
+    rows = (
+        await session.execute(
+            select(
+                Topic.id,
+                Topic.name,
+                Subject.name,
+                func.count(StudentResponse.id),
+                func.count().filter(StudentResponse.is_correct == True),  # noqa: E712
+            )
+            .join(Question, StudentResponse.question_id == Question.id)
+            .join(Topic, Question.topic_id == Topic.id)
+            .join(Subject, Question.subject_id == Subject.id)
+            .where(
+                StudentResponse.student_id == student_id,
+                StudentResponse.is_deleted == False,  # noqa: E712
+            )
+            .group_by(Topic.id, Topic.name, Subject.name)
+        )
+    ).all()
+
+    out: list[dict] = []
+    for r in rows:
+        attempted = int(r[3] or 0)
+        correct = int(r[4] or 0)
+        out.append(
+            {
+                "topic_id": r[0],
+                "topic_name": r[1],
+                "subject_name": r[2],
+                "attempted": attempted,
+                "correct": correct,
+                "accuracy_pct": (
+                    round(100.0 * correct / attempted, 1) if attempted else 0.0
+                ),
+            }
+        )
+    # Weakest first: lowest accuracy, ties broken by most-attempted (most signal).
+    out.sort(key=lambda x: (x["accuracy_pct"], -x["attempted"]))
+    return out
+
+
 async def get_test_history(
     session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
 ) -> list[dict]:
