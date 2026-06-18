@@ -10,6 +10,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.academic import curriculum
 from app.modules.academic.repositories import academic_repository
 from app.modules.audit.services import audit_service
 from app.modules.batch.models.batch_models import Batch
@@ -574,7 +575,7 @@ async def _ensure_subject_skeleton(
     if existing:
         return 0
     for name in names:
-        await academic_repository.create_subject(
+        subject = await academic_repository.create_subject(
             session,
             branch_id=branch_id,
             academic_year_id=academic_year.id,
@@ -583,6 +584,32 @@ async def _ensure_subject_skeleton(
             code=_subject_code(name),
             import_id=import_id,
         )
+        # Populate chapters + topics from the bundled master curriculum so the
+        # new course isn't an empty skeleton. Tagged with import_id so undo can
+        # reclaim them; a later syllabus import that adds its own chapters then
+        # pins the subject (§7.4). Pairs with no sheet (Foundation) add nothing.
+        for ch_order, (ch_name, topics) in enumerate(
+            curriculum.chapters_for(syllabus_key or "", name)
+        ):
+            chapter = await academic_repository.create_chapter(
+                session,
+                branch_id=branch_id,
+                academic_year_id=academic_year.id,
+                subject_id=subject.id,
+                name=ch_name,
+                order=ch_order,
+                import_id=import_id,
+            )
+            for t_order, t_name in enumerate(topics):
+                await academic_repository.create_topic(
+                    session,
+                    branch_id=branch_id,
+                    academic_year_id=academic_year.id,
+                    chapter_id=chapter.id,
+                    name=t_name,
+                    order=t_order,
+                    import_id=import_id,
+                )
     return len(names)
 
 
@@ -1199,7 +1226,11 @@ async def undo_import(
     which have no other students left, and any subject skeleton it created on
     which no chapters have since been loaded. Scoped to the branch so an import
     id can't reach across branches. Idempotent — re-running finds nothing."""
-    from app.modules.academic.models.academic_models import Chapter, Subject
+    from app.modules.academic.models.academic_models import (
+        Chapter,
+        Subject,
+        Topic,
+    )
     students = (
         await session.execute(
             select(Student).where(
@@ -1257,8 +1288,27 @@ async def undo_import(
             batches_deleted += 1
     await session.flush()
 
-    # Subject skeletons this import created. Keep any a syllabus import has
-    # since built chapters on — only the bare skeleton is reclaimable (§7.4).
+    # Curriculum this import auto-populated: remove exactly what it created —
+    # its topics, then its chapters. A syllabus import (or the academic UI) that
+    # added its own chapters/topics leaves those untouched (their import_id is
+    # NULL / a different id).
+    for table in (Topic, Chapter):
+        rows = (
+            await session.execute(
+                select(table).where(
+                    table.import_id == import_id,
+                    table.branch_id == branch_id,
+                    table.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalars().all()
+        for r in rows:
+            r.is_deleted = True
+    await session.flush()
+
+    # Reclaim each subject this import created that now has no chapters left —
+    # i.e. nothing but the (now-removed) skeleton. A subject a syllabus import
+    # has since built its own chapters on is kept (§7.4).
     subjects = (
         await session.execute(
             select(Subject).where(
@@ -1271,7 +1321,7 @@ async def undo_import(
 
     subjects_deleted = 0
     for s in subjects:
-        chapter_count = (
+        remaining_chapters = (
             await session.execute(
                 select(func.count())
                 .select_from(Chapter)
@@ -1281,7 +1331,7 @@ async def undo_import(
                 )
             )
         ).scalar_one()
-        if chapter_count == 0:
+        if remaining_chapters == 0:
             s.is_deleted = True
             subjects_deleted += 1
     await session.flush()

@@ -878,3 +878,78 @@ class TestStudentImportSubjectSkeleton:
             )
         ).scalars().all()
         assert {s.name for s in remaining} == {"Physics"}
+
+
+class TestStudentImportCurriculum:
+    """§3 syllabus auto-population: a new course's subjects get chapters +
+    topics from the bundled master curriculum, and undo reclaims them."""
+
+    @staticmethod
+    async def _live_chapter_count(db_session, course_code: str) -> int:
+        import uuid as _uuid
+
+        from sqlalchemy import func, select
+
+        from app.modules.academic.models.academic_models import (
+            Chapter,
+            Course,
+            Subject,
+        )
+
+        course = (
+            await db_session.execute(
+                select(Course).where(
+                    Course.code == course_code,
+                    Course.branch_id == _uuid.UUID(BRANCH),
+                )
+            )
+        ).scalar_one()
+        return (
+            await db_session.execute(
+                select(func.count())
+                .select_from(Chapter)
+                .join(Subject, Chapter.subject_id == Subject.id)
+                .where(
+                    Subject.course_id == course.id,
+                    Chapter.is_deleted == False,
+                )
+            )
+        ).scalar_one()
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_import_populates_chapters_from_master_curriculum(
+        self, client, seed_data, db_session
+    ):
+        token = await _login(client)
+        content = _csv("Asha,11,NEET,CUR-A,CU-001")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("s.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        assert resp.json()["batches_created"] == ["CUR-A"]
+        # The NEET course's subjects now carry real chapters, not a bare skeleton.
+        assert await self._live_chapter_count(db_session, "NEET") > 0
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_undo_reclaims_auto_populated_curriculum(
+        self, client, seed_data, db_session
+    ):
+        token = await _login(client)
+        content = _csv("Bina,11,NEET,CUR-B,CU-002")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("s.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        import_id = resp.json()["import_id"]
+        assert await self._live_chapter_count(db_session, "NEET") > 0
+
+        undo = await client.post(
+            f"/api/v1/students/import/{import_id}/undo?branch_id={BRANCH}",
+            cookies={"access_token": token},
+        )
+        assert undo.json()["subjects_deleted"] == 4
+        # No foreign chapters were added, so all auto-created curriculum is gone.
+        await db_session.commit()  # refresh snapshot to see undo's commit
+        assert await self._live_chapter_count(db_session, "NEET") == 0
