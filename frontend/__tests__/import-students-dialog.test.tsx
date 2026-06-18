@@ -152,6 +152,7 @@ describe("ImportStudentsDialog", () => {
         imported: 2,
         skipped: 0,
         errors: [],
+        warnings: [],
         batches_created: ["NEET-11-A"],
         import_id: "imp-1",
       },
@@ -225,6 +226,7 @@ describe("ImportStudentsDialog", () => {
         imported: 2,
         skipped: 0,
         errors: [],
+        warnings: [],
         batches_created: [],
         import_id: "imp-42",
       },
@@ -259,6 +261,77 @@ describe("ImportStudentsDialog", () => {
     expect(
       screen.queryByRole("button", { name: /undo import/i }),
     ).toBeNull();
+  });
+
+  it("surfaces §3 warnings on an otherwise successful import", async () => {
+    const user = userEvent.setup();
+    const post = apiClient.post as ReturnType<typeof vi.fn>;
+    post.mockResolvedValueOnce({
+      data: {
+        total_rows: 1,
+        importable_rows: 1,
+        rows_missing_name: 0,
+        rows_invalid_enrolment: 0,
+        rows_invalid_consistency: 0,
+        rows_with_warnings: 1,
+        duplicate_rows: 0,
+        unbatched_rows: 0,
+        existing_batches: 1,
+        missing_batches: 0,
+        blocked_batches: 0,
+        blocking_error: null,
+        batches: [
+          {
+            code: "BATCH-A",
+            student_count: 1,
+            exists: true,
+            target: "NEET",
+            suggested_course_code: null,
+            suggested_course_name: null,
+            suggested_exam_date: null,
+            creatable: true,
+            blocker: null,
+          },
+        ],
+        row_issues: [
+          "Row 2: warning — Class 9 targeting NEET — Foundation remap not yet supported, enrolling as-is",
+        ],
+      },
+    });
+    post.mockResolvedValueOnce({
+      data: {
+        imported: 1,
+        skipped: 0,
+        errors: [],
+        warnings: [
+          "Row 2: Class 9 targeting NEET — Foundation remap not yet supported, enrolling as-is",
+        ],
+        batches_created: [],
+        import_id: "imp-w",
+      },
+    });
+
+    renderDialog();
+    await user.click(screen.getByRole("button", { name: /import students/i }));
+    await user.upload(
+      screen.getByLabelText(/file/i) as HTMLInputElement,
+      new File(["Name\nfoo"], "x.csv", { type: "text/csv" }),
+    );
+    await user.click(screen.getByRole("button", { name: /preview import/i }));
+    // Preview already calls out the warning row.
+    expect(
+      await screen.findByText(/1 row\(s\) have warnings/i),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^import$/i }));
+    await waitFor(() => {
+      expect(
+        screen.getByText(/imported with 1 warning/i),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.getAllByText(/Class 9 targeting NEET/i).length,
+    ).toBeGreaterThan(0);
   });
 
   it("flags batches that can't be auto-created in the preview", async () => {
@@ -349,6 +422,7 @@ describe("ImportStudentsDialog", () => {
           "Row 2: Invalid target_exam 'JEE'.",
           "Row 3: unknown batch code 'MHT-11-A'",
         ],
+        warnings: [],
         batches_created: [],
       },
     });

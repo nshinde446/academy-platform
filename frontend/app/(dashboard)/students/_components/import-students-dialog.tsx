@@ -394,6 +394,7 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                 </p>
                 {(preview.rows_missing_name > 0 ||
                   preview.rows_invalid_enrolment > 0 ||
+                  preview.rows_invalid_consistency > 0 ||
                   preview.duplicate_rows > 0) && (
                   <p className="mt-1 text-xs text-amber-600">
                     {[
@@ -401,12 +402,20 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                         `${preview.rows_missing_name} missing Name`,
                       preview.rows_invalid_enrolment > 0 &&
                         `${preview.rows_invalid_enrolment} invalid Class/Target`,
+                      preview.rows_invalid_consistency > 0 &&
+                        `${preview.rows_invalid_consistency} contradictory (e.g. 12th + 2-Year)`,
                       preview.duplicate_rows > 0 &&
                         `${preview.duplicate_rows} duplicate (already on file)`,
                     ]
                       .filter(Boolean)
                       .join(" · ")}{" "}
                     row(s) will be skipped.
+                  </p>
+                )}
+                {preview.rows_with_warnings > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {preview.rows_with_warnings} row(s) have warnings (imported
+                    anyway) — see the row notes below.
                   </p>
                 )}
               </div>
@@ -485,6 +494,14 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                   them will be skipped.
                 </p>
               )}
+
+              {preview.row_issues.length > 0 && (
+                <ul className="max-h-32 overflow-y-auto list-disc rounded-lg border border-border pl-6 pr-2 py-2 text-xs text-muted-foreground">
+                  {preview.row_issues.map((issue, i) => (
+                    <li key={i}>{issue}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 
@@ -525,6 +542,21 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                     <li>…and {summary.errors.length - 10} more</li>
                   )}
                 </ul>
+              )}
+              {summary.warnings.length > 0 && (
+                <div className="mt-2 text-xs text-amber-600">
+                  <p className="font-medium">
+                    Imported with {summary.warnings.length} warning(s):
+                  </p>
+                  <ul className="list-disc pl-5">
+                    {summary.warnings.slice(0, 10).map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                    {summary.warnings.length > 10 && (
+                      <li>…and {summary.warnings.length - 10} more</li>
+                    )}
+                  </ul>
+                </div>
               )}
               {undone && (
                 <p className="mt-2 text-xs font-medium text-muted-foreground">

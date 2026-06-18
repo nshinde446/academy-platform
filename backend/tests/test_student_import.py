@@ -558,3 +558,104 @@ class TestStudentImportOverrides:
         assert b["suggested_course_name"] == "NEET Deluxe"
         assert b["suggested_course_code"] == "NEET-2Y"
         assert b["creatable"] is True
+
+
+class TestStudentImportConsistency:
+    """§3 cross-field validation: contradictions are errors, soft mismatches
+    are warnings."""
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_class_12_two_year_is_error(self, client, seed_data):
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No,Duration\n"
+            "Sam P,12,NEET,BATCH-A,V-001,2 Years\n"  # 12th can't be 2-Year
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("v.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["imported"] == 0
+        assert data["skipped"] == 1
+        assert any("Class 12 must be a 1-Year" in e for e in data["errors"])
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_academic_year_span_must_match_duration(self, client, seed_data):
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No,Duration,Academic_year\n"
+            "Vik T,11,NEET,BATCH-A,V-002,2 Years,2025-2026\n"  # span 1 != dur 2
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("v.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["imported"] == 0
+        assert any("doesn't match Duration" in e for e in data["errors"])
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_class_9_targeting_neet_imports_with_warning(
+        self, client, seed_data
+    ):
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No\n"
+            "Tina Q,9,NEET,BATCH-A,V-003\n"  # 9th can't sit NEET yet
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("v.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["imported"] == 1  # imported anyway
+        assert any("Class 9 targeting NEET" in w for w in data["warnings"])
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_conflicting_overrides_for_one_code_block_creation(
+        self, client, seed_data
+    ):
+        """Two rows give the same batch code different Durations — the batch is
+        not guessed; both rows report the disagreement."""
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No,Duration\n"
+            "Uma R,11,NEET,MIX-1,V-004,1 Year\n"
+            "Ravi S,11,NEET,MIX-1,V-005,2 Years\n"
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("v.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["imported"] == 0
+        assert data["batches_created"] == []
+        assert any(
+            "rows disagree on Duration" in e for e in data["errors"]
+        )
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_preview_counts_consistency_errors_and_warnings(
+        self, client, seed_data
+    ):
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No,Duration\n"
+            "Sam P,12,NEET,BATCH-A,V-010,2 Years\n"  # error
+            "Tina Q,9,NEET,BATCH-A,V-011\n"           # warning
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import/preview?branch_id={BRANCH}",
+            files={"file": ("v.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["rows_invalid_consistency"] == 1
+        assert data["rows_with_warnings"] == 1
+        # The error row is not importable; the warning row still is.
+        assert data["importable_rows"] == 1

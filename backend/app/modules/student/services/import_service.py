@@ -76,6 +76,77 @@ TARGET_EXAM_MONTH_DAY: dict[str, tuple[int, int]] = {
     "Both": (5, 4),
 }
 
+# Subject skeletons per syllabus (design §2/§5). DEFAULTS the coaching can edit
+# — §6 leaves Biology-vs-Botany/Zoology and the MHT-CET stream split as open
+# decisions, so we only auto-create for the unambiguous tracks and skip the
+# rest (no subjects rather than a wrong guess).
+SUBJECT_SETS: dict[str, list[str]] = {
+    "NEET": ["Physics", "Chemistry", "Botany", "Zoology"],
+    "JEE": ["Physics", "Chemistry", "Mathematics"],
+    "PCMB": ["Physics", "Chemistry", "Mathematics", "Biology"],
+    "MHT-CET-PCM": ["Physics", "Chemistry", "Mathematics"],
+    "MHT-CET-PCB": ["Physics", "Chemistry", "Biology"],
+    "FOUNDATION": ["Science", "Mathematics", "Mental Ability"],
+}
+
+# Target -> default syllabus key when the row has no explicit Syllabus. MHT-CET
+# and Other are intentionally absent: their subject set is ambiguous (§6), so
+# without an explicit Syllabus we create no subjects.
+TARGET_SYLLABUS: dict[str, str] = {
+    "NEET": "NEET",
+    "JEE-Main": "JEE",
+    "JEE-Advanced": "JEE",
+    "Both": "PCMB",
+    "Foundation": "FOUNDATION",
+}
+
+# Free-text Syllabus values normalized to a SUBJECT_SETS key.
+_SYLLABUS_ALIASES: dict[str, str] = {
+    "neet": "NEET",
+    "pcb": "NEET",
+    "jee": "JEE",
+    "pcm": "JEE",
+    "pcmb": "PCMB",
+    "both": "PCMB",
+    "mht-cet-pcm": "MHT-CET-PCM",
+    "mhtcet-pcm": "MHT-CET-PCM",
+    "mht-cet-pcb": "MHT-CET-PCB",
+    "mhtcet-pcb": "MHT-CET-PCB",
+    "foundation": "FOUNDATION",
+}
+
+_SUBJECT_CODES: dict[str, str] = {
+    "Physics": "PHY",
+    "Chemistry": "CHE",
+    "Mathematics": "MAT",
+    "Biology": "BIO",
+    "Botany": "BOT",
+    "Zoology": "ZOO",
+    "Science": "SCI",
+    "Mental Ability": "MA",
+}
+
+# Subjects that satisfy a target's exam requirement, for §3 Target×Syllabus
+# consistency: NEET needs a biology subject, JEE needs maths.
+_BIO_SUBJECTS = {"biology", "botany", "zoology"}
+_MATHS_SUBJECTS = {"mathematics", "maths"}
+
+
+def _syllabus_key(syllabus: str | None, target: str | None) -> str | None:
+    """Resolve the subject-set key: explicit Syllabus wins, else the Target
+    default. Returns None when the set is ambiguous/unknown (skip subjects)."""
+    if syllabus:
+        return _SYLLABUS_ALIASES.get(syllabus.strip().lower())
+    return TARGET_SYLLABUS.get(target or "")
+
+
+def _subjects_for(key: str | None) -> list[str]:
+    return SUBJECT_SETS.get(key or "", [])
+
+
+def _subject_code(name: str) -> str:
+    return _SUBJECT_CODES.get(name, name[:3].upper())
+
 
 def _split_name(value: str) -> tuple[str, str]:
     parts = value.strip().split(maxsplit=1)
@@ -129,6 +200,7 @@ _OVERRIDE_HEADERS = {
     "duration": "duration",
     "academic_year": "academic_year",
     "academic year": "academic_year",
+    "syllabus": "syllabus",
 }
 
 
@@ -233,8 +305,8 @@ def _validate_row_consistency(
     overrides: dict[str, str] | None,
 ) -> tuple[list[str], list[str]]:
     """Return (errors, warnings) for one row given its class, target, and
-    override columns. Mirrors the §3 matrix for the cases that don't depend on
-    the (not-yet-supported) Syllabus column."""
+    override columns. Mirrors the §3 matrix, including the Target×Syllabus
+    conflicts when an explicit Syllabus is given."""
     errors: list[str] = []
     warnings: list[str] = []
     overrides = overrides or {}
@@ -446,6 +518,40 @@ async def _get_or_create_course(
     )
 
 
+async def _ensure_subject_skeleton(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    course,
+    academic_year,
+    syllabus_key: str | None,
+    import_id: uuid.UUID | None,
+) -> int:
+    """Create the course's subject skeleton from the resolved syllabus (design
+    §4 step 3). The §8 protection: only ever create when the course has *no*
+    subjects yet — never overwrite an existing skeleton or a curriculum that a
+    syllabus import has since loaded (§7.4). Returns how many were created.
+
+    Matched by ``(course, name)`` ignoring AY, so the later syllabus import
+    finds and reuses these subjects when it attaches chapters."""
+    names = _subjects_for(syllabus_key)
+    if not names:
+        return 0
+    existing = await academic_repository.list_subjects(session, branch_id, course.id)
+    if existing:
+        return 0
+    for name in names:
+        await academic_repository.create_subject(
+            session,
+            branch_id=branch_id,
+            academic_year_id=academic_year.id,
+            course_id=course.id,
+            name=name,
+            code=_subject_code(name),
+            import_id=import_id,
+        )
+    return len(names)
+
+
 async def _create_derived_batch(
     session: AsyncSession,
     branch_id: uuid.UUID,
@@ -457,11 +563,13 @@ async def _create_derived_batch(
     import_id: uuid.UUID | None = None,
     overrides: dict[str, str] | None = None,
     years: list | None = None,
-):
-    """Create a batch for an unknown code. Course, duration, intake year and
-    exam date come from the optional override columns (Course_opt / Duration /
-    Academic_year) when present, else are derived from the dominant Target.
-    Tagged with ``import_id`` so an "undo import" can reclaim it."""
+) -> tuple[Any, int]:
+    """Create a batch for an unknown code and its course's subject skeleton.
+    Course, duration, intake year and exam date come from the optional override
+    columns (Course_opt / Duration / Academic_year / Syllabus) when present,
+    else are derived from the dominant Target. Batch (and any subjects it
+    creates) are tagged with ``import_id`` so an "undo import" can reclaim them.
+    Returns ``(batch, subjects_created)``."""
     from app.modules.batch.schemas.batch_schemas import BatchCreate
     from app.modules.batch.services import batch_service
 
@@ -503,8 +611,12 @@ async def _create_derived_batch(
     )
     if import_id is not None:
         batch.import_id = import_id
-        await session.flush()
-    return batch
+    syllabus_key = _syllabus_key((overrides or {}).get("syllabus"), target)
+    subjects_created = await _ensure_subject_skeleton(
+        session, branch_id, course, start_ay, syllabus_key, import_id
+    )
+    await session.flush()
+    return batch, subjects_created
 
 
 def _missing_batch_blocker(
@@ -728,13 +840,14 @@ async def preview_import(
         exam_end_year = eff_start + duration if eff_start is not None else None
         # For a missing batch, check up front whether auto-create would fail,
         # so the admin sees the blocker before committing rather than after.
-        blocker = (
-            None
-            if exists
-            else _missing_batch_blocker(
+        # A code whose rows disagree on the overrides is itself a blocker.
+        blocker = None
+        if not exists:
+            blocker = _override_conflict(
+                code_override_values.get(norm, {})
+            ) or _missing_batch_blocker(
                 target, academic_year, courses_by_code, ay_start_years, ov
             )
-        )
         if blocker:
             blocked += 1
             # Rows pointing at a batch that cannot be created will be skipped,
@@ -776,6 +889,8 @@ async def preview_import(
         "importable_rows": max(importable_rows, 0),
         "rows_missing_name": rows_missing_name,
         "rows_invalid_enrolment": rows_invalid_enrolment,
+        "rows_invalid_consistency": rows_invalid_consistency,
+        "rows_with_warnings": rows_with_warnings,
         "duplicate_rows": duplicate_rows,
         "unbatched_rows": unbatched_rows,
         "existing_batches": existing,
@@ -818,6 +933,7 @@ async def import_students(
 
     batch_index = await _load_batch_index(session, branch_id)
     batches_created: list[str] = []
+    subjects_created = 0
     # norm code -> human reason a missing batch could NOT be created, so rows
     # pointing at it report *why* instead of a misleading "unknown batch code".
     batch_create_errors: dict[str, str] = {}
@@ -829,8 +945,10 @@ async def import_students(
     # course/exam-date is decided once per code from its dominant Target.
     if create_missing_batches:
         missing: dict[str, tuple[str, Counter]] = {}
-        # First-seen Course_opt / Duration / Academic_year override per code.
+        # First-seen override per code, plus the distinct values per field so a
+        # code whose rows disagree can be rejected instead of silently guessed.
         code_overrides: dict[str, dict[str, str]] = {}
+        code_override_values: dict[str, dict[str, set[str]]] = {}
         for row in rows:
             kwargs = _row_to_student_kwargs(row, branch_id, academic_year_id)
             if kwargs is None:
@@ -839,8 +957,10 @@ async def import_students(
             if not code:
                 continue
             norm = _norm_code(str(code))
-            _merge_overrides(
-                code_overrides.setdefault(norm, {}), _row_overrides(row)
+            row_ov = _row_overrides(row)
+            _merge_overrides(code_overrides.setdefault(norm, {}), row_ov)
+            _track_override_values(
+                code_override_values.setdefault(norm, {}), row_ov
             )
             if norm in batch_index:
                 continue
@@ -852,13 +972,19 @@ async def import_students(
                 counter[target] += 1
 
         for norm, (display, counter) in missing.items():
+            # Rows that disagree on this code's overrides are a hard error —
+            # don't guess; rows fall through to "couldn't create batch — …".
+            conflict = _override_conflict(code_override_values.get(norm, {}))
+            if conflict:
+                batch_create_errors[norm] = conflict
+                continue
             # Each creation runs in its own savepoint: a failure (e.g. a
             # missing academic year for the derived course's span) rolls back
             # just this batch + any course it created, leaving the outer
             # import transaction usable for the remaining rows.
             try:
                 async with session.begin_nested():
-                    batch = await _create_derived_batch(
+                    batch, subj_n = await _create_derived_batch(
                         session,
                         branch_id,
                         display,
@@ -872,6 +998,7 @@ async def import_students(
                     )
                 batch_index[norm] = batch.id
                 batches_created.append(display)
+                subjects_created += subj_n
             except HTTPException as exc:
                 batch_create_errors[norm] = str(exc.detail)
             except Exception as exc:  # noqa: BLE001
@@ -880,6 +1007,7 @@ async def import_students(
     imported = 0
     skipped = 0
     errors: list[str] = []
+    warnings: list[str] = []
 
     for idx, row in enumerate(rows, start=2):  # row 1 is header
         rownum = _row_number(row, idx)
@@ -898,6 +1026,16 @@ async def import_students(
             skipped += 1
             errors.append(f"Row {rownum}: {exc.detail}")
             continue
+
+        # §3 cross-field checks: contradictions skip the row; warnings pass.
+        c_errors, c_warnings = _validate_row_consistency(
+            kwargs.get("standard"), kwargs.get("target_exam"), _row_overrides(row)
+        )
+        if c_errors:
+            skipped += 1
+            errors.append(f"Row {rownum}: {'; '.join(c_errors)}")
+            continue
+        warnings.extend(f"Row {rownum}: {w}" for w in c_warnings)
 
         enr_key, em_key = _dup_keys(kwargs)
         if (enr_key is not None and enr_key in seen_enrols) or (
@@ -969,6 +1107,7 @@ async def import_students(
             "imported": imported,
             "skipped": skipped,
             "batches_created": batches_created,
+            "subjects_created": subjects_created,
         },
         ip_address=ip_address,
         branch_id=branch_id,
@@ -978,7 +1117,9 @@ async def import_students(
         "imported": imported,
         "skipped": skipped,
         "errors": errors,
+        "warnings": warnings,
         "batches_created": batches_created,
+        "subjects_created": subjects_created,
         # Only hand back an undo handle when rows actually persisted.
         "import_id": import_id if imported > 0 else None,
     }
@@ -993,8 +1134,10 @@ async def undo_import(
 ) -> dict[str, Any]:
     """Reverse a bulk import: soft-delete the students it created (and their
     batch mappings), then soft-delete any batches that import auto-created
-    which have no other students left. Scoped to the branch so an import id
-    can't reach across branches. Idempotent — re-running finds nothing."""
+    which have no other students left, and any subject skeleton it created on
+    which no chapters have since been loaded. Scoped to the branch so an import
+    id can't reach across branches. Idempotent — re-running finds nothing."""
+    from app.modules.academic.models.academic_models import Chapter, Subject
     students = (
         await session.execute(
             select(Student).where(
@@ -1052,6 +1195,35 @@ async def undo_import(
             batches_deleted += 1
     await session.flush()
 
+    # Subject skeletons this import created. Keep any a syllabus import has
+    # since built chapters on — only the bare skeleton is reclaimable (§7.4).
+    subjects = (
+        await session.execute(
+            select(Subject).where(
+                Subject.import_id == import_id,
+                Subject.branch_id == branch_id,
+                Subject.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalars().all()
+
+    subjects_deleted = 0
+    for s in subjects:
+        chapter_count = (
+            await session.execute(
+                select(func.count())
+                .select_from(Chapter)
+                .where(
+                    Chapter.subject_id == s.id,
+                    Chapter.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalar_one()
+        if chapter_count == 0:
+            s.is_deleted = True
+            subjects_deleted += 1
+    await session.flush()
+
     await audit_service.log_action(
         session,
         user_id=current_user_id,
@@ -1062,6 +1234,7 @@ async def undo_import(
             "import_id": str(import_id),
             "students_deleted": len(students),
             "batches_deleted": batches_deleted,
+            "subjects_deleted": subjects_deleted,
         },
         ip_address=ip_address,
         branch_id=branch_id,
@@ -1070,4 +1243,5 @@ async def undo_import(
     return {
         "students_deleted": len(students),
         "batches_deleted": batches_deleted,
+        "subjects_deleted": subjects_deleted,
     }

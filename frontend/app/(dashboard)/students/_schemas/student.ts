@@ -123,6 +123,8 @@ export interface ImportSummary {
   imported: number;
   skipped: number;
   errors: string[];
+  // Non-blocking §3 advisories for rows that were still imported.
+  warnings: string[];
   batches_created: string[];
   // Handle to undo this import as a unit. Null when nothing persisted.
   import_id: string | null;
@@ -155,6 +157,9 @@ export interface ImportPreview {
   importable_rows: number;
   rows_missing_name: number;
   rows_invalid_enrolment: number;
+  // §3 cross-field contradictions (block) and non-blocking advisories.
+  rows_invalid_consistency: number;
+  rows_with_warnings: number;
   duplicate_rows: number;
   unbatched_rows: number;
   existing_batches: number;

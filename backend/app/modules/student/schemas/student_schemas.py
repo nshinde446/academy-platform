@@ -101,6 +101,9 @@ class ImportSummary(BaseModel):
     imported: int
     skipped: int
     errors: list[str] = []
+    # Non-blocking §3 advisories (e.g. 9th/10th targeting NEET) for rows that
+    # were still imported.
+    warnings: list[str] = []
     # Codes of batches auto-created during this import (when the admin
     # opted into "create missing batches").
     batches_created: list[str] = []
@@ -142,6 +145,9 @@ class ImportPreview(BaseModel):
     importable_rows: int
     rows_missing_name: int
     rows_invalid_enrolment: int
+    # §3 cross-field contradictions that block a row, and non-blocking advisories.
+    rows_invalid_consistency: int = 0
+    rows_with_warnings: int = 0
     duplicate_rows: int = 0
     unbatched_rows: int
     existing_batches: int
