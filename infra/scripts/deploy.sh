@@ -75,7 +75,15 @@ echo "==> docker compose pull (backend: $BACKEND_IMAGE, frontend: $FRONTEND_IMAG
 docker compose -p "$PROJECT" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" pull
 
 echo "==> docker compose up -d (migrations run as one-shot, then backend/worker restart)"
-docker compose -p "$PROJECT" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --remove-orphans
+if ! docker compose -p "$PROJECT" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --remove-orphans; then
+    # 'up' fails if the one-shot 'migrate' (alembic upgrade head) exits non-zero
+    # and backend/worker can't start. Surface the migrate + backend logs in the
+    # CI output so the actual traceback is visible without SSH to the host.
+    echo "FAIL: '$ENV' compose up failed — dumping migrate + backend logs:" >&2
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" logs --tail=120 migrate || true
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" logs --tail=60 backend || true
+    exit 5
+fi
 
 echo "==> wait for backend healthcheck (max 60s)"
 deadline=$(( $(date +%s) + 60 ))
