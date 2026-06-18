@@ -644,6 +644,35 @@ class TestStudentImportConsistency:
         )
 
     @pytest.mark.usefixtures("seed_data")
+    async def test_skipped_row_does_not_poison_batch_overrides(
+        self, client, seed_data
+    ):
+        """Review #1: a row that will be skipped (here a §3 contradiction) must
+        not contribute its Duration to a batch's override-conflict detection and
+        block the valid rows that share the code. The valid row creates a
+        1-Year batch; without the fix the skipped row's '2 Years' fabricated a
+        Duration conflict that blocked it."""
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No,Duration\n"
+            "Valid Vidya,12,NEET,POISON-A,P-1,1 Year\n"   # valid -> 1-year batch
+            "Bad Bharat,12,NEET,POISON-A,P-2,2 Years\n"   # §3 error -> skipped
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("v.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        # The skipped row's conflicting Duration must NOT block the batch.
+        assert data["batches_created"] == ["POISON-A"]
+        assert data["imported"] == 1
+        # The bad row is reported as a §3 error; the valid row is never blamed
+        # for a fabricated "rows disagree" conflict.
+        assert any("1-Year" in e for e in data["errors"])
+        assert not any("disagree" in e for e in data["errors"])
+
+    @pytest.mark.usefixtures("seed_data")
     async def test_preview_counts_consistency_errors_and_warnings(
         self, client, seed_data
     ):
