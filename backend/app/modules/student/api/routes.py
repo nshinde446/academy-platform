@@ -8,6 +8,7 @@ from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.student.schemas.student_schemas import (
     ImportPreview,
     ImportSummary,
+    ImportUndoSummary,
     StudentCreate,
     StudentResponse,
     StudentTestHistoryRow,
@@ -126,6 +127,26 @@ async def import_students(
         branch_id,
         current_user["user_id"],
         create_missing_batches=create_missing_batches,
+        ip_address=request.client.host if request.client else None,
+    )
+
+
+@router.post("/import/{import_id}/undo", response_model=ImportUndoSummary)
+async def undo_import_students(
+    import_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Reverse a bulk import as a unit: soft-delete the students it created
+    (and their batch mappings) and reclaim any batches it auto-created that
+    have no other students. Idempotent."""
+    return await import_service.undo_import(
+        session,
+        import_id,
+        branch_id,
+        current_user["user_id"],
         ip_address=request.client.host if request.client else None,
     )
 

@@ -42,6 +42,21 @@ class Student(BaseModel):
     # Fees status surfaced as a Paid / Due badge on the students table.
     # Allowed: paid | due | overdue | partial
     fees_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Traceability for bulk imports (design §9): groups every student created
+    # in one upload so the import can be audited and undone as a unit. Null for
+    # students added through the single-student form.
+    import_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, index=True
+    )
+    import_source_file: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    # Reserved for the §3 class-remap rule: when a 9th/10th NEET/JEE aspirant is
+    # stored as Foundation, the original ambition is kept here (not derivable
+    # from standard/target afterwards). Unpopulated until that rule ships.
+    aspiration_target: Mapped[str | None] = mapped_column(
+        String(40), nullable=True
+    )
 
 
 class StudentIdentity(BaseModel):

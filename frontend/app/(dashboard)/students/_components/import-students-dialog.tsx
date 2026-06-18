@@ -16,7 +16,11 @@ import {
 } from "@/components/ui/dialog";
 import { downloadCsvTemplate } from "@/lib/csv-template";
 import { studentKeys } from "../_hooks/use-students";
-import type { ImportPreview, ImportSummary } from "../_schemas/student";
+import type {
+  ImportPreview,
+  ImportSummary,
+  ImportUndoSummary,
+} from "../_schemas/student";
 
 interface ImportStudentsDialogProps {
   branchId: string;
@@ -166,8 +170,22 @@ const SAMPLE_ROWS: string[][] = [
   ],
 ];
 
+// Optional override columns (design §5): if you already know a batch's course,
+// length, and intake year, set them here and a newly-created batch uses them.
+// Left blank, the batch falls back to Target-derived defaults (a 1-year course
+// in the branch's current academic year).
+const OPTIONAL_OVERRIDE_HEADERS = ["Course_opt", "Duration", "Academic_year"];
+
 function downloadSampleTemplate() {
-  downloadCsvTemplate("students-import-template.csv", SAMPLE_HEADERS, SAMPLE_ROWS);
+  const headers = [...SAMPLE_HEADERS, ...OPTIONAL_OVERRIDE_HEADERS];
+  // First row shows a 2-year override; the rest leave the optional columns
+  // empty so the example reads as "these are optional".
+  const rows = SAMPLE_ROWS.map((r, i) =>
+    i === 0
+      ? [...r, "NEET 2-Year", "2 Years", "2025-2027"]
+      : [...r, "", "", ""],
+  );
+  downloadCsvTemplate("students-import-template.csv", headers, rows);
 }
 
 export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
@@ -178,6 +196,8 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [createMissing, setCreateMissing] = useState(true);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const [undone, setUndone] = useState<ImportUndoSummary | null>(null);
   // Held in state (not just a ref) because the file <input> only renders in
   // step 1 — it unmounts once the preview shows, so we need the File to
   // survive into the import step.
@@ -189,6 +209,7 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
     setPreview(null);
     setSummary(null);
     setCreateMissing(true);
+    setUndone(null);
     setFile(null);
   }
 
@@ -258,11 +279,37 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
     }
   }
 
+  async function handleUndo() {
+    if (!summary?.import_id) return;
+    setUndoing(true);
+    setError("");
+    try {
+      const res = await apiClient.post<ImportUndoSummary>(
+        `/api/v1/students/import/${summary.import_id}/undo`,
+        null,
+        { params: { branch_id: branchId } },
+      );
+      queryClient.invalidateQueries({ queryKey: studentKeys.list(branchId) });
+      queryClient.invalidateQueries({ queryKey: studentKeys.withStats(branchId) });
+      if (res.data.batches_deleted > 0) {
+        queryClient.invalidateQueries({ queryKey: ["batches"] });
+      }
+      setUndone(res.data);
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Undo failed");
+    } finally {
+      setUndoing(false);
+    }
+  }
+
   const hasSummary = summary !== null;
   const allImported =
     summary !== null && summary.skipped === 0 && summary.imported > 0;
   const allFailed =
     summary !== null && summary.imported === 0 && summary.skipped > 0;
+  // Offer undo only while there's a handle and it hasn't been undone yet.
+  const canUndo =
+    summary !== null && summary.import_id !== null && undone === null;
 
   return (
     <Dialog
@@ -289,7 +336,12 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
           MHT-CET, Both, Foundation, Other. You&apos;ll see a preview of which{" "}
           <strong>batches</strong> already exist before anything is saved — any
           that are missing can be created for you. Optional: Roll No, Email,
-          Phone, Parent Mobile, Gender, District, Caste, Username, RFIDNumber.
+          Phone, Parent Mobile, Gender, District, Caste, Username, RFIDNumber.{" "}
+          To control how a <strong>new</strong> batch is built, also add{" "}
+          <strong>Course_opt</strong> (course name),{" "}
+          <strong>Duration</strong> (e.g. 1 Year / 2 Years), and{" "}
+          <strong>Academic_year</strong> (e.g. 2025-2027) — left blank, batches
+          fall back to a 1-year course in the current year.
         </DialogDescription>
 
         <div className="mt-4 flex flex-col gap-4">
@@ -341,19 +393,29 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                   missing
                 </p>
                 {(preview.rows_missing_name > 0 ||
-                  preview.rows_invalid_enrolment > 0) && (
+                  preview.rows_invalid_enrolment > 0 ||
+                  preview.duplicate_rows > 0) && (
                   <p className="mt-1 text-xs text-amber-600">
-                    {preview.rows_missing_name > 0 &&
-                      `${preview.rows_missing_name} row(s) missing Name`}
-                    {preview.rows_missing_name > 0 &&
+                    {[
+                      preview.rows_missing_name > 0 &&
+                        `${preview.rows_missing_name} missing Name`,
                       preview.rows_invalid_enrolment > 0 &&
-                      " · "}
-                    {preview.rows_invalid_enrolment > 0 &&
-                      `${preview.rows_invalid_enrolment} row(s) with an invalid Class/Target`}{" "}
-                    will be skipped.
+                        `${preview.rows_invalid_enrolment} invalid Class/Target`,
+                      preview.duplicate_rows > 0 &&
+                        `${preview.duplicate_rows} duplicate (already on file)`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}{" "}
+                    row(s) will be skipped.
                   </p>
                 )}
               </div>
+
+              {preview.blocking_error && (
+                <p className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                  {preview.blocking_error}
+                </p>
+              )}
 
               {preview.batches.length > 0 && (
                 <div className="max-h-52 overflow-y-auto rounded-lg border border-border text-xs">
@@ -464,6 +526,14 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                   )}
                 </ul>
               )}
+              {undone && (
+                <p className="mt-2 text-xs font-medium text-muted-foreground">
+                  Undone — removed {undone.students_deleted} student(s)
+                  {undone.batches_deleted > 0 &&
+                    ` and ${undone.batches_deleted} auto-created batch(es)`}
+                  .
+                </p>
+              )}
             </div>
           )}
 
@@ -487,7 +557,10 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                 <Button variant="outline" onClick={reset} type="button">
                   Back
                 </Button>
-                <Button onClick={handleImport} disabled={uploading}>
+                <Button
+                  onClick={handleImport}
+                  disabled={uploading || !!preview.blocking_error}
+                >
                   {uploading ? "Importing..." : "Import"}
                 </Button>
               </>
@@ -496,6 +569,16 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
             {hasSummary && !allImported && (
               <Button onClick={reset} variant="outline">
                 Upload another file
+              </Button>
+            )}
+
+            {canUndo && (
+              <Button
+                onClick={handleUndo}
+                disabled={undoing}
+                variant="destructive"
+              >
+                {undoing ? "Undoing..." : "Undo import"}
               </Button>
             )}
           </div>

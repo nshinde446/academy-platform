@@ -29,6 +29,12 @@ class Batch(BaseModel):
     # syllabus pace on /insights and /teachers detail. When null the
     # service falls back to mid-May of the end academic year.
     target_exam_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Set when a batch was auto-created by a student import (design §9), so an
+    # "undo import" can reclaim the batches that import spun up. Null for
+    # batches created manually on the Batches page.
+    import_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, index=True
+    )
 
 
 class BatchSubjectMapping(BaseModel):

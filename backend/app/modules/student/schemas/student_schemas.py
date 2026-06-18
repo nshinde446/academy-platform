@@ -104,6 +104,16 @@ class ImportSummary(BaseModel):
     # Codes of batches auto-created during this import (when the admin
     # opted into "create missing batches").
     batches_created: list[str] = []
+    # Handle to undo this import as a unit (design §9). Null when nothing
+    # persisted, so the UI only offers undo when there's something to undo.
+    import_id: uuid.UUID | None = None
+
+
+class ImportUndoSummary(BaseModel):
+    """Result of reversing a bulk import."""
+
+    students_deleted: int
+    batches_deleted: int
 
 
 class ImportPreviewBatch(BaseModel):
@@ -132,10 +142,14 @@ class ImportPreview(BaseModel):
     importable_rows: int
     rows_missing_name: int
     rows_invalid_enrolment: int
+    duplicate_rows: int = 0
     unbatched_rows: int
     existing_batches: int
     missing_batches: int
     blocked_batches: int = 0
+    # Set when the import can't run at all (e.g. no academic year on the
+    # branch); the UI shows it and disables the Import action.
+    blocking_error: str | None = None
     batches: list[ImportPreviewBatch] = []
     row_issues: list[str] = []
 

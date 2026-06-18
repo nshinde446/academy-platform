@@ -124,6 +124,13 @@ export interface ImportSummary {
   skipped: number;
   errors: string[];
   batches_created: string[];
+  // Handle to undo this import as a unit. Null when nothing persisted.
+  import_id: string | null;
+}
+
+export interface ImportUndoSummary {
+  students_deleted: number;
+  batches_deleted: number;
 }
 
 // One distinct Batch code referenced by an upload — whether it already
@@ -148,10 +155,13 @@ export interface ImportPreview {
   importable_rows: number;
   rows_missing_name: number;
   rows_invalid_enrolment: number;
+  duplicate_rows: number;
   unbatched_rows: number;
   existing_batches: number;
   missing_batches: number;
   blocked_batches: number;
+  // Set when the import can't run at all (e.g. no academic year on the branch).
+  blocking_error: string | null;
   batches: ImportPreviewBatch[];
   row_issues: string[];
 }

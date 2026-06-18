@@ -200,3 +200,361 @@ class TestStudentImportCreateMissing:
         data = resp.json()
         assert data["imported"] == 1
         assert data["skipped"] == 0
+
+
+class TestStudentImportDedupAndDiagnostics:
+    @pytest.mark.usefixtures("seed_data")
+    async def test_duplicate_enrolment_skipped_within_file_and_on_reimport(
+        self, client, seed_data
+    ):
+        """Same Roll No twice in a file imports once; re-uploading skips it
+        instead of silently duplicating the student."""
+        token = await _login(client)
+        content = _csv(
+            "Aman Kumar,11,NEET,BATCH-A,S-100",
+            "Aman Kumar Again,11,NEET,BATCH-A,S-100",  # same enrolment no.
+        )
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("students.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["imported"] == 1
+        assert data["skipped"] == 1
+        assert any("duplicate" in e.lower() for e in data["errors"])
+
+        # Re-uploading the (now-existing) row is skipped, not duplicated.
+        again = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={
+                "file": (
+                    "students.csv",
+                    _csv("Aman Kumar,11,NEET,BATCH-A,S-100"),
+                    "text/csv",
+                )
+            },
+            cookies={"access_token": token},
+        )
+        redata = again.json()
+        assert redata["imported"] == 0
+        assert redata["skipped"] == 1
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_preview_counts_duplicates(self, client, seed_data):
+        token = await _login(client)
+        # Seed one student, then preview a file that repeats it.
+        await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={
+                "file": (
+                    "s.csv",
+                    _csv("Ravi Verma,11,NEET,BATCH-A,S-200"),
+                    "text/csv",
+                )
+            },
+            cookies={"access_token": token},
+        )
+        resp = await client.post(
+            f"/api/v1/students/import/preview?branch_id={BRANCH}",
+            files={
+                "file": (
+                    "s.csv",
+                    _csv("Ravi Verma,11,NEET,BATCH-A,S-200"),
+                    "text/csv",
+                )
+            },
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["duplicate_rows"] == 1
+        assert data["importable_rows"] == 0  # the only row is a duplicate
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_error_row_number_accounts_for_blank_lines(
+        self, client, seed_data
+    ):
+        """A blank line before a bad row must not shift the reported row
+        number — 'Row N' should match the line the admin sees."""
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No\n"
+            "Aman Good,11,NEET,BATCH-A,S-300\n"
+            "\n"  # blank line 3
+            ",11,NEET,BATCH-A,S-301\n"  # missing name on line 4
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("students.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["imported"] == 1
+        assert any("Row 4" in e and "Name" in e for e in data["errors"])
+
+
+class TestStudentImportTraceabilityAndUndo:
+    @pytest.mark.usefixtures("seed_data")
+    async def test_import_returns_import_id_and_tags_students(
+        self, client, seed_data, db_session
+    ):
+        from sqlalchemy import select
+
+        from app.modules.student.models.student_models import Student
+
+        token = await _login(client)
+        content = _csv(
+            "Asha Rao,11,NEET,BATCH-A,T-001",
+            "Bina Roy,11,NEET,BATCH-A,T-002",
+        )
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("roster.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["imported"] == 2
+        assert data["import_id"] is not None
+
+        # Every imported student carries the same import_id + source filename.
+        rows = (
+            await db_session.execute(
+                select(Student).where(
+                    Student.enrollment_number.in_(["T-001", "T-002"])
+                )
+            )
+        ).scalars().all()
+        assert {str(s.import_id) for s in rows} == {data["import_id"]}
+        assert {s.import_source_file for s in rows} == {"roster.csv"}
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_import_with_no_rows_saved_has_null_import_id(
+        self, client, seed_data
+    ):
+        token = await _login(client)
+        # Unknown batch, create-missing off -> nothing persists.
+        content = _csv("Cara Sen,11,NEET,NOPE-99,T-010")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("x.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["imported"] == 0
+        assert data["import_id"] is None
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_undo_removes_students_and_auto_created_batch(
+        self, client, seed_data
+    ):
+        token = await _login(client)
+        content = _csv(
+            "Dev Iyer,11,NEET,UNDO-11-A,T-020",
+            "Esha Nair,11,NEET,UNDO-11-A,T-021",
+        )
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("x.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["imported"] == 2
+        assert data["batches_created"] == ["UNDO-11-A"]
+        import_id = data["import_id"]
+
+        undo = await client.post(
+            f"/api/v1/students/import/{import_id}/undo?branch_id={BRANCH}",
+            cookies={"access_token": token},
+        )
+        assert undo.status_code == 200
+        u = undo.json()
+        assert u["students_deleted"] == 2
+        assert u["batches_deleted"] == 1
+
+        # The auto-created batch is gone again.
+        batches = await client.get(
+            f"/api/v1/batches?branch_id={BRANCH}",
+            cookies={"access_token": token},
+        )
+        assert "UNDO-11-A" not in {b["code"] for b in batches.json()}
+
+        # Undo is idempotent — a second call finds nothing.
+        again = await client.post(
+            f"/api/v1/students/import/{import_id}/undo?branch_id={BRANCH}",
+            cookies={"access_token": token},
+        )
+        assert again.json() == {"students_deleted": 0, "batches_deleted": 0}
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_undo_keeps_batch_that_has_other_students(
+        self, client, seed_data
+    ):
+        """A batch this import created but which later gained students from a
+        different import must NOT be reclaimed on undo."""
+        token = await _login(client)
+        # Import A: creates batch SHARED-A with one student.
+        a = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={
+                "file": ("a.csv", _csv("Gita Bose,11,NEET,SHARED-A,T-030"), "text/csv")
+            },
+            cookies={"access_token": token},
+        )
+        import_a = a.json()["import_id"]
+
+        # Import B: batch already exists, so it just assigns another student.
+        b = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={
+                "file": ("b.csv", _csv("Hari Das,11,NEET,SHARED-A,T-031"), "text/csv")
+            },
+            cookies={"access_token": token},
+        )
+        assert b.json()["batches_created"] == []
+
+        # Undo A: its student goes, but the batch stays (B's student remains).
+        undo = await client.post(
+            f"/api/v1/students/import/{import_a}/undo?branch_id={BRANCH}",
+            cookies={"access_token": token},
+        )
+        u = undo.json()
+        assert u["students_deleted"] == 1
+        assert u["batches_deleted"] == 0
+        batches = await client.get(
+            f"/api/v1/batches?branch_id={BRANCH}",
+            cookies={"access_token": token},
+        )
+        assert "SHARED-A" in {b["code"] for b in batches.json()}
+
+
+class TestStudentImportOverrides:
+    """Optional Course_opt / Duration / Academic_year columns (design §5):
+    explicit value wins, else fall back to Target-derived defaults."""
+
+    @staticmethod
+    def _add_year(db_session, suffix, start, end):
+        import uuid as _uuid
+
+        from app.modules.academic.models.academic_models import AcademicYear
+
+        db_session.add(
+            AcademicYear(
+                id=_uuid.UUID(f"00000000-0000-0000-0000-0000000000{suffix}"),
+                branch_id=_uuid.UUID(BRANCH),
+                name=f"{start}-{end}",
+                start_year=start,
+                end_year=end,
+                status="active",
+                is_deleted=False,
+            )
+        )
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_override_duration_and_course_name(
+        self, client, seed_data, db_session
+    ):
+        import uuid as _uuid
+
+        from sqlalchemy import select
+
+        from app.modules.academic.models.academic_models import Course
+        from app.modules.batch.models.batch_models import Batch
+
+        # 2026-27 exists so a 2-year batch starting 2025 has its end year.
+        self._add_year(db_session, "b1", 2026, 2027)
+        await db_session.commit()
+
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No,Course_opt,Academic_year\n"
+            "Nia Roy,11,NEET,ELITE-2Y,O-001,NEET 2-Year Elite,2025-2027\n"
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("o.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["imported"] == 1
+        assert data["batches_created"] == ["ELITE-2Y"]
+
+        # A 2-year course gets a duration-suffixed code + the custom name.
+        course = (
+            await db_session.execute(
+                select(Course).where(
+                    Course.code == "NEET-2Y",
+                    Course.branch_id == _uuid.UUID(BRANCH),
+                )
+            )
+        ).scalar_one()
+        assert course.duration_years == 2
+        assert course.name == "NEET 2-Year Elite"
+
+        batch = (
+            await db_session.execute(
+                select(Batch).where(Batch.code == "ELITE-2Y")
+            )
+        ).scalar_one()
+        # Spans the 2025 seed year -> the new 2026 year.
+        assert batch.start_academic_year_id == _uuid.UUID(
+            "00000000-0000-0000-0000-000000000030"
+        )
+        assert batch.end_academic_year_id == _uuid.UUID(
+            "00000000-0000-0000-0000-0000000000b1"
+        )
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_override_academic_year_pins_start_against_default(
+        self, client, seed_data, db_session
+    ):
+        """With a later year present (which would be the default intake), an
+        Academic_year override still pins the batch to the year it names."""
+        import uuid as _uuid
+
+        from sqlalchemy import select
+
+        from app.modules.batch.models.batch_models import Batch
+
+        self._add_year(db_session, "b2", 2026, 2027)  # default pick = 2026
+        await db_session.commit()
+
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No,Academic_year\n"
+            "Om Shah,12,NEET,AY25-A,P-001,2025-2026\n"  # pin to 2025
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("p.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        assert resp.json()["batches_created"] == ["AY25-A"]
+        batch = (
+            await db_session.execute(
+                select(Batch).where(Batch.code == "AY25-A")
+            )
+        ).scalar_one()
+        assert batch.start_academic_year_id == _uuid.UUID(
+            "00000000-0000-0000-0000-000000000030"
+        )
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_preview_reflects_overrides(self, client, seed_data, db_session):
+        self._add_year(db_session, "b3", 2026, 2027)
+        await db_session.commit()
+
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No,Course_opt,Academic_year\n"
+            "Pia Jain,11,NEET,DLX-2Y,Q-001,NEET Deluxe,2025-2027\n"
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import/preview?branch_id={BRANCH}",
+            files={"file": ("q.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        b = {x["code"]: x for x in data["batches"]}["DLX-2Y"]
+        assert b["suggested_course_name"] == "NEET Deluxe"
+        assert b["suggested_course_code"] == "NEET-2Y"
+        assert b["creatable"] is True
