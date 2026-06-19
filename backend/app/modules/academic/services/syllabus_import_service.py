@@ -1,4 +1,5 @@
 import io
+import re
 import uuid
 from typing import Any
 
@@ -6,6 +7,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.academic import curriculum
 from app.modules.academic.models.academic_models import (
     Chapter,
     Subject,
@@ -270,3 +272,115 @@ async def import_syllabus(
     )
 
     return {**created, "errors": errors}
+
+
+# --- Curriculum backfill ---------------------------------------------------
+# A student import only auto-populates a course's chapters/topics from the
+# bundled master curriculum at the moment its subjects are first created. For
+# courses whose subjects already existed (skeleton made before the curriculum
+# feature shipped, or batches created manually), this backfills the curriculum
+# onto subjects that still have none — additive only, keyed to the course's
+# Target/syllabus, so it "maps the master syllabus to the students' Target".
+
+def _candidate_syllabus_keys(course_code: str) -> list[str]:
+    """Map a course code (as created by the student importer's TARGET_COURSE,
+    possibly with a ``-NY`` duration suffix) to the curriculum syllabus key(s)
+    to try. MHT-CET returns both streams; the per-subject sheet lookup picks the
+    right one (Maths -> PCM, Biology -> PCB)."""
+    c = re.sub(r"-\d+Y$", "", (course_code or "").strip().upper())
+    if c == "NEET":
+        return ["NEET"]
+    if c == "JEE":
+        return ["JEE"]
+    if c in ("NEET-JEE", "BOTH", "PCMB"):
+        return ["PCMB"]
+    if c in ("MHT-CET", "MHTCET", "MHT-CET-PCM", "MHT-CET-PCB"):
+        return ["MHT-CET-PCM", "MHT-CET-PCB"]
+    return []
+
+
+async def backfill_curriculum(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict[str, int]:
+    """Load the bundled master curriculum onto a branch's existing course
+    subjects that have no chapters yet. Idempotent and additive — a subject that
+    already has chapters (a curriculum a syllabus import loaded) is left
+    untouched (§7.4). Returns counts of what was added."""
+    courses = await academic_repository.list_courses(session, branch_id)
+    subjects = await academic_repository.list_subjects(session, branch_id)
+    by_course: dict[uuid.UUID, list] = {}
+    for s in subjects:
+        by_course.setdefault(s.course_id, []).append(s)
+
+    courses_touched = 0
+    subjects_filled = 0
+    chapters_added = 0
+    topics_added = 0
+
+    for course in courses:
+        keys = _candidate_syllabus_keys(course.code)
+        if not keys:
+            continue
+        touched = False
+        for subject in by_course.get(course.id, []):
+            existing = await academic_repository.list_chapters(
+                session, branch_id, subject.id
+            )
+            if existing:
+                continue  # only fill empty subjects
+            tree: tuple = ()
+            for key in keys:
+                tree = curriculum.chapters_for(key, subject.name)
+                if tree:
+                    break
+            if not tree:
+                continue
+            for ch_order, (ch_name, topics) in enumerate(tree):
+                chapter = await academic_repository.create_chapter(
+                    session,
+                    branch_id=branch_id,
+                    academic_year_id=subject.academic_year_id,
+                    subject_id=subject.id,
+                    name=ch_name,
+                    order=ch_order,
+                )
+                chapters_added += 1
+                for t_order, t_name in enumerate(topics):
+                    await academic_repository.create_topic(
+                        session,
+                        branch_id=branch_id,
+                        academic_year_id=subject.academic_year_id,
+                        chapter_id=chapter.id,
+                        name=t_name,
+                        order=t_order,
+                    )
+                    topics_added += 1
+            subjects_filled += 1
+            touched = True
+        if touched:
+            courses_touched += 1
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="CURRICULUM_BACKFILL",
+        table_name="chapters",
+        record_id=uuid.uuid4(),
+        new_values={
+            "courses_touched": courses_touched,
+            "subjects_filled": subjects_filled,
+            "chapters_added": chapters_added,
+            "topics_added": topics_added,
+        },
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return {
+        "courses_touched": courses_touched,
+        "subjects_filled": subjects_filled,
+        "chapters_added": chapters_added,
+        "topics_added": topics_added,
+    }

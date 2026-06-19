@@ -139,3 +139,13 @@ class SubtopicResponse(BaseModel):
     order: int
     status: str
     model_config = {"from_attributes": True}
+
+
+class CurriculumBackfillSummary(BaseModel):
+    """Result of backfilling the bundled master curriculum onto a branch's
+    existing course subjects that had no chapters yet."""
+
+    courses_touched: int
+    subjects_filled: int
+    chapters_added: int
+    topics_added: int

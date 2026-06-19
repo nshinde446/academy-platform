@@ -137,3 +137,31 @@ export function useImportSyllabus() {
     },
   });
 }
+
+export interface CurriculumBackfillSummary {
+  courses_touched: number;
+  subjects_filled: number;
+  chapters_added: number;
+  topics_added: number;
+}
+
+// Loads the bundled master curriculum onto courses' empty subjects, keyed to
+// each course's Target. Additive + idempotent — never touches a subject that
+// already has chapters.
+export function useBackfillCurriculum() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (branchId: string) => {
+      const res = await apiClient.post<CurriculumBackfillSummary>(
+        "/api/v1/syllabus/backfill",
+        null,
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["syllabus"] });
+    },
+  });
+}

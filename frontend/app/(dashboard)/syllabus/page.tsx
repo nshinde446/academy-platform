@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import { useUserStore } from "@/store/user-store";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
+  useBackfillCurriculum,
   useChaptersBySubjects,
   useCourses,
   useImportSyllabus,
@@ -105,6 +107,7 @@ export default function SyllabusPage() {
   }, [subjects, chapters, topics, subtopics]);
 
   const importMutation = useImportSyllabus();
+  const backfillMutation = useBackfillCurriculum();
   const treeLoading =
     subjectsQuery.isLoading ||
     chapterQueries.some((q) => q.isLoading) ||
@@ -122,18 +125,44 @@ export default function SyllabusPage() {
             or extend it — re-imports merge by name and never duplicate nodes.
           </p>
         </div>
-        <ImportSyllabusDialog
-          courses={courses}
-          defaultCourseId={effectiveCourseId}
-          onImport={(params) =>
-            importMutation.mutateAsync({
-              courseId: params.courseId,
-              file: params.file,
-            })
-          }
-          isPending={importMutation.isPending}
-        />
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+          <Button
+            variant="outline"
+            disabled={!branchId || backfillMutation.isPending}
+            onClick={() => branchId && backfillMutation.mutate(branchId)}
+            title="Load the bundled master curriculum onto courses' empty subjects, by Target"
+          >
+            {backfillMutation.isPending
+              ? "Backfilling..."
+              : "Backfill master curriculum"}
+          </Button>
+          <ImportSyllabusDialog
+            courses={courses}
+            defaultCourseId={effectiveCourseId}
+            onImport={(params) =>
+              importMutation.mutateAsync({
+                courseId: params.courseId,
+                file: params.file,
+              })
+            }
+            isPending={importMutation.isPending}
+          />
+        </div>
       </div>
+
+      {backfillMutation.isSuccess && (
+        <p className="text-sm text-emerald-600">
+          Backfilled {backfillMutation.data.chapters_added} chapter(s) and{" "}
+          {backfillMutation.data.topics_added} topic(s) across{" "}
+          {backfillMutation.data.subjects_filled} subject(s) in{" "}
+          {backfillMutation.data.courses_touched} course(s).
+        </p>
+      )}
+      {backfillMutation.isError && (
+        <p className="text-sm text-destructive">
+          Backfill failed. Check you have permission and a branch is selected.
+        </p>
+      )}
 
       {/* Controls */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
