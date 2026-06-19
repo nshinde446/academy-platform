@@ -66,6 +66,12 @@ export interface StudentWithStats {
   tests_taken: number;
 }
 
+// One page of the roster from GET /students/with-stats (server-side paginated).
+export interface StudentStatsPage {
+  items: StudentWithStats[];
+  total: number;
+}
+
 export interface StudentCreate {
   branch_id: string;
   academic_year_id: string;

@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
+import apiClient from "@/services/api-client";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
-  useStudents,
-  useStudentsWithStats,
+  useStudentsRoster,
   useCreateStudent,
   useUpdateStudent,
   useDeleteStudent,
@@ -27,18 +28,7 @@ import { EditStudentDialog } from "./_components/edit-student-dialog";
 import { ImportStudentsDialog } from "./_components/import-students-dialog";
 import { DeleteAllStudentsDialog } from "./_components/delete-all-students-dialog";
 
-function filterStudents(
-  rows: StudentWithStats[],
-  query: string
-): StudentWithStats[] {
-  if (!query) return rows;
-  const q = query.toLowerCase();
-  return rows.filter(
-    (s) =>
-      `${s.first_name} ${s.last_name}`.toLowerCase().includes(q) ||
-      s.enrollment_number?.toLowerCase().includes(q),
-  );
-}
+const PAGE_SIZE = 50;
 
 export default function StudentsPage() {
   const user = useUserStore((s) => s.user);
@@ -46,38 +36,49 @@ export default function StudentsPage() {
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
+  const [page, setPage] = useState(0);
 
   const [editTarget, setEditTarget] = useState<StudentResponse | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<StudentResponse | null>(
+  const [deleteTarget, setDeleteTarget] = useState<StudentWithStats | null>(
     null
   );
 
-  const studentsQuery = useStudents(branchId);
-  const statsQuery = useStudentsWithStats(branchId);
+  // A new search resets to the first page.
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedSearch]);
+
+  const statsQuery = useStudentsRoster(branchId, {
+    offset: page * PAGE_SIZE,
+    limit: PAGE_SIZE,
+    search: debouncedSearch,
+  });
   const academicYearsQuery = useAcademicYears(branchId);
   const createMutation = useCreateStudent(branchId);
   const updateMutation = useUpdateStudent(branchId);
   const deleteMutation = useDeleteStudent(branchId);
 
-  const studentsById = useMemo(() => {
-    const map: Record<string, StudentResponse> = {};
-    for (const s of studentsQuery.data ?? []) map[s.id] = s;
-    return map;
-  }, [studentsQuery.data]);
-
-  const filtered = useMemo(
-    () => filterStudents(statsQuery.data ?? [], debouncedSearch),
-    [statsQuery.data, debouncedSearch]
-  );
+  const rows = statsQuery.data?.items ?? [];
+  const total = statsQuery.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const from = total === 0 ? 0 : page * PAGE_SIZE + 1;
+  const to = Math.min(total, (page + 1) * PAGE_SIZE);
 
   async function handleCreate(data: Omit<StudentCreate, "branch_id">) {
     if (!branchId) return;
     await createMutation.mutateAsync({ ...data, branch_id: branchId });
   }
 
-  function handleEdit(student: StudentResponse) {
-    setEditTarget(student);
+  // The stats row omits some fields the edit form needs, so fetch the full
+  // record on demand rather than holding every student in memory.
+  async function handleEdit(row: StudentWithStats) {
+    if (!branchId) return;
+    const res = await apiClient.get<StudentResponse>(
+      `/api/v1/students/${row.id}`,
+      { params: { branch_id: branchId } }
+    );
+    setEditTarget(res.data);
     setEditOpen(true);
   }
 
@@ -86,11 +87,11 @@ export default function StudentsPage() {
     await updateMutation.mutateAsync({ studentId: editTarget.id, data });
   }
 
-  function handleStreamChange(student: StudentResponse, stream: Stream) {
+  function handleStreamChange(student: StudentWithStats, stream: Stream) {
     updateMutation.mutate({ studentId: student.id, data: { stream } });
   }
 
-  function handleDeleteClick(student: StudentResponse) {
+  function handleDeleteClick(student: StudentWithStats) {
     setDeleteTarget(student);
   }
 
@@ -111,10 +112,7 @@ export default function StudentsPage() {
         </div>
         <div className="flex gap-2">
           {branchId && (
-            <DeleteAllStudentsDialog
-              branchId={branchId}
-              count={studentsQuery.data?.length ?? 0}
-            />
+            <DeleteAllStudentsDialog branchId={branchId} count={total} />
           )}
           {branchId && <ImportStudentsDialog branchId={branchId} />}
           <CreateStudentDialog
@@ -128,33 +126,61 @@ export default function StudentsPage() {
       {/* Search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Input
-          placeholder="Search by name, email, or enrollment number..."
+          placeholder="Search by name or enrollment number..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full sm:max-w-sm"
         />
         <span className="text-sm text-muted-foreground">
-          {filtered.length} student{filtered.length !== 1 ? "s" : ""}
+          {total} student{total !== 1 ? "s" : ""}
         </span>
       </div>
 
       {/* Content */}
-      {statsQuery.isLoading || studentsQuery.isLoading ? (
+      {statsQuery.isLoading ? (
         <p className="text-muted-foreground text-sm">Loading students...</p>
-      ) : statsQuery.isError || studentsQuery.isError ? (
+      ) : statsQuery.isError ? (
         <p className="text-destructive text-sm">
           Failed to load students. Make sure the backend is running.
         </p>
-      ) : filtered.length === 0 ? (
+      ) : total === 0 ? (
         <StudentEmptyState hasSearch={!!debouncedSearch} />
       ) : (
-        <StudentTable
-          rows={filtered}
-          studentsById={studentsById}
-          onEdit={handleEdit}
-          onDelete={handleDeleteClick}
-          onStreamChange={handleStreamChange}
-        />
+        <>
+          <StudentTable
+            rows={rows}
+            onEdit={handleEdit}
+            onDelete={handleDeleteClick}
+            onStreamChange={handleStreamChange}
+          />
+          {/* Pagination */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm text-muted-foreground">
+              Showing {from}–{to} of {total}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page === 0 || statsQuery.isFetching}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground tabular-nums">
+                Page {page + 1} of {pageCount}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page + 1 >= pageCount || statsQuery.isFetching}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        </>
       )}
 
       <EditStudentDialog

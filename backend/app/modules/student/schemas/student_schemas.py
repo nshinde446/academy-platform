@@ -103,6 +103,14 @@ class StudentWithStats(BaseModel):
     tests_taken: int = 0
 
 
+class StudentStatsPage(BaseModel):
+    """One page of the roster (server-side pagination). ``total`` is the count
+    after search filtering, for page controls."""
+
+    items: list[StudentWithStats] = []
+    total: int = 0
+
+
 class StudentSubjectSyllabus(BaseModel):
     """One subject a student is accountable for (after the stream filter), with
     how much curriculum is loaded — drives a per-student syllabus view."""

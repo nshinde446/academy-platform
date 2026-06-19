@@ -20,24 +20,21 @@ import {
 import {
   STREAMS,
   type Stream,
-  type StudentResponse,
   type StudentWithStats,
 } from "../_schemas/student";
 
 interface StudentTableProps {
   rows: StudentWithStats[];
-  // Index by id so the Edit/Delete handlers can resolve the full
-  // StudentResponse (which carries fields the stats payload omits).
-  studentsById: Record<string, StudentResponse>;
-  onEdit: (student: StudentResponse) => void;
-  onDelete: (student: StudentResponse) => void;
+  // Handlers act on the (paginated) roster row; the page fetches the full
+  // record on Edit, since the stats payload omits some fields.
+  onEdit: (student: StudentWithStats) => void;
+  onDelete: (student: StudentWithStats) => void;
   // Inline stream edit (PCM/PCB/PCMB) — persisted via PATCH by the page.
-  onStreamChange: (student: StudentResponse, stream: Stream) => void;
+  onStreamChange: (student: StudentWithStats, stream: Stream) => void;
 }
 
 export function StudentTable({
   rows,
-  studentsById,
   onEdit,
   onDelete,
   onStreamChange,
@@ -69,7 +66,6 @@ export function StudentTable({
         </TableHeader>
         <TableBody>
           {rows.map((r) => {
-            const full = studentsById[r.id];
             return (
               <TableRow key={r.id}>
                 <TableCell>
@@ -105,12 +101,11 @@ export function StudentTable({
                 <TableCell className="hidden md:table-cell">
                   <select
                     aria-label={`Stream for ${r.first_name} ${r.last_name}`}
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs disabled:opacity-50"
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
                     value={r.stream ?? ""}
-                    disabled={!full}
                     onChange={(e) => {
                       const v = e.target.value;
-                      if (full && v) onStreamChange(full, v as Stream);
+                      if (v) onStreamChange(r, v as Stream);
                     }}
                   >
                     {!r.stream && <option value="">—</option>}
@@ -149,8 +144,7 @@ export function StudentTable({
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={!full}
-                      onClick={() => full && onEdit(full)}
+                      onClick={() => onEdit(r)}
                     >
                       Edit
                     </Button>
@@ -158,8 +152,7 @@ export function StudentTable({
                       type="button"
                       size="sm"
                       variant="destructive"
-                      disabled={!full}
-                      onClick={() => full && onDelete(full)}
+                      onClick={() => onDelete(r)}
                       aria-label={`Delete ${r.first_name} ${r.last_name}`}
                     >
                       Delete

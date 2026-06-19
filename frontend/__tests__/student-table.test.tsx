@@ -2,10 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StudentTable } from "@/app/(dashboard)/students/_components/student-table";
-import type {
-  StudentResponse,
-  StudentWithStats,
-} from "@/app/(dashboard)/students/_schemas/student";
+import type { StudentWithStats } from "@/app/(dashboard)/students/_schemas/student";
 
 const mockEdit = vi.fn();
 const mockDelete = vi.fn();
@@ -54,61 +51,12 @@ const ROWS: StudentWithStats[] = [
   },
 ];
 
-const STUDENTS: Record<string, StudentResponse> = {
-  s1: {
-    id: "s1",
-    branch_id: "b1",
-    academic_year_id: "ay1",
-    first_name: "Rahul",
-    last_name: "Sharma",
-    email: "rahul@example.com",
-    phone: "9876543210",
-    date_of_birth: "2005-03-15",
-    enrollment_number: "ROLL-001",
-    parent_mobile: "9123456789",
-    rfid_number: "RFID-AAA-001",
-    gender: "M",
-    district: "Pune",
-    caste: null,
-    username: null,
-    course_id: null,
-    standard: "11",
-    target_exam: "NEET",
-    fees_status: "paid",
-    stream: "PCB",
-    status: "active",
-  },
-  s2: {
-    id: "s2",
-    branch_id: "b1",
-    academic_year_id: "ay1",
-    first_name: "Priya",
-    last_name: "Patel",
-    email: null,
-    phone: null,
-    date_of_birth: null,
-    enrollment_number: null,
-    parent_mobile: null,
-    rfid_number: null,
-    gender: null,
-    district: null,
-    caste: null,
-    username: null,
-    course_id: null,
-    standard: null,
-    target_exam: null,
-    fees_status: "overdue",
-    stream: null,
-    status: "inactive",
-  },
-};
 
 describe("StudentTable (MSA_Design layout)", () => {
   it("renders the new analytics headers (Rank, Avg score, Attendance, DPP, Fees)", () => {
     render(
       <StudentTable
         rows={[]}
-        studentsById={{}}
         onEdit={mockEdit}
         onDelete={mockDelete}
         onStreamChange={mockStream}
@@ -127,7 +75,6 @@ describe("StudentTable (MSA_Design layout)", () => {
     render(
       <StudentTable
         rows={ROWS}
-        studentsById={STUDENTS}
         onEdit={mockEdit}
         onDelete={mockDelete}
         onStreamChange={mockStream}
@@ -149,7 +96,6 @@ describe("StudentTable (MSA_Design layout)", () => {
     render(
       <StudentTable
         rows={ROWS}
-        studentsById={STUDENTS}
         onEdit={mockEdit}
         onDelete={mockDelete}
         onStreamChange={mockStream}
@@ -158,7 +104,7 @@ describe("StudentTable (MSA_Design layout)", () => {
 
     const editButtons = screen.getAllByRole("button", { name: /^edit$/i });
     await user.click(editButtons[0]);
-    expect(mockEdit).toHaveBeenCalledWith(STUDENTS.s1);
+    expect(mockEdit).toHaveBeenCalledWith(ROWS[0]);
   });
 
   it("invokes onDelete with the resolved StudentResponse for the row", async () => {
@@ -166,7 +112,6 @@ describe("StudentTable (MSA_Design layout)", () => {
     render(
       <StudentTable
         rows={ROWS}
-        studentsById={STUDENTS}
         onEdit={mockEdit}
         onDelete={mockDelete}
         onStreamChange={mockStream}
@@ -176,7 +121,7 @@ describe("StudentTable (MSA_Design layout)", () => {
     await user.click(
       screen.getByRole("button", { name: /delete rahul sharma/i }),
     );
-    expect(mockDelete).toHaveBeenCalledWith(STUDENTS.s1);
+    expect(mockDelete).toHaveBeenCalledWith(ROWS[0]);
   });
 
   it("shows the current stream and saves an inline change", async () => {
@@ -184,7 +129,6 @@ describe("StudentTable (MSA_Design layout)", () => {
     render(
       <StudentTable
         rows={ROWS}
-        studentsById={STUDENTS}
         onEdit={mockEdit}
         onDelete={mockDelete}
         onStreamChange={mockStream}
@@ -197,6 +141,6 @@ describe("StudentTable (MSA_Design layout)", () => {
     expect(select.value).toBe("PCB"); // current stream shown
 
     await user.selectOptions(select, "PCM");
-    expect(mockStream).toHaveBeenCalledWith(STUDENTS.s1, "PCM");
+    expect(mockStream).toHaveBeenCalledWith(ROWS[0], "PCM");
   });
 });

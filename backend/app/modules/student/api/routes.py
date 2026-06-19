@@ -12,6 +12,7 @@ from app.modules.student.schemas.student_schemas import (
     ImportUndoSummary,
     StudentCreate,
     StudentResponse,
+    StudentStatsPage,
     StudentSyllabus,
     StudentTestHistoryRow,
     StudentTopicMastery,
@@ -54,9 +55,27 @@ async def list_students_with_stats(
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
-    """Roster with per-student analytics (avg score, attendance %, DPP
-    completion %, batch rank) — powers the MSA_Design students table."""
+    """Full branch roster with per-student analytics — used where the whole set
+    is needed (attendance batch roster, a student's batch-rank context)."""
     return await student_service.list_students_with_stats(session, branch_id)
+
+
+@router.get("/roster", response_model=StudentStatsPage)
+async def list_students_roster(
+    branch_id: uuid.UUID = Query(...),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    search: str = Query(""),
+    sort_by: str = Query("name"),
+    order: str = Query("asc", pattern="^(asc|desc)$"),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """One page of the roster — server-side paginated/searched/sorted so large
+    branches stay fast. Powers the MSA_Design students table."""
+    return await student_service.list_students_roster(
+        session, branch_id, offset, limit, search, sort_by, order
+    )
 
 
 @router.get("/{student_id}", response_model=StudentResponse)

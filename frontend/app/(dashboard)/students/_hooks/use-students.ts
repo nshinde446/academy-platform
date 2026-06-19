@@ -1,8 +1,14 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
 import type {
   StudentResponse,
   StudentCreate,
+  StudentStatsPage,
   StudentUpdate,
   StudentWithStats,
   StudentTestHistoryRow,
@@ -11,11 +17,21 @@ import type {
   AcademicYearResponse,
 } from "../_schemas/student";
 
+export interface RosterParams {
+  offset: number;
+  limit: number;
+  search: string;
+  sortBy?: string;
+  order?: "asc" | "desc";
+}
+
 export const studentKeys = {
   all: ["students"] as const,
   list: (branchId: string) => [...studentKeys.all, "list", branchId] as const,
   withStats: (branchId: string) =>
     [...studentKeys.all, "with-stats", branchId] as const,
+  roster: (branchId: string) =>
+    [...studentKeys.all, "roster", branchId] as const,
   detail: (branchId: string, id: string) =>
     [...studentKeys.all, "detail", branchId, id] as const,
   testHistory: (branchId: string, id: string) =>
@@ -47,6 +63,9 @@ export function useStudents(branchId: string | undefined) {
 }
 
 // Roster + per-student stats for the MSA_Design table layout.
+// Full branch roster — used where the whole set is needed (attendance batch
+// roster, a student's batch-rank context). The paginated table uses
+// useStudentsRoster instead.
 export function useStudentsWithStats(branchId: string | undefined) {
   return useQuery<StudentWithStats[]>({
     queryKey: studentKeys.withStats(branchId!),
@@ -58,6 +77,35 @@ export function useStudentsWithStats(branchId: string | undefined) {
       return res.data;
     },
     enabled: !!branchId,
+  });
+}
+
+// One page of the roster (server-side paginated/searched/sorted).
+export function useStudentsRoster(
+  branchId: string | undefined,
+  params: RosterParams
+) {
+  return useQuery<StudentStatsPage>({
+    queryKey: [...studentKeys.roster(branchId!), params],
+    queryFn: async () => {
+      const res = await apiClient.get<StudentStatsPage>(
+        "/api/v1/students/roster",
+        {
+          params: {
+            branch_id: branchId,
+            offset: params.offset,
+            limit: params.limit,
+            search: params.search || undefined,
+            sort_by: params.sortBy,
+            order: params.order,
+          },
+        }
+      );
+      return res.data;
+    },
+    enabled: !!branchId,
+    // Keep the current page visible while the next one loads (no flicker).
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -92,6 +140,9 @@ export function useCreateStudent(branchId: string | undefined) {
         queryClient.invalidateQueries({
           queryKey: studentKeys.withStats(branchId),
         });
+        queryClient.invalidateQueries({
+          queryKey: studentKeys.roster(branchId),
+        });
       }
     },
   });
@@ -121,6 +172,9 @@ export function useUpdateStudent(branchId: string | undefined) {
         queryClient.invalidateQueries({
           queryKey: studentKeys.withStats(branchId),
         });
+        queryClient.invalidateQueries({
+          queryKey: studentKeys.roster(branchId),
+        });
       }
     },
   });
@@ -140,6 +194,9 @@ export function useDeleteStudent(branchId: string | undefined) {
         queryClient.invalidateQueries({ queryKey: studentKeys.list(branchId) });
         queryClient.invalidateQueries({
           queryKey: studentKeys.withStats(branchId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: studentKeys.roster(branchId),
         });
       }
     },
@@ -164,6 +221,9 @@ export function useDeleteAllStudents(branchId: string | undefined) {
         queryClient.invalidateQueries({ queryKey: studentKeys.list(branchId) });
         queryClient.invalidateQueries({
           queryKey: studentKeys.withStats(branchId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: studentKeys.roster(branchId),
         });
       }
     },

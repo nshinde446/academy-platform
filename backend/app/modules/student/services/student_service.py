@@ -133,8 +133,58 @@ async def list_students(session: AsyncSession, branch_id: uuid.UUID, offset: int
     return await student_repository.list_by_branch(session, branch_id, offset, limit)
 
 
+# Sort keys the roster supports → how to read them off a computed stats row.
+_STATS_SORT_KEYS = {
+    "name": lambda r: (
+        (r.get("first_name") or "").lower(),
+        (r.get("last_name") or "").lower(),
+    ),
+    "avg_score_pct": lambda r: r.get("avg_score_pct") or 0.0,
+    "attendance_pct": lambda r: r.get("attendance_pct") or 0.0,
+    "dpp_completion_pct": lambda r: r.get("dpp_completion_pct") or 0.0,
+    "tests_taken": lambda r: r.get("tests_taken") or 0,
+    # Rank: missing (no batch) sorts last regardless of direction.
+    "batch_rank": lambda r: (r.get("batch_rank") is None, r.get("batch_rank") or 0),
+}
+
+
 async def list_students_with_stats(session: AsyncSession, branch_id: uuid.UUID):
+    """Full branch roster with stats — used where the whole set is needed
+    (attendance batch roster, a student's batch-rank context)."""
     return await student_repository.list_with_stats(session, branch_id)
+
+
+async def list_students_roster(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    offset: int = 0,
+    limit: int = 50,
+    search: str = "",
+    sort_by: str = "name",
+    order: str = "asc",
+):
+    """One page of the roster. Stats (incl. batch rank) are computed across the
+    whole branch for correctness, then the result is searched, sorted, and
+    sliced — so the client only ships/renders a page, not thousands of rows."""
+    rows = await student_repository.list_with_stats(session, branch_id)
+
+    q = search.strip().lower()
+    if q:
+        rows = [
+            r
+            for r in rows
+            if q in f"{r['first_name']} {r['last_name']}".lower()
+            or q in (r.get("enrollment_number") or "").lower()
+        ]
+
+    key = _STATS_SORT_KEYS.get(sort_by, _STATS_SORT_KEYS["name"])
+    # 'name' ascending is the natural default; numeric stats are usually most
+    # useful high-to-low, but we honour whatever the client asks.
+    rows.sort(key=key, reverse=(order == "desc"))
+
+    total = len(rows)
+    page = rows[max(offset, 0) : max(offset, 0) + max(limit, 0)]
+    return {"items": page, "total": total}
 
 
 async def get_test_history(
