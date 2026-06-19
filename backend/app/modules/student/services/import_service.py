@@ -691,25 +691,23 @@ async def _create_derived_batch(
 
 def _missing_batch_blocker(
     target: str | None,
-    academic_year,
+    default_start: int,
     courses_by_code: dict[str, Any],
     ay_start_years: set[int],
     overrides: dict[str, str] | None = None,
 ) -> str | None:
     """Dry-run the academic-year preconditions ``create_batch`` enforces: the
     batch needs both its start year and its end year (``start + duration - 1``)
-    to exist. Returns a human reason if creation *would* fail, else ``None`` —
-    so the preview warns before the admin commits instead of silently skipping.
+    to be available. ``ay_start_years`` includes years the import will itself
+    auto-create, so this only fires for years that genuinely won't exist.
 
     Honors the override columns (Duration / Academic_year) and the rule that an
     existing course with the resolved code pins the duration (design §1)."""
-    if academic_year is None:
-        return "no academic year exists for this branch"
     duration, start_year_override = _effective_duration_and_start(overrides)
     start_year = (
         start_year_override
         if start_year_override is not None
-        else academic_year.start_year
+        else default_start
     )
     if start_year not in ay_start_years:
         return f"needs an academic year starting at {start_year} (create it first)"
@@ -765,6 +763,63 @@ async def _load_student_dedup_keys(
     return enrols, emails
 
 
+# --- Academic-year auto-derivation (design §4 step 1) ----------------------
+# Default the intake year from the import date; an explicit Academic_year column
+# overrides it per row. Coaching sessions start ~June, so before June counts as
+# the prior session (Jun 2026 -> 2026-27, Feb 2026 -> 2025-26).
+_AY_START_MONTH = 6
+
+
+def _derive_current_ay_start(today: date | None = None) -> int:
+    today = today or date.today()
+    return today.year if today.month >= _AY_START_MONTH else today.year - 1
+
+
+def _ay_name(start_year: int) -> str:
+    return f"{start_year}-{(start_year + 1) % 100:02d}"
+
+
+def _required_ay_starts(
+    target: str | None,
+    overrides: dict[str, str] | None,
+    courses_by_code: dict[str, Any],
+    default_start: int,
+) -> set[int]:
+    """The academic-year start_years a row needs: its intake year (override or
+    the date-derived default) plus the following years its programme spans.
+    Mirrors create_batch's span resolution (an existing course's duration wins
+    over the row's), so every year a batch will touch gets ensured."""
+    duration, start_override = _effective_duration_and_start(overrides)
+    start = start_override if start_override is not None else default_start
+    course_code = _course_code_for(target, duration)
+    existing = courses_by_code.get(course_code.lower())
+    eff_duration = max(int(existing.duration_years or 1), 1) if existing else duration
+    return {start + i for i in range(eff_duration)}
+
+
+async def _ensure_academic_year(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    start_year: int,
+    current_user_id: uuid.UUID | None = None,
+):
+    """Get-or-create the academic year row for ``start_year`` (name 'YYYY-YY')."""
+    existing = await academic_repository.get_academic_year_by_start_year(
+        session, branch_id, start_year
+    )
+    if existing:
+        return existing, False
+    ay = await academic_repository.create_academic_year(
+        session,
+        branch_id=branch_id,
+        name=_ay_name(start_year),
+        start_year=start_year,
+        end_year=start_year + 1,
+        created_by=current_user_id,
+    )
+    return ay, True
+
+
 async def preview_import(
     session: AsyncSession,
     file: UploadFile,
@@ -784,11 +839,15 @@ async def preview_import(
     years = await academic_repository.list_academic_years(session, branch_id)
     academic_year = _pick_academic_year(years)
     placeholder_year_id = academic_year.id if academic_year else uuid.uuid4()
+    # Default intake year derived from today; the Academic_year column overrides
+    # it per row. We report (but don't create) any years the import would add.
+    default_start = _derive_current_ay_start()
+    existing_ay_starts = {y.start_year for y in years}
+    required_ay_starts: set[int] = {default_start}
 
     batch_index = await _load_batch_index(session, branch_id)
     courses = await academic_repository.list_courses(session, branch_id)
     courses_by_code = {c.code.strip().lower(): c for c in courses}
-    ay_start_years = {y.start_year for y in years}
     seen_enrols, seen_emails = await _load_student_dedup_keys(session, branch_id)
 
     total_rows = 0
@@ -869,6 +928,13 @@ async def preview_import(
         # a duplicate.
         will_import = enrolment_ok and consistency_ok and not is_dup
 
+        if will_import:
+            # Every year this row's programme will touch (intake + span) gets
+            # ensured at import; collect them so the preview can report new ones.
+            required_ay_starts |= _required_ay_starts(
+                target, row_ov, courses_by_code, default_start
+            )
+
         code = kwargs.get("_batch_code")
         if code:
             norm = _norm_code(str(code))
@@ -893,6 +959,10 @@ async def preview_import(
         if will_import:
             importable_rows += 1
 
+    # Years we'll auto-create count as available, so a batch isn't falsely
+    # flagged as blocked for an academic year the import itself will add.
+    ay_start_years = existing_ay_starts | required_ay_starts
+
     batches: list[dict[str, Any]] = []
     existing = 0
     blocked = 0
@@ -906,12 +976,8 @@ async def preview_import(
         course_code = _course_code_for(target, duration)
         course_name = _course_name_for(target, duration, ov.get("course_opt"))
         # Exam happens in the calendar year the programme ends.
-        eff_start = (
-            start_override
-            if start_override is not None
-            else (academic_year.start_year if academic_year else None)
-        )
-        exam_end_year = eff_start + duration if eff_start is not None else None
+        eff_start = start_override if start_override is not None else default_start
+        exam_end_year = eff_start + duration
         # For a missing batch, check up front whether auto-create would fail,
         # so the admin sees the blocker before committing rather than after.
         # A code whose rows disagree on the overrides is itself a blocker.
@@ -920,7 +986,7 @@ async def preview_import(
             blocker = _override_conflict(
                 code_override_values.get(norm, {})
             ) or _missing_batch_blocker(
-                target, academic_year, courses_by_code, ay_start_years, ov
+                target, default_start, courses_by_code, ay_start_years, ov
             )
         if blocker:
             blocked += 1
@@ -949,13 +1015,11 @@ async def preview_import(
         key=lambda b: (b["exists"], b["creatable"], -b["student_count"])
     )
 
-    # A branch with no academic year can't import at all (import 400s), so the
-    # preview surfaces it up front instead of cheerfully reporting importable
-    # rows the commit would then reject wholesale.
-    blocking_error = (
-        None
-        if academic_year is not None
-        else "No academic year exists for this branch. Create one first."
+    # Academic years the import would auto-create (date-derived default and any
+    # from the Academic_year column) — shown so the admin can spot a typo'd year
+    # before committing. The import no longer hard-fails on an empty branch.
+    new_academic_years = sorted(
+        _ay_name(s) for s in (required_ay_starts - existing_ay_starts)
     )
 
     return {
@@ -970,7 +1034,8 @@ async def preview_import(
         "existing_batches": existing,
         "missing_batches": len(code_display) - existing,
         "blocked_batches": blocked,
-        "blocking_error": blocking_error,
+        "blocking_error": None,
+        "new_academic_years": new_academic_years,
         "batches": batches,
         "row_issues": row_issues,
     }
@@ -993,19 +1058,53 @@ async def import_students(
     content = await file.read()
     rows = _parse_file(file.filename, content)
 
-    years = await academic_repository.list_academic_years(session, branch_id)
-    academic_year = _pick_academic_year(years)
-    if academic_year is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No academic year exists for this branch. Create one first.",
-        )
-    academic_year_id = academic_year.id
-
     # One id per import run, stamped on every student (and auto-created batch)
     # so this upload can be audited and undone as a unit (design §9).
     import_id = uuid.uuid4()
     source_file = file.filename
+
+    # Auto-derive the intake year from the import date (overridable per row by
+    # the Academic_year column) and ensure every year the import will touch
+    # exists — no "create the year first" prerequisite (design §4 step 1).
+    default_start = _derive_current_ay_start()
+    years = await academic_repository.list_academic_years(session, branch_id)
+    courses = await academic_repository.list_courses(session, branch_id)
+    courses_by_code = {c.code.strip().lower(): c for c in courses}
+
+    required_starts: set[int] = {default_start}
+    for row in rows:
+        kwargs = _row_to_student_kwargs(row, branch_id, uuid.uuid4())
+        if kwargs is None:
+            continue
+        try:
+            _validate_enrolment_fields(
+                kwargs.get("standard"), kwargs.get("target_exam")
+            )
+        except HTTPException:
+            continue
+        row_ov = _row_overrides(row)
+        c_errors, _ = _validate_row_consistency(
+            kwargs.get("standard"), kwargs.get("target_exam"), row_ov
+        )
+        if c_errors:
+            continue
+        required_starts |= _required_ay_starts(
+            kwargs.get("target_exam"), row_ov, courses_by_code, default_start
+        )
+
+    academic_years_created: list[str] = []
+    for start in sorted(required_starts):
+        _, created = await _ensure_academic_year(
+            session, branch_id, start, current_user_id
+        )
+        if created:
+            academic_years_created.append(_ay_name(start))
+
+    years = await academic_repository.list_academic_years(session, branch_id)
+    academic_year = _ay_by_start_year(years, default_start) or _pick_academic_year(
+        years
+    )
+    academic_year_id = academic_year.id
 
     batch_index = await _load_batch_index(session, branch_id)
     batches_created: list[str] = []
@@ -1225,6 +1324,7 @@ async def import_students(
             "skipped": skipped,
             "batches_created": batches_created,
             "subjects_created": subjects_created,
+            "academic_years_created": academic_years_created,
         },
         ip_address=ip_address,
         branch_id=branch_id,
@@ -1237,6 +1337,7 @@ async def import_students(
         "warnings": warnings,
         "batches_created": batches_created,
         "subjects_created": subjects_created,
+        "academic_years_created": academic_years_created,
         # Only hand back an undo handle when rows actually persisted.
         "import_id": import_id if imported > 0 else None,
     }

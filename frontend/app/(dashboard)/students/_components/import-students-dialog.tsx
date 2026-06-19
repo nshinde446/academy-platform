@@ -425,6 +425,15 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                     anyway) — see the row notes below.
                   </p>
                 )}
+                {preview.new_academic_years.length > 0 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Will create academic year(s):{" "}
+                    <span className="font-medium">
+                      {preview.new_academic_years.join(", ")}
+                    </span>
+                    .
+                  </p>
+                )}
               </div>
 
               {preview.blocking_error && (
@@ -540,6 +549,12 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                   {summary.batches_created.join(", ")}
                   {summary.subjects_created > 0 &&
                     ` · ${summary.subjects_created} subject(s) for new course(s)`}
+                </p>
+              )}
+              {summary.academic_years_created.length > 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Created academic year(s):{" "}
+                  {summary.academic_years_created.join(", ")}
                 </p>
               )}
               {summary.errors.length > 0 && (

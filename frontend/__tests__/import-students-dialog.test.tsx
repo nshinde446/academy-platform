@@ -132,6 +132,7 @@ describe("ImportStudentsDialog", () => {
         missing_batches: 1,
         blocked_batches: 0,
         blocking_error: null,
+        new_academic_years: [],
         batches: [
           {
             code: "NEET-11-A",
@@ -155,6 +156,7 @@ describe("ImportStudentsDialog", () => {
         errors: [],
         warnings: [],
         batches_created: ["NEET-11-A"],
+        academic_years_created: [],
         subjects_created: 4,
         import_id: "imp-1",
       },
@@ -207,6 +209,7 @@ describe("ImportStudentsDialog", () => {
         missing_batches: 0,
         blocked_batches: 0,
         blocking_error: null,
+        new_academic_years: [],
         batches: [
           {
             code: "BATCH-A",
@@ -230,6 +233,7 @@ describe("ImportStudentsDialog", () => {
         errors: [],
         warnings: [],
         batches_created: [],
+        academic_years_created: [],
         import_id: "imp-42",
       },
     });
@@ -282,6 +286,7 @@ describe("ImportStudentsDialog", () => {
         missing_batches: 0,
         blocked_batches: 0,
         blocking_error: null,
+        new_academic_years: [],
         batches: [
           {
             code: "BATCH-A",
@@ -309,6 +314,7 @@ describe("ImportStudentsDialog", () => {
           "Row 2: Class 9 targeting NEET — Foundation remap not yet supported, enrolling as-is",
         ],
         batches_created: [],
+        academic_years_created: [],
         import_id: "imp-w",
       },
     });
@@ -336,6 +342,43 @@ describe("ImportStudentsDialog", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("shows the academic years it will auto-create in the preview", async () => {
+    const user = userEvent.setup();
+    const post = apiClient.post as ReturnType<typeof vi.fn>;
+    post.mockResolvedValueOnce({
+      data: {
+        total_rows: 1,
+        importable_rows: 1,
+        rows_missing_name: 0,
+        rows_invalid_enrolment: 0,
+        rows_invalid_consistency: 0,
+        rows_with_warnings: 0,
+        duplicate_rows: 0,
+        unbatched_rows: 0,
+        existing_batches: 1,
+        missing_batches: 0,
+        blocked_batches: 0,
+        blocking_error: null,
+        new_academic_years: ["2026-27", "2027-28"],
+        batches: [],
+        row_issues: [],
+      },
+    });
+
+    renderDialog();
+    await user.click(screen.getByRole("button", { name: /import students/i }));
+    await user.upload(
+      screen.getByLabelText(/file/i) as HTMLInputElement,
+      new File(["Name\nfoo"], "x.csv", { type: "text/csv" }),
+    );
+    await user.click(screen.getByRole("button", { name: /preview import/i }));
+
+    expect(
+      await screen.findByText(/Will create academic year\(s\):/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/2026-27, 2027-28/)).toBeInTheDocument();
+  });
+
   it("flags batches that can't be auto-created in the preview", async () => {
     const user = userEvent.setup();
     const post = apiClient.post as ReturnType<typeof vi.fn>;
@@ -351,6 +394,7 @@ describe("ImportStudentsDialog", () => {
         missing_batches: 1,
         blocked_batches: 1,
         blocking_error: null,
+        new_academic_years: [],
         batches: [
           {
             code: "NEET-11-X",
@@ -400,6 +444,7 @@ describe("ImportStudentsDialog", () => {
         missing_batches: 1,
         blocked_batches: 0,
         blocking_error: null,
+        new_academic_years: [],
         batches: [
           {
             code: "MHT-11-A",
@@ -426,6 +471,7 @@ describe("ImportStudentsDialog", () => {
         ],
         warnings: [],
         batches_created: [],
+        academic_years_created: [],
       },
     });
 

@@ -142,6 +142,9 @@ class ImportSummary(BaseModel):
     batches_created: list[str] = []
     # How many subject skeleton rows were auto-created for new courses (§8).
     subjects_created: int = 0
+    # Academic years auto-created during this import (date-derived default
+    # and/or from the Academic_year column), e.g. ["2026-27"].
+    academic_years_created: list[str] = []
     # Handle to undo this import as a unit (design §9). Null when nothing
     # persisted, so the UI only offers undo when there's something to undo.
     import_id: uuid.UUID | None = None
@@ -189,9 +192,11 @@ class ImportPreview(BaseModel):
     existing_batches: int
     missing_batches: int
     blocked_batches: int = 0
-    # Set when the import can't run at all (e.g. no academic year on the
-    # branch); the UI shows it and disables the Import action.
+    # Reserved for a hard pre-commit stop; currently always null (academic
+    # years are auto-derived, so an empty branch no longer blocks).
     blocking_error: str | None = None
+    # Academic years the import would auto-create, e.g. ["2026-27", "2027-28"].
+    new_academic_years: list[str] = []
     batches: list[ImportPreviewBatch] = []
     row_issues: list[str] = []
 

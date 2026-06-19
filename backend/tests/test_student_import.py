@@ -66,18 +66,20 @@ class TestStudentImportPreview:
         assert any("Invalid target_exam" in m for m in data["row_issues"])
 
     @pytest.mark.usefixtures("seed_data")
-    async def test_preview_flags_uncreatable_batch(
+    async def test_preview_reports_new_academic_years_for_missing_span(
         self, client, seed_data, db_session
     ):
-        """A missing batch whose course would need an academic year that does
-        not exist is flagged not-creatable up front, not silently skipped at
-        import time."""
+        """A 2-year course needs the intake year + the next one; the preview
+        reports the years it will auto-create instead of blocking the batch."""
         import uuid as _uuid
 
         from app.modules.academic.models.academic_models import Course
+        from app.modules.student.services.import_service import (
+            _ay_name,
+            _derive_current_ay_start,
+        )
 
-        # A 2-year NEET course makes any NEET-derived batch need a 2026-start
-        # academic year — which the seed branch (only 2025-26) lacks.
+        # An existing 2-year NEET course makes a NEET batch span two years.
         db_session.add(
             Course(
                 id=_uuid.UUID("00000000-0000-0000-0000-0000000000a1"),
@@ -100,10 +102,13 @@ class TestStudentImportPreview:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["blocked_batches"] == 1
+        # No longer blocked — the missing years will be auto-created.
+        assert data["blocked_batches"] == 0
         flagged = {b["code"]: b for b in data["batches"]}["NEET-11-X"]
-        assert flagged["creatable"] is False
-        assert "academic year" in (flagged["blocker"] or "")
+        assert flagged["creatable"] is True
+        start = _derive_current_ay_start()
+        assert _ay_name(start) in data["new_academic_years"]
+        assert _ay_name(start + 1) in data["new_academic_years"]
 
 
 class TestStudentImportCreateMissing:
@@ -953,3 +958,87 @@ class TestStudentImportCurriculum:
         # No foreign chapters were added, so all auto-created curriculum is gone.
         await db_session.commit()  # refresh snapshot to see undo's commit
         assert await self._live_chapter_count(db_session, "NEET") == 0
+
+
+class TestAcademicYearAutoCreate:
+    """§4 step 1: the importer auto-derives the intake academic year from the
+    date (overridable by an Academic_year column) and creates it if missing —
+    no 'create the year first' prerequisite."""
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_import_auto_creates_current_academic_year(
+        self, client, seed_data, db_session
+    ):
+        import uuid as _uuid
+
+        from sqlalchemy import select
+
+        from app.modules.academic.models.academic_models import AcademicYear
+        from app.modules.student.services.import_service import (
+            _ay_name,
+            _derive_current_ay_start,
+        )
+
+        token = await _login(client)
+        # Seed only has 2025-26; the current session year is auto-created.
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("s.csv", _csv("Year Auto,11,NEET,BATCH-A,Y-1"), "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["imported"] == 1
+        cur = _derive_current_ay_start()
+        assert _ay_name(cur) in data["academic_years_created"]
+
+        starts = {
+            a.start_year
+            for a in (
+                await db_session.execute(
+                    select(AcademicYear).where(
+                        AcademicYear.branch_id == _uuid.UUID(BRANCH)
+                    )
+                )
+            ).scalars().all()
+        }
+        assert cur in starts
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_academic_year_column_creates_named_year(
+        self, client, seed_data, db_session
+    ):
+        import uuid as _uuid
+
+        from sqlalchemy import select
+
+        from app.modules.academic.models.academic_models import AcademicYear
+        from app.modules.batch.models.batch_models import Batch
+
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No,Academic_year\n"
+            "Far Future,12,NEET,FUT-A,Y-2,2030-2031\n"
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("s.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert "2030-31" in data["academic_years_created"]
+        assert data["batches_created"] == ["FUT-A"]
+
+        ay_2030 = (
+            await db_session.execute(
+                select(AcademicYear).where(
+                    AcademicYear.branch_id == _uuid.UUID(BRANCH),
+                    AcademicYear.start_year == 2030,
+                )
+            )
+        ).scalar_one()
+        batch = (
+            await db_session.execute(
+                select(Batch).where(Batch.code == "FUT-A")
+            )
+        ).scalar_one()
+        assert batch.start_academic_year_id == ay_2030.id

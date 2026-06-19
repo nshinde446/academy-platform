@@ -171,6 +171,8 @@ export interface ImportSummary {
   batches_created: string[];
   // Subject skeleton rows auto-created for new courses (§8).
   subjects_created: number;
+  // Academic years auto-created during this import (e.g. ["2026-27"]).
+  academic_years_created: string[];
   // Handle to undo this import as a unit. Null when nothing persisted.
   import_id: string | null;
 }
@@ -211,8 +213,10 @@ export interface ImportPreview {
   existing_batches: number;
   missing_batches: number;
   blocked_batches: number;
-  // Set when the import can't run at all (e.g. no academic year on the branch).
+  // Reserved hard-stop; currently always null (years are auto-derived).
   blocking_error: string | null;
+  // Academic years the import would auto-create, e.g. ["2026-27"].
+  new_academic_years: string[];
   batches: ImportPreviewBatch[];
   row_issues: string[];
 }
