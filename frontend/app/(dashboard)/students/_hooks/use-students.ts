@@ -146,6 +146,30 @@ export function useDeleteStudent(branchId: string | undefined) {
   });
 }
 
+// Soft-deletes every student in the branch (keeps batches/courses/curriculum).
+export function useDeleteAllStudents(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.post<{ deleted: number }>(
+        "/api/v1/students/delete-all",
+        null,
+        { params: { branch_id: branchId, confirm: true } },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: studentKeys.list(branchId) });
+        queryClient.invalidateQueries({
+          queryKey: studentKeys.withStats(branchId),
+        });
+      }
+    },
+  });
+}
+
 export function useStudentTestHistory(
   branchId: string | undefined,
   studentId: string,

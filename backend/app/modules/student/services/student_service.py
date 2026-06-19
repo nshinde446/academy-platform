@@ -161,6 +161,65 @@ async def get_upcoming_tests(
     return await student_repository.get_upcoming_tests(session, student_id, branch_id)
 
 
+async def delete_all_students(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict[str, int]:
+    """Soft-delete every active student in the branch (and their batch
+    mappings). Batches, courses, subjects and curriculum are left intact, so a
+    re-import recreates students against the existing structure. Recoverable —
+    rows stay with is_deleted=true."""
+    from sqlalchemy import func, select, update
+
+    from app.modules.student.models.student_models import (
+        Student,
+        StudentBatchMapping,
+    )
+
+    count = (
+        await session.execute(
+            select(func.count())
+            .select_from(Student)
+            .where(
+                Student.branch_id == branch_id,
+                Student.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalar_one()
+
+    if count:
+        await session.execute(
+            update(Student)
+            .where(
+                Student.branch_id == branch_id,
+                Student.is_deleted == False,  # noqa: E712
+            )
+            .values(is_deleted=True)
+        )
+        await session.execute(
+            update(StudentBatchMapping)
+            .where(
+                StudentBatchMapping.branch_id == branch_id,
+                StudentBatchMapping.is_deleted == False,  # noqa: E712
+            )
+            .values(is_deleted=True)
+        )
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="DELETE_ALL",
+        table_name="students",
+        record_id=uuid.uuid4(),
+        new_values={"deleted": int(count)},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return {"deleted": int(count)}
+
+
 async def get_student_syllabus(
     session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
 ):

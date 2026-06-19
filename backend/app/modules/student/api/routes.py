@@ -1,11 +1,12 @@
 import uuid
 
-from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.student.schemas.student_schemas import (
+    BulkDeleteSummary,
     ImportPreview,
     ImportSummary,
     ImportUndoSummary,
@@ -111,6 +112,29 @@ async def get_student_upcoming_tests(
     """Future-scheduled tests for the student's batch they haven't taken yet
     (soonest first) — the Tier 13 'upcoming tests' section."""
     return await student_service.get_upcoming_tests(session, student_id, branch_id)
+
+
+@router.post("/delete-all", response_model=BulkDeleteSummary)
+async def delete_all_students(
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    confirm: bool = Query(False),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Soft-delete every student in the branch (keeps batches/courses/curriculum)
+    so a stream-enhanced file can be re-imported cleanly. Requires confirm=true."""
+    if not confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pass confirm=true to delete all students.",
+        )
+    return await student_service.delete_all_students(
+        session,
+        branch_id,
+        current_user["user_id"],
+        request.client.host if request.client else None,
+    )
 
 
 @router.get("/{student_id}/syllabus", response_model=StudentSyllabus)

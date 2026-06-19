@@ -124,6 +124,12 @@ class StudentSyllabus(BaseModel):
     subjects: list[StudentSubjectSyllabus] = []
 
 
+class BulkDeleteSummary(BaseModel):
+    """Result of a bulk soft-delete of students."""
+
+    deleted: int
+
+
 class ImportSummary(BaseModel):
     imported: int
     skipped: int

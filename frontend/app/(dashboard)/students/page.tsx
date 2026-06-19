@@ -24,6 +24,7 @@ import { StudentEmptyState } from "./_components/student-empty-state";
 import { CreateStudentDialog } from "./_components/create-student-dialog";
 import { EditStudentDialog } from "./_components/edit-student-dialog";
 import { ImportStudentsDialog } from "./_components/import-students-dialog";
+import { DeleteAllStudentsDialog } from "./_components/delete-all-students-dialog";
 
 function filterStudents(
   rows: StudentWithStats[],
@@ -104,6 +105,12 @@ export default function StudentsPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          {branchId && (
+            <DeleteAllStudentsDialog
+              branchId={branchId}
+              count={studentsQuery.data?.length ?? 0}
+            />
+          )}
           {branchId && <ImportStudentsDialog branchId={branchId} />}
           <CreateStudentDialog
             academicYears={academicYearsQuery.data ?? []}
