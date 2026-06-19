@@ -39,6 +39,11 @@ class Student(BaseModel):
     # Target exam track.
     # Allowed: NEET | JEE-Main | JEE-Advanced | MHT-CET | Both | Foundation | Other
     target_exam: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Stream the student opts into *for this coaching/target* (distinct from any
+    # board syllabus): which subjects they actually sit. Physics+Chemistry are
+    # common to all; Maths is PCM-only; Biology is PCB-only.
+    # Allowed: PCM | PCB | PCMB. Defaulted from Target on import when blank.
+    stream: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Fees status surfaced as a Paid / Due badge on the students table.
     # Allowed: paid | due | overdue | partial
     fees_status: Mapped[str | None] = mapped_column(String(20), nullable=True)

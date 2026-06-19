@@ -49,6 +49,10 @@ COLUMN_MAPPING = {
     "target": "target_exam",
     "target exam": "target_exam",
     "target_exam": "target_exam",
+    # Coaching stream (PCM/PCB/PCMB) the student opts into — a real per-student
+    # field, distinct from the board-syllabus override column.
+    "stream": "stream",
+    "stream (pcm/pcb/pcmb)": "stream",
     "batch": "_batch_code",
     "batch code": "_batch_code",
     "batch_code": "_batch_code",
@@ -87,17 +91,22 @@ SUBJECT_SETS: dict[str, list[str]] = {
     "PCMB": ["Physics", "Chemistry", "Mathematics", "Biology"],
     "MHT-CET-PCM": ["Physics", "Chemistry", "Mathematics"],
     "MHT-CET-PCB": ["Physics", "Chemistry", "Biology"],
+    # MHT-CET with no explicit stream: carry the *union* on the course (P/C are
+    # shared; Maths is PCM-only; Biology is PCB-only) and let each student's
+    # `stream` select their subset at read time.
+    "MHT-CET": ["Physics", "Chemistry", "Mathematics", "Biology"],
     "FOUNDATION": ["Science", "Mathematics", "Mental Ability"],
 }
 
 # Target -> default syllabus key when the row has no explicit Syllabus. MHT-CET
-# and Other are intentionally absent: their subject set is ambiguous (§6), so
-# without an explicit Syllabus we create no subjects.
+# now maps to its union set (the course carries all four subjects; per-student
+# `stream` filters). Other has no academic subject set.
 TARGET_SYLLABUS: dict[str, str] = {
     "NEET": "NEET",
     "JEE-Main": "JEE",
     "JEE-Advanced": "JEE",
     "Both": "PCMB",
+    "MHT-CET": "MHT-CET",
     "Foundation": "FOUNDATION",
 }
 
@@ -976,7 +985,9 @@ async def import_students(
     ip_address: str | None = None,
 ) -> dict[str, Any]:
     from app.modules.student.services.student_service import (
+        VALID_STREAMS,
         _validate_enrolment_fields,
+        default_stream,
     )
 
     content = await file.read()
@@ -1150,6 +1161,23 @@ async def import_students(
                 else:
                     errors.append(f"Row {rownum}: unknown batch code '{batch_code}'")
                 continue
+
+        # Resolve the per-student stream: an explicit (valid) Stream value wins;
+        # blank or unrecognized falls back to the Target default (PCB for
+        # MHT-CET). Admins can override later on the student record.
+        raw_stream = kwargs.get("stream")
+        if raw_stream:
+            norm_stream = str(raw_stream).strip().upper()
+            if norm_stream in VALID_STREAMS:
+                kwargs["stream"] = norm_stream
+            else:
+                warnings.append(
+                    f"Row {rownum}: unrecognized Stream '{raw_stream}' — "
+                    f"defaulted from Target"
+                )
+                kwargs["stream"] = default_stream(kwargs.get("target_exam"))
+        else:
+            kwargs["stream"] = default_stream(kwargs.get("target_exam"))
 
         try:
             # Savepoint per row: a row that fails at flush (e.g. a value longer

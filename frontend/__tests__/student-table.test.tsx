@@ -22,6 +22,7 @@ const ROWS: StudentWithStats[] = [
     enrollment_number: "ROLL-001",
     standard: "11",
     target_exam: "NEET",
+    stream: "PCB",
     batch_id: "b1",
     batch_name: "NEET 2025-A",
     fees_status: "paid",
@@ -39,6 +40,7 @@ const ROWS: StudentWithStats[] = [
     enrollment_number: null,
     standard: null,
     target_exam: null,
+    stream: null,
     batch_id: null,
     batch_name: null,
     fees_status: "overdue",
@@ -72,6 +74,7 @@ const STUDENTS: Record<string, StudentResponse> = {
     standard: "11",
     target_exam: "NEET",
     fees_status: "paid",
+    stream: "PCB",
     status: "active",
   },
   s2: {
@@ -94,6 +97,7 @@ const STUDENTS: Record<string, StudentResponse> = {
     standard: null,
     target_exam: null,
     fees_status: "overdue",
+    stream: null,
     status: "inactive",
   },
 };

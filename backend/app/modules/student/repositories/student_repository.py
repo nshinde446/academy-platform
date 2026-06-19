@@ -181,6 +181,7 @@ async def list_with_stats(
             "enrollment_number": s.enrollment_number,
             "standard": s.standard,
             "target_exam": s.target_exam,
+            "stream": s.stream,
             "fees_status": s.fees_status,
             "batch_id": batch_by_student.get(s.id),
             "batch_name": batches_by_id.get(batch_by_student.get(s.id)) if batch_by_student.get(s.id) else None,

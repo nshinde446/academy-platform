@@ -780,9 +780,9 @@ class TestStudentImportSubjectSkeleton:
         }
 
     @pytest.mark.usefixtures("seed_data")
-    async def test_mht_cet_without_syllabus_creates_no_subjects(
-        self, client, seed_data
-    ):
+    async def test_mht_cet_creates_union_subjects(self, client, seed_data):
+        """MHT-CET now carries the union of subjects on the course (P/C/M/B);
+        each student's stream selects their subset at read time."""
         token = await _login(client)
         content = _csv("Dev,11,MHT-CET,MHT-A,SK-030")
         resp = await client.post(
@@ -792,7 +792,7 @@ class TestStudentImportSubjectSkeleton:
         )
         data = resp.json()
         assert data["batches_created"] == ["MHT-A"]
-        assert data["subjects_created"] == 0  # ambiguous stream, no guess
+        assert data["subjects_created"] == 4  # P, C, M, B union
 
     @pytest.mark.usefixtures("seed_data")
     async def test_neet_with_pcm_syllabus_is_error(self, client, seed_data):

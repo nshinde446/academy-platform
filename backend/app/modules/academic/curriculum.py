@@ -36,6 +36,11 @@ _SHEET_FOR: dict[tuple[str, str], str] = {
     ("MHT-CET-PCB", "Physics"): "MHTCET_Physics",
     ("MHT-CET-PCB", "Chemistry"): "MHTCET_Chemistry",
     ("MHT-CET-PCB", "Biology"): "MHTCET_Biology",
+    # MHT-CET union (course carries all four; per-student stream filters).
+    ("MHT-CET", "Physics"): "MHTCET_Physics",
+    ("MHT-CET", "Chemistry"): "MHTCET_Chemistry",
+    ("MHT-CET", "Mathematics"): "MHTCET_Maths",
+    ("MHT-CET", "Biology"): "MHTCET_Biology",
 }
 
 

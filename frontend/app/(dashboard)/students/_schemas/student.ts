@@ -36,8 +36,14 @@ export interface StudentResponse {
   standard: Standard | null;
   target_exam: TargetExam | null;
   fees_status: FeesStatus | null;
+  stream: Stream | null;
   status: string;
 }
+
+// Coaching stream — which subjects the student sits (P/C common; M for PCM;
+// Bio for PCB). Distinct from board syllabus.
+export const STREAMS = ["PCM", "PCB", "PCMB"] as const;
+export type Stream = (typeof STREAMS)[number];
 
 // Computed-stats row from GET /students/with-stats. Powers the
 // MSA_Design roster table — only the columns the table needs.
@@ -48,6 +54,7 @@ export interface StudentWithStats {
   enrollment_number: string | null;
   standard: Standard | null;
   target_exam: TargetExam | null;
+  stream: Stream | null;
   batch_id: string | null;
   batch_name: string | null;
   fees_status: FeesStatus | null;
@@ -78,6 +85,7 @@ export interface StudentCreate {
   username?: string | null;
   course_id?: string | null;
   fees_status?: FeesStatus | null;
+  stream?: Stream | null;
 }
 
 export interface StudentUpdate {
@@ -97,6 +105,22 @@ export interface StudentUpdate {
   standard?: Standard | null;
   target_exam?: TargetExam | null;
   fees_status?: FeesStatus | null;
+  stream?: Stream | null;
+}
+
+// A student's accountable syllabus (their course's subjects filtered by stream).
+export interface StudentSubjectSyllabus {
+  subject_id: string;
+  subject_name: string;
+  chapter_count: number;
+  topic_count: number;
+}
+
+export interface StudentSyllabus {
+  student_id: string;
+  stream: Stream | null;
+  course_id: string | null;
+  subjects: StudentSubjectSyllabus[];
 }
 
 // A scheduled, not-yet-taken test for the student's batch (soonest first).

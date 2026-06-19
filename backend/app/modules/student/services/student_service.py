@@ -21,6 +21,57 @@ VALID_TARGET_EXAMS = {
 }
 
 
+# Streams a student can opt into for their target exam. Decides which subjects
+# they actually sit (Physics/Chemistry common to all; Maths PCM-only; Biology
+# PCB-only).
+VALID_STREAMS = {"PCM", "PCB", "PCMB"}
+
+# Default stream from target when the admin leaves Stream blank. MHT-CET falls
+# back to PCB (most students); the few PCM ones get flagged/overridden.
+DEFAULT_STREAM_FOR_TARGET = {
+    "NEET": "PCB",
+    "JEE-Main": "PCM",
+    "JEE-Advanced": "PCM",
+    "Both": "PCMB",
+    "MHT-CET": "PCB",
+}
+
+# Subject-name families used to filter a course's subjects down to the ones a
+# given stream actually sits.
+_COMMON_SUBJECTS = {"physics", "chemistry"}
+_MATHS_SUBJECTS = {"mathematics", "maths"}
+_BIO_SUBJECTS = {"biology", "botany", "zoology"}
+
+
+def default_stream(target_exam: str | None) -> str | None:
+    return DEFAULT_STREAM_FOR_TARGET.get(target_exam or "")
+
+
+def stream_includes_subject(stream: str | None, subject_name: str) -> bool:
+    """Whether a student on ``stream`` sits ``subject_name``. Physics/Chemistry
+    are common; Maths is PCM/PCMB; Biology (incl. Botany/Zoology) is PCB/PCMB.
+    Unknown stream or unrecognized subject -> not filtered out."""
+    if not stream:
+        return True
+    name = subject_name.strip().lower()
+    s = stream.strip().upper()
+    if name in _COMMON_SUBJECTS:
+        return True
+    if name in _MATHS_SUBJECTS:
+        return s in {"PCM", "PCMB"}
+    if name in _BIO_SUBJECTS:
+        return s in {"PCB", "PCMB"}
+    return True
+
+
+def _validate_stream(stream: str | None):
+    if stream is not None and stream not in VALID_STREAMS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid stream '{stream}'. Allowed: {sorted(VALID_STREAMS)}",
+        )
+
+
 def _validate_enrolment_fields(standard: str | None, target_exam: str | None):
     if standard is not None and standard not in VALID_STANDARDS:
         raise HTTPException(
@@ -47,7 +98,12 @@ async def create_student(
     ip_address: str | None = None,
 ):
     _validate_enrolment_fields(data.standard, data.target_exam)
-    student = await student_repository.create(session, **data.model_dump())
+    _validate_stream(data.stream)
+    payload = data.model_dump()
+    # Single-student form: default the stream from target when left blank.
+    if not payload.get("stream"):
+        payload["stream"] = default_stream(data.target_exam)
+    student = await student_repository.create(session, **payload)
 
     await audit_service.log_action(
         session,
@@ -55,7 +111,7 @@ async def create_student(
         action="CREATE",
         table_name="students",
         record_id=student.id,
-        new_values=data.model_dump(),
+        new_values=payload,
         ip_address=ip_address,
         branch_id=data.branch_id,
     )
@@ -105,6 +161,68 @@ async def get_upcoming_tests(
     return await student_repository.get_upcoming_tests(session, student_id, branch_id)
 
 
+async def get_student_syllabus(
+    session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
+):
+    """The student's accountable syllabus: the subjects of their batch's course,
+    filtered to the ones their stream actually sits, with how much curriculum is
+    loaded for each."""
+    from sqlalchemy import select
+
+    from app.modules.academic.repositories import academic_repository
+    from app.modules.batch.models.batch_models import Batch
+    from app.modules.student.models.student_models import StudentBatchMapping
+
+    student = await get_student(session, student_id, branch_id)
+
+    batch_id = (
+        await session.execute(
+            select(StudentBatchMapping.batch_id)
+            .where(
+                StudentBatchMapping.student_id == student_id,
+                StudentBatchMapping.is_deleted == False,  # noqa: E712
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    course_id = None
+    if batch_id is not None:
+        course_id = (
+            await session.execute(select(Batch.course_id).where(Batch.id == batch_id))
+        ).scalar_one_or_none()
+
+    subjects_out: list[dict] = []
+    if course_id is not None:
+        subjects = await academic_repository.list_subjects(
+            session, branch_id, course_id
+        )
+        for subj in subjects:
+            if not stream_includes_subject(student.stream, subj.name):
+                continue
+            chapters = await academic_repository.list_chapters(
+                session, branch_id, subj.id
+            )
+            topics = await academic_repository.list_topics_by_subject(
+                session, branch_id, subj.id
+            )
+            subjects_out.append(
+                {
+                    "subject_id": subj.id,
+                    "subject_name": subj.name,
+                    "chapter_count": len(chapters),
+                    "topic_count": len(topics),
+                }
+            )
+
+    return {
+        "student_id": student_id,
+        "stream": student.stream,
+        "course_id": course_id,
+        "subjects": subjects_out,
+    }
+
+
 async def update_student(
     session: AsyncSession,
     student_id: uuid.UUID,
@@ -130,6 +248,7 @@ async def update_student(
     _validate_enrolment_fields(
         update_data.get("standard"), update_data.get("target_exam")
     )
+    _validate_stream(update_data.get("stream"))
     student = await student_repository.update(session, student, **update_data)
 
     await audit_service.log_action(

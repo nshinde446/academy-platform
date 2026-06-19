@@ -26,6 +26,8 @@ class StudentCreate(BaseModel):
     username: str | None = None
     course_id: uuid.UUID | None = None
     fees_status: str | None = None
+    # PCM | PCB | PCMB — defaulted from target when omitted.
+    stream: str | None = None
 
 
 class StudentUpdate(BaseModel):
@@ -45,6 +47,8 @@ class StudentUpdate(BaseModel):
     standard: str | None = None
     target_exam: str | None = None
     fees_status: str | None = None
+    # Admins can override the imported/defaulted stream (PCM | PCB | PCMB).
+    stream: str | None = None
 
 
 class StudentResponse(BaseModel):
@@ -67,6 +71,7 @@ class StudentResponse(BaseModel):
     standard: str | None = None
     target_exam: str | None = None
     fees_status: str | None = None
+    stream: str | None = None
     status: str
     model_config = {"from_attributes": True}
 
@@ -85,6 +90,7 @@ class StudentWithStats(BaseModel):
     enrollment_number: str | None = None
     standard: str | None = None
     target_exam: str | None = None
+    stream: str | None = None
     batch_id: uuid.UUID | None = None
     batch_name: str | None = None
     fees_status: str | None = None
@@ -95,6 +101,27 @@ class StudentWithStats(BaseModel):
     batch_rank: int | None = None  # rank within their batch by avg_score
     batch_size: int = 0
     tests_taken: int = 0
+
+
+class StudentSubjectSyllabus(BaseModel):
+    """One subject a student is accountable for (after the stream filter), with
+    how much curriculum is loaded — drives a per-student syllabus view."""
+
+    subject_id: uuid.UUID
+    subject_name: str
+    chapter_count: int
+    topic_count: int
+
+
+class StudentSyllabus(BaseModel):
+    """A student's accountable syllabus: their course's subjects filtered to the
+    ones their stream actually sits (Physics/Chemistry always; Maths for PCM;
+    Biology for PCB)."""
+
+    student_id: uuid.UUID
+    stream: str | None = None
+    course_id: uuid.UUID | None = None
+    subjects: list[StudentSubjectSyllabus] = []
 
 
 class ImportSummary(BaseModel):
