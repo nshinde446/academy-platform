@@ -17,7 +17,12 @@ import {
   RosterAvatar,
   ScoreCell,
 } from "@/components/roster/roster-primitives";
-import type { StudentResponse, StudentWithStats } from "../_schemas/student";
+import {
+  STREAMS,
+  type Stream,
+  type StudentResponse,
+  type StudentWithStats,
+} from "../_schemas/student";
 
 interface StudentTableProps {
   rows: StudentWithStats[];
@@ -26,6 +31,8 @@ interface StudentTableProps {
   studentsById: Record<string, StudentResponse>;
   onEdit: (student: StudentResponse) => void;
   onDelete: (student: StudentResponse) => void;
+  // Inline stream edit (PCM/PCB/PCMB) — persisted via PATCH by the page.
+  onStreamChange: (student: StudentResponse, stream: Stream) => void;
 }
 
 export function StudentTable({
@@ -33,6 +40,7 @@ export function StudentTable({
   studentsById,
   onEdit,
   onDelete,
+  onStreamChange,
 }: StudentTableProps) {
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
@@ -43,6 +51,7 @@ export function StudentTable({
             <TableHead>Name</TableHead>
             <TableHead className="hidden sm:table-cell">Class</TableHead>
             <TableHead className="hidden md:table-cell">Target</TableHead>
+            <TableHead className="hidden md:table-cell">Stream</TableHead>
             <TableHead className="hidden lg:table-cell">Batch</TableHead>
             <TableHead className="text-right hidden md:table-cell">
               Rank
@@ -92,6 +101,25 @@ export function StudentTable({
                   ) : (
                     "—"
                   )}
+                </TableCell>
+                <TableCell className="hidden md:table-cell">
+                  <select
+                    aria-label={`Stream for ${r.first_name} ${r.last_name}`}
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs disabled:opacity-50"
+                    value={r.stream ?? ""}
+                    disabled={!full}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (full && v) onStreamChange(full, v as Stream);
+                    }}
+                  >
+                    {!r.stream && <option value="">—</option>}
+                    {STREAMS.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
                 </TableCell>
                 <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
                   {r.batch_name ?? "—"}

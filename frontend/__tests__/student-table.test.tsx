@@ -9,6 +9,7 @@ import type {
 
 const mockEdit = vi.fn();
 const mockDelete = vi.fn();
+const mockStream = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -110,6 +111,7 @@ describe("StudentTable (MSA_Design layout)", () => {
         studentsById={{}}
         onEdit={mockEdit}
         onDelete={mockDelete}
+        onStreamChange={mockStream}
       />,
     );
 
@@ -128,6 +130,7 @@ describe("StudentTable (MSA_Design layout)", () => {
         studentsById={STUDENTS}
         onEdit={mockEdit}
         onDelete={mockDelete}
+        onStreamChange={mockStream}
       />,
     );
 
@@ -149,6 +152,7 @@ describe("StudentTable (MSA_Design layout)", () => {
         studentsById={STUDENTS}
         onEdit={mockEdit}
         onDelete={mockDelete}
+        onStreamChange={mockStream}
       />,
     );
 
@@ -165,6 +169,7 @@ describe("StudentTable (MSA_Design layout)", () => {
         studentsById={STUDENTS}
         onEdit={mockEdit}
         onDelete={mockDelete}
+        onStreamChange={mockStream}
       />,
     );
 
@@ -172,5 +177,26 @@ describe("StudentTable (MSA_Design layout)", () => {
       screen.getByRole("button", { name: /delete rahul sharma/i }),
     );
     expect(mockDelete).toHaveBeenCalledWith(STUDENTS.s1);
+  });
+
+  it("shows the current stream and saves an inline change", async () => {
+    const user = userEvent.setup();
+    render(
+      <StudentTable
+        rows={ROWS}
+        studentsById={STUDENTS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
+        onStreamChange={mockStream}
+      />,
+    );
+
+    const select = screen.getByRole("combobox", {
+      name: /stream for rahul sharma/i,
+    }) as HTMLSelectElement;
+    expect(select.value).toBe("PCB"); // current stream shown
+
+    await user.selectOptions(select, "PCM");
+    expect(mockStream).toHaveBeenCalledWith(STUDENTS.s1, "PCM");
   });
 });

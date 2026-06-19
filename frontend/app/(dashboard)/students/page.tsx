@@ -14,6 +14,7 @@ import {
   useAcademicYears,
 } from "./_hooks/use-students";
 import type {
+  Stream,
   StudentCreate,
   StudentResponse,
   StudentUpdate,
@@ -85,6 +86,10 @@ export default function StudentsPage() {
     await updateMutation.mutateAsync({ studentId: editTarget.id, data });
   }
 
+  function handleStreamChange(student: StudentResponse, stream: Stream) {
+    updateMutation.mutate({ studentId: student.id, data: { stream } });
+  }
+
   function handleDeleteClick(student: StudentResponse) {
     setDeleteTarget(student);
   }
@@ -148,6 +153,7 @@ export default function StudentsPage() {
           studentsById={studentsById}
           onEdit={handleEdit}
           onDelete={handleDeleteClick}
+          onStreamChange={handleStreamChange}
         />
       )}
 
