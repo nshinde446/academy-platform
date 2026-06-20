@@ -37,6 +37,20 @@ export default function StudentsPage() {
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
   const [page, setPage] = useState(0);
+  const [sortBy, setSortBy] = useState("name");
+  const [order, setOrder] = useState<"asc" | "desc">("asc");
+
+  // Numeric columns are most useful high-to-low; name reads A→Z. Clicking the
+  // active column toggles direction; a new column starts at its natural default.
+  function handleSort(key: string) {
+    if (key === sortBy) {
+      setOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(key);
+      setOrder(key === "name" ? "asc" : "desc");
+    }
+    setPage(0);
+  }
 
   const [editTarget, setEditTarget] = useState<StudentResponse | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -53,6 +67,8 @@ export default function StudentsPage() {
     offset: page * PAGE_SIZE,
     limit: PAGE_SIZE,
     search: debouncedSearch,
+    sortBy,
+    order,
   });
   const academicYearsQuery = useAcademicYears(branchId);
   const createMutation = useCreateStudent(branchId);
@@ -152,6 +168,9 @@ export default function StudentsPage() {
             onEdit={handleEdit}
             onDelete={handleDeleteClick}
             onStreamChange={handleStreamChange}
+            sortBy={sortBy}
+            order={order}
+            onSort={handleSort}
           />
           {/* Pagination */}
           <div className="flex items-center justify-between gap-2">

@@ -7,6 +7,7 @@ import type { StudentWithStats } from "@/app/(dashboard)/students/_schemas/stude
 const mockEdit = vi.fn();
 const mockDelete = vi.fn();
 const mockStream = vi.fn();
+const mockSort = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -60,6 +61,9 @@ describe("StudentTable (MSA_Design layout)", () => {
         onEdit={mockEdit}
         onDelete={mockDelete}
         onStreamChange={mockStream}
+        sortBy="name"
+        order="asc"
+        onSort={mockSort}
       />,
     );
 
@@ -78,6 +82,9 @@ describe("StudentTable (MSA_Design layout)", () => {
         onEdit={mockEdit}
         onDelete={mockDelete}
         onStreamChange={mockStream}
+        sortBy="name"
+        order="asc"
+        onSort={mockSort}
       />,
     );
 
@@ -99,6 +106,9 @@ describe("StudentTable (MSA_Design layout)", () => {
         onEdit={mockEdit}
         onDelete={mockDelete}
         onStreamChange={mockStream}
+        sortBy="name"
+        order="asc"
+        onSort={mockSort}
       />,
     );
 
@@ -115,6 +125,9 @@ describe("StudentTable (MSA_Design layout)", () => {
         onEdit={mockEdit}
         onDelete={mockDelete}
         onStreamChange={mockStream}
+        sortBy="name"
+        order="asc"
+        onSort={mockSort}
       />,
     );
 
@@ -132,6 +145,9 @@ describe("StudentTable (MSA_Design layout)", () => {
         onEdit={mockEdit}
         onDelete={mockDelete}
         onStreamChange={mockStream}
+        sortBy="name"
+        order="asc"
+        onSort={mockSort}
       />,
     );
 
@@ -142,5 +158,28 @@ describe("StudentTable (MSA_Design layout)", () => {
 
     await user.selectOptions(select, "PCM");
     expect(mockStream).toHaveBeenCalledWith(ROWS[0], "PCM");
+  });
+
+  it("marks the active sort column and fires onSort on a header click", async () => {
+    const user = userEvent.setup();
+    render(
+      <StudentTable
+        rows={ROWS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
+        onStreamChange={mockStream}
+        sortBy="name"
+        order="asc"
+        onSort={mockSort}
+      />,
+    );
+
+    // Active column reflects current sort direction for a11y.
+    expect(
+      screen.getByRole("button", { name: /sort by name/i }),
+    ).toHaveAttribute("aria-sort", "ascending");
+
+    await user.click(screen.getByRole("button", { name: /sort by avg score/i }));
+    expect(mockSort).toHaveBeenCalledWith("avg_score_pct");
   });
 });

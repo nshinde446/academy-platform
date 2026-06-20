@@ -31,6 +31,10 @@ interface StudentTableProps {
   onDelete: (student: StudentWithStats) => void;
   // Inline stream edit (PCM/PCB/PCMB) — persisted via PATCH by the page.
   onStreamChange: (student: StudentWithStats, stream: Stream) => void;
+  // Server-side sort: current key/direction + a click handler per column.
+  sortBy: string;
+  order: "asc" | "desc";
+  onSort: (key: string) => void;
 }
 
 export function StudentTable({
@@ -38,28 +42,80 @@ export function StudentTable({
   onEdit,
   onDelete,
   onStreamChange,
+  sortBy,
+  order,
+  onSort,
 }: StudentTableProps) {
+  // A clickable, sort-aware column header. `align="right"` matches the
+  // numeric columns' right alignment.
+  function SortHead({
+    label,
+    sortKey,
+    className = "",
+    align = "left",
+  }: {
+    label: string;
+    sortKey: string;
+    className?: string;
+    align?: "left" | "right";
+  }) {
+    const active = sortBy === sortKey;
+    const arrow = active ? (order === "asc" ? " ↑" : " ↓") : "";
+    return (
+      <TableHead className={className}>
+        <button
+          type="button"
+          onClick={() => onSort(sortKey)}
+          aria-label={`Sort by ${label}`}
+          aria-sort={active ? (order === "asc" ? "ascending" : "descending") : "none"}
+          className={
+            "inline-flex items-center gap-0.5 hover:text-foreground " +
+            (active ? "font-semibold text-foreground" : "") +
+            (align === "right" ? " w-full justify-end" : "")
+          }
+        >
+          {label}
+          <span className="tabular-nums">{arrow}</span>
+        </button>
+      </TableHead>
+    );
+  }
+
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead className="w-9"></TableHead>
-            <TableHead>Name</TableHead>
+            <SortHead label="Name" sortKey="name" />
             <TableHead className="hidden sm:table-cell">Class</TableHead>
             <TableHead className="hidden md:table-cell">Target</TableHead>
             <TableHead className="hidden md:table-cell">Stream</TableHead>
             <TableHead className="hidden lg:table-cell">Batch</TableHead>
-            <TableHead className="text-right hidden md:table-cell">
-              Rank
-            </TableHead>
-            <TableHead className="text-right">Avg score</TableHead>
-            <TableHead className="text-right hidden sm:table-cell">
-              Attendance
-            </TableHead>
-            <TableHead className="text-right hidden lg:table-cell">
-              DPP
-            </TableHead>
+            <SortHead
+              label="Rank"
+              sortKey="batch_rank"
+              align="right"
+              className="text-right hidden md:table-cell"
+            />
+            <SortHead
+              label="Avg score"
+              sortKey="avg_score_pct"
+              align="right"
+              className="text-right"
+            />
+            <SortHead
+              label="Attendance"
+              sortKey="attendance_pct"
+              align="right"
+              className="text-right hidden sm:table-cell"
+            />
+            <SortHead
+              label="DPP"
+              sortKey="dpp_completion_pct"
+              align="right"
+              className="text-right hidden lg:table-cell"
+            />
             <TableHead className="hidden md:table-cell">Fees</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
