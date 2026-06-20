@@ -50,6 +50,7 @@ describe("Sidebar (MSA_Design section layout)", () => {
       "Students",
       "Teachers",
       "Lectures",
+      "Attendance",
       "Insights",
     ]) {
       expect(screen.getByRole("link", { name: label })).toBeInTheDocument();

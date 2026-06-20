@@ -27,6 +27,7 @@ const SECTIONS: NavSection[] = [
       { label: "Students", href: "/students" },
       { label: "Teachers", href: "/teachers" },
       { label: "Lectures", href: "/lectures" },
+      { label: "Attendance", href: "/attendance" },
       { label: "Insights", href: "/insights" },
     ],
   },
