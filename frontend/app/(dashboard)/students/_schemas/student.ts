@@ -183,6 +183,24 @@ export interface ImportSummary {
   import_id: string | null;
 }
 
+// A background import job — polled for progress, then the final result.
+export interface ImportJob {
+  id: string;
+  job_status: "pending" | "processing" | "completed" | "failed";
+  filename: string | null;
+  total_rows: number;
+  processed_rows: number;
+  imported: number;
+  skipped: number;
+  subjects_created: number;
+  errors: string[];
+  warnings: string[];
+  batches_created: string[];
+  academic_years_created: string[];
+  error_detail: string | null;
+  import_id: string | null;
+}
+
 export interface ImportUndoSummary {
   students_deleted: number;
   batches_deleted: number;

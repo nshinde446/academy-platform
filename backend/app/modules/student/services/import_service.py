@@ -14,7 +14,11 @@ from app.modules.academic import curriculum
 from app.modules.academic.repositories import academic_repository
 from app.modules.audit.services import audit_service
 from app.modules.batch.models.batch_models import Batch
-from app.modules.student.models.student_models import Student, StudentBatchMapping
+from app.modules.student.models.student_models import (
+    Student,
+    StudentBatchMapping,
+    StudentImportJob,
+)
 
 # Reserved key the parsers stash the true source row number under. It is not a
 # real column, so _row_to_student_kwargs (which only maps known headers) ignores
@@ -788,13 +792,17 @@ _BULK_CHUNK = 500
 async def _bulk_insert_students(
     session: AsyncSession,
     pending: list[tuple[int, Student, "StudentBatchMapping | None"]],
+    on_progress=None,
 ) -> tuple[int, list[tuple[int, str]]]:
     """Insert validated students (+ their batch mappings) in chunks — one flush
     per chunk instead of per row, which is what kept large imports under the
     request timeout. If a chunk's flush fails (a stray IntegrityError), that
     chunk is retried row-by-row in savepoints so a single bad row is isolated
-    and reported, not fatal. Returns (imported_count, [(rownum, error), ...])."""
+    and reported, not fatal. ``on_progress`` (if given) is awaited after each
+    chunk with the running processed count, for a job progress bar. Returns
+    (imported_count, [(rownum, error), ...])."""
     imported = 0
+    processed = 0
     skips: list[tuple[int, str]] = []
     for start in range(0, len(pending), _BULK_CHUNK):
         chunk = pending[start : start + _BULK_CHUNK]
@@ -819,6 +827,9 @@ async def _bulk_insert_students(
                     imported += 1
                 except Exception as exc:  # noqa: BLE001
                     skips.append((rownum, str(exc)))
+        processed += len(chunk)
+        if on_progress is not None:
+            await on_progress(processed)
     return imported, skips
 
 
@@ -1102,25 +1113,33 @@ async def preview_import(
 
 async def import_students(
     session: AsyncSession,
-    file: UploadFile,
+    content: bytes,
+    filename: str | None,
     branch_id: uuid.UUID,
     current_user_id: uuid.UUID,
     create_missing_batches: bool = False,
     ip_address: str | None = None,
+    import_id: uuid.UUID | None = None,
+    on_progress=None,
 ) -> dict[str, Any]:
+    """Engine for a student import. ``content``/``filename`` are the raw upload
+    (read by the caller, so this works both in-request and from a background
+    job). When ``on_progress`` is given it's awaited with the running count of
+    inserted students so a job can publish a progress bar. ``import_id`` lets a
+    job key the run to its own id; otherwise one is generated."""
     from app.modules.student.services.student_service import (
         VALID_STREAMS,
         _validate_enrolment_fields,
         default_stream,
     )
 
-    content = await file.read()
-    rows = _parse_file(file.filename, content)
+    rows = _parse_file(filename, content)
 
     # One id per import run, stamped on every student (and auto-created batch)
     # so this upload can be audited and undone as a unit (design §9).
-    import_id = uuid.uuid4()
-    source_file = file.filename
+    if import_id is None:
+        import_id = uuid.uuid4()
+    source_file = filename
 
     # Auto-derive the intake year from the import date (overridable per row by
     # the Academic_year column) and ensure every year the import will touch
@@ -1368,7 +1387,9 @@ async def import_students(
     # Bulk-write the validated rows in chunks (one flush per chunk instead of
     # per row). A chunk whose flush fails (e.g. a stray IntegrityError) falls
     # back to per-row savepoints so one bad row can't sink the whole chunk.
-    imported, chunk_skips = await _bulk_insert_students(session, pending)
+    imported, chunk_skips = await _bulk_insert_students(
+        session, pending, on_progress=on_progress
+    )
     for rn, exc in chunk_skips:
         skipped += 1
         errors.append(f"Row {rn}: {exc}")
@@ -1403,6 +1424,113 @@ async def import_students(
         # Only hand back an undo handle when rows actually persisted.
         "import_id": import_id if imported > 0 else None,
     }
+
+
+async def start_import_job(
+    session: AsyncSession,
+    content: bytes,
+    filename: str | None,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    create_missing_batches: bool,
+) -> StudentImportJob:
+    """Create a pending import-job row (with the row count for the progress bar)
+    and return it. The heavy work runs afterwards in ``run_import_job`` so the
+    request returns immediately — no timeout regardless of file size."""
+    try:
+        total = len(_parse_file(filename, content))
+    except HTTPException:
+        total = 0
+    job = StudentImportJob(
+        branch_id=branch_id,
+        created_by=current_user_id,
+        filename=filename,
+        job_status="pending",
+        create_missing_batches=create_missing_batches,
+        total_rows=total,
+    )
+    session.add(job)
+    await session.flush()
+    return job
+
+
+async def run_import_job(
+    job_id: uuid.UUID,
+    content: bytes,
+    filename: str | None,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    create_missing_batches: bool,
+    ip_address: str | None = None,
+) -> None:
+    """Background entrypoint: opens its own session (the request's is gone) and
+    delegates to _process_import_job."""
+    from app.core.database.session import async_session_factory
+
+    async with async_session_factory() as session:
+        await _process_import_job(
+            session,
+            job_id,
+            content,
+            filename,
+            branch_id,
+            current_user_id,
+            create_missing_batches,
+            ip_address,
+        )
+
+
+async def _process_import_job(
+    session: AsyncSession,
+    job_id: uuid.UUID,
+    content: bytes,
+    filename: str | None,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    create_missing_batches: bool,
+    ip_address: str | None = None,
+) -> None:
+    """Run the import keyed to ``job_id`` (= import_id), publishing progress per
+    chunk and recording the final result or failure on the job row."""
+    job = await session.get(StudentImportJob, job_id)
+    if job is None:
+        return
+    job.job_status = "processing"
+    await session.commit()
+
+    async def _progress(done: int) -> None:
+        job.processed_rows = done
+        await session.commit()
+
+    try:
+        result = await import_students(
+            session,
+            content,
+            filename,
+            branch_id,
+            current_user_id,
+            create_missing_batches=create_missing_batches,
+            ip_address=ip_address,
+            import_id=job_id,
+            on_progress=_progress,
+        )
+        job.imported = result["imported"]
+        job.skipped = result["skipped"]
+        job.subjects_created = result["subjects_created"]
+        job.errors = result["errors"]
+        job.warnings = result["warnings"]
+        job.batches_created = result["batches_created"]
+        job.academic_years_created = result["academic_years_created"]
+        job.processed_rows = job.total_rows
+        job.job_status = "completed"
+        await session.commit()
+    except Exception as exc:  # noqa: BLE001 - record failure on the job
+        await session.rollback()
+        job = await session.get(StudentImportJob, job_id)
+        if job is not None:
+            job.job_status = "failed"
+            job.error_detail = str(exc)[:1000]
+            await session.commit()
 
 
 async def undo_import(

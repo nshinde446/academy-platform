@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, String, Uuid
+from sqlalchemy import JSON, Boolean, Date, ForeignKey, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database.base import BaseModel
@@ -91,6 +91,38 @@ class Parent(BaseModel):
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     occupation: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+
+class StudentImportJob(BaseModel):
+    """A bulk-import run processed in the background so large files never block a
+    request. The row id IS the import_id (so undo/traceability key off it); the
+    UI polls job_status + processed_rows for a progress bar, then reads the
+    result fields. ``job_status``: pending | processing | completed | failed."""
+
+    __tablename__ = "student_import_jobs"
+
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
+    )
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    job_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending"
+    )
+    create_missing_batches: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    total_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    processed_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    imported: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    subjects_created: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    errors: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    warnings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    batches_created: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    academic_years_created: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    error_detail: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
 
 class StudentBatchMapping(BaseModel):

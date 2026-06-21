@@ -138,6 +138,28 @@ class BulkDeleteSummary(BaseModel):
     deleted: int
 
 
+class ImportJobResponse(BaseModel):
+    """A background import job — the UI polls this for a progress bar
+    (processed_rows/total_rows) and, on completion, the result fields."""
+
+    id: uuid.UUID
+    job_status: str  # pending | processing | completed | failed
+    filename: str | None = None
+    total_rows: int = 0
+    processed_rows: int = 0
+    imported: int = 0
+    skipped: int = 0
+    subjects_created: int = 0
+    errors: list[str] = []
+    warnings: list[str] = []
+    batches_created: list[str] = []
+    academic_years_created: list[str] = []
+    error_detail: str | None = None
+    # Undo handle — the job id IS the import_id; null until rows persisted.
+    import_id: uuid.UUID | None = None
+    model_config = {"from_attributes": True}
+
+
 class ImportSummary(BaseModel):
     imported: int
     skipped: int

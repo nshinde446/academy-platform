@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
 import { Button } from "@/components/ui/button";
@@ -15,10 +15,10 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { downloadCsvTemplate } from "@/lib/csv-template";
-import { studentKeys } from "../_hooks/use-students";
+import { studentKeys, useImportJob } from "../_hooks/use-students";
 import type {
+  ImportJob,
   ImportPreview,
-  ImportSummary,
   ImportUndoSummary,
 } from "../_schemas/student";
 
@@ -196,11 +196,11 @@ function downloadSampleTemplate() {
 export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
   const [open, setOpen] = useState(false);
   const [previewing, setPreviewing] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [createMissing, setCreateMissing] = useState(true);
-  const [summary, setSummary] = useState<ImportSummary | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [undone, setUndone] = useState<ImportUndoSummary | null>(null);
   // Held in state (not just a ref) because the file <input> only renders in
@@ -209,10 +209,29 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
   const [file, setFile] = useState<File | null>(null);
   const queryClient = useQueryClient();
 
+  // The import runs as a background job; poll it for progress + the result.
+  const jobQuery = useImportJob(branchId, jobId);
+  const job = jobQuery.data ?? null;
+  const finished = job?.job_status === "completed" ? job : null;
+  const failed = job?.job_status === "failed";
+  const processing =
+    jobId !== null && job?.job_status !== "completed" && !failed;
+
+  // When the job finishes, refresh the rosters / batches once.
+  useEffect(() => {
+    if (job?.job_status !== "completed") return;
+    queryClient.invalidateQueries({ queryKey: studentKeys.list(branchId) });
+    queryClient.invalidateQueries({ queryKey: studentKeys.withStats(branchId) });
+    queryClient.invalidateQueries({ queryKey: studentKeys.roster(branchId) });
+    if (job.batches_created.length > 0) {
+      queryClient.invalidateQueries({ queryKey: ["batches"] });
+    }
+  }, [job?.job_status, job?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function reset() {
     setError("");
     setPreview(null);
-    setSummary(null);
+    setJobId(null);
     setCreateMissing(true);
     setUndone(null);
     setFile(null);
@@ -256,11 +275,13 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
     const formData = buildFormData();
     if (!formData) return;
 
-    setUploading(true);
+    setStarting(true);
     setError("");
     try {
-      const res = await apiClient.post<ImportSummary>(
-        `/api/v1/students/import`,
+      // Kick off a background job and switch to the progress view; the job
+      // poll takes over from here, so a huge file never blocks the request.
+      const res = await apiClient.post<ImportJob>(
+        `/api/v1/students/import/start`,
         formData,
         {
           params: {
@@ -270,32 +291,28 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
           headers: { "Content-Type": "multipart/form-data" },
         },
       );
-      queryClient.invalidateQueries({ queryKey: studentKeys.list(branchId) });
-      queryClient.invalidateQueries({ queryKey: studentKeys.withStats(branchId) });
-      if (res.data.batches_created.length > 0) {
-        queryClient.invalidateQueries({ queryKey: ["batches"] });
-      }
-      setSummary(res.data);
+      setJobId(res.data.id);
       setPreview(null);
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Import failed");
+      setError(err.response?.data?.error?.message || "Import failed to start");
     } finally {
-      setUploading(false);
+      setStarting(false);
     }
   }
 
   async function handleUndo() {
-    if (!summary?.import_id) return;
+    if (!finished?.import_id) return;
     setUndoing(true);
     setError("");
     try {
       const res = await apiClient.post<ImportUndoSummary>(
-        `/api/v1/students/import/${summary.import_id}/undo`,
+        `/api/v1/students/import/${finished.import_id}/undo`,
         null,
         { params: { branch_id: branchId } },
       );
       queryClient.invalidateQueries({ queryKey: studentKeys.list(branchId) });
       queryClient.invalidateQueries({ queryKey: studentKeys.withStats(branchId) });
+      queryClient.invalidateQueries({ queryKey: studentKeys.roster(branchId) });
       if (res.data.batches_deleted > 0) {
         queryClient.invalidateQueries({ queryKey: ["batches"] });
       }
@@ -307,6 +324,8 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
     }
   }
 
+  // The completed job is a superset of the old ImportSummary shape.
+  const summary = finished;
   const hasSummary = summary !== null;
   const allImported =
     summary !== null && summary.skipped === 0 && summary.imported > 0;
@@ -315,6 +334,10 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
   // Offer undo only while there's a handle and it hasn't been undone yet.
   const canUndo =
     summary !== null && summary.import_id !== null && undone === null;
+  const pct =
+    job && job.total_rows > 0
+      ? Math.min(100, Math.round((job.processed_rows / job.total_rows) * 100))
+      : 0;
 
   return (
     <Dialog
@@ -355,7 +378,7 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           {/* Step 1 — choose a file */}
-          {!preview && !hasSummary && (
+          {!preview && !jobId && (
             <>
               <div>
                 <Button
@@ -521,7 +544,40 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
             </div>
           )}
 
-          {/* Step 3 — import result */}
+          {/* Step 3 — background job in progress */}
+          {processing && (
+            <div className="flex flex-col gap-2 rounded-lg border border-border p-3 text-sm">
+              <p className="font-medium">
+                Importing in the background
+                {job && job.total_rows > 0 ? ` — ${pct}%` : "…"}
+              </p>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full bg-emerald-500 transition-all"
+                  style={{ width: `${job && job.total_rows > 0 ? pct : 5}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {job && job.total_rows > 0
+                  ? `${job.processed_rows} of ${job.total_rows} rows processed`
+                  : "Preparing…"}{" "}
+                — you can close this dialog; the import keeps running.
+              </p>
+            </div>
+          )}
+
+          {/* Job failed */}
+          {failed && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
+              <p className="font-medium text-destructive">Import failed</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {job?.error_detail ||
+                  "An unexpected error occurred. No rows were saved."}
+              </p>
+            </div>
+          )}
+
+          {/* Step 4 — import result */}
           {summary && (
             <div
               className={
@@ -599,12 +655,12 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
             <DialogClose
               render={
                 <Button variant="outline" type="button">
-                  {hasSummary ? "Close" : "Cancel"}
+                  {jobId ? "Close" : "Cancel"}
                 </Button>
               }
             />
 
-            {!preview && !hasSummary && (
+            {!preview && !jobId && (
               <Button onClick={handlePreview} disabled={previewing}>
                 {previewing ? "Reading..." : "Preview import"}
               </Button>
@@ -617,14 +673,14 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                 </Button>
                 <Button
                   onClick={handleImport}
-                  disabled={uploading || !!preview.blocking_error}
+                  disabled={starting || !!preview.blocking_error}
                 >
-                  {uploading ? "Importing..." : "Import"}
+                  {starting ? "Starting..." : "Import"}
                 </Button>
               </>
             )}
 
-            {hasSummary && !allImported && (
+            {(hasSummary || failed) && (
               <Button onClick={reset} variant="outline">
                 Upload another file
               </Button>

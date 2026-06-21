@@ -6,8 +6,31 @@ import { ImportStudentsDialog } from "@/app/(dashboard)/students/_components/imp
 import apiClient from "@/services/api-client";
 
 vi.mock("@/services/api-client", () => ({
-  default: { post: vi.fn() },
+  default: { post: vi.fn(), get: vi.fn() },
 }));
+
+// A completed import job (the dialog polls GET /import/jobs/{id}).
+function completedJob(overrides: Record<string, unknown> = {}) {
+  return {
+    data: {
+      id: "job-1",
+      job_status: "completed",
+      filename: "x.csv",
+      total_rows: 2,
+      processed_rows: 2,
+      imported: 2,
+      skipped: 0,
+      subjects_created: 0,
+      errors: [],
+      warnings: [],
+      batches_created: [],
+      academic_years_created: [],
+      error_detail: null,
+      import_id: "job-1",
+      ...overrides,
+    },
+  };
+}
 
 function renderDialog() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -24,6 +47,7 @@ describe("ImportStudentsDialog", () => {
     // Clears the mockResolvedValueOnce queue between tests (restoreAllMocks
     // doesn't reset manually-created vi.fn() mocks).
     (apiClient.post as ReturnType<typeof vi.fn>).mockReset();
+    (apiClient.get as ReturnType<typeof vi.fn>).mockReset();
   });
 
   it("offers a Download sample CSV button inside the dialog", async () => {
@@ -149,18 +173,14 @@ describe("ImportStudentsDialog", () => {
         row_issues: [],
       },
     });
+    // 2nd post = start the background job.
     post.mockResolvedValueOnce({
-      data: {
-        imported: 2,
-        skipped: 0,
-        errors: [],
-        warnings: [],
-        batches_created: ["NEET-11-A"],
-        academic_years_created: [],
-        subjects_created: 4,
-        import_id: "imp-1",
-      },
+      data: { id: "job-1", job_status: "processing", total_rows: 2 },
     });
+    // Polled job status — completed with the result.
+    (apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(
+      completedJob({ batches_created: ["NEET-11-A"], subjects_created: 4 }),
+    );
 
     renderDialog();
     await user.click(screen.getByRole("button", { name: /import students/i }));
@@ -180,12 +200,12 @@ describe("ImportStudentsDialog", () => {
 
     await user.click(screen.getByRole("button", { name: /^import$/i }));
 
+    // The job is started, then polled to completion → result shown.
     await waitFor(() => {
       expect(screen.getByText(/Created 1 batch/i)).toBeInTheDocument();
     });
-    // The import call asked the server to create the missing batches.
-    expect(post).toHaveBeenLastCalledWith(
-      "/api/v1/students/import",
+    expect(post).toHaveBeenCalledWith(
+      "/api/v1/students/import/start",
       expect.any(FormData),
       expect.objectContaining({
         params: { branch_id: "b1", create_missing_batches: true },
@@ -226,20 +246,16 @@ describe("ImportStudentsDialog", () => {
         row_issues: [],
       },
     });
+    // start job, then undo.
     post.mockResolvedValueOnce({
-      data: {
-        imported: 2,
-        skipped: 0,
-        errors: [],
-        warnings: [],
-        batches_created: [],
-        academic_years_created: [],
-        import_id: "imp-42",
-      },
+      data: { id: "job-42", job_status: "processing", total_rows: 2 },
     });
     post.mockResolvedValueOnce({
       data: { students_deleted: 2, batches_deleted: 0, subjects_deleted: 0 },
     });
+    (apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(
+      completedJob({ id: "job-42", import_id: "job-42", batches_created: [] }),
+    );
 
     renderDialog();
     await user.click(screen.getByRole("button", { name: /import students/i }));
@@ -259,7 +275,7 @@ describe("ImportStudentsDialog", () => {
       expect(screen.getByText(/undone — removed 2 student/i)).toBeInTheDocument();
     });
     expect(post).toHaveBeenLastCalledWith(
-      "/api/v1/students/import/imp-42/undo",
+      "/api/v1/students/import/job-42/undo",
       null,
       expect.objectContaining({ params: { branch_id: "b1" } }),
     );
@@ -306,18 +322,20 @@ describe("ImportStudentsDialog", () => {
       },
     });
     post.mockResolvedValueOnce({
-      data: {
+      data: { id: "job-w", job_status: "processing", total_rows: 1 },
+    });
+    (apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(
+      completedJob({
+        id: "job-w",
+        import_id: "job-w",
+        total_rows: 1,
+        processed_rows: 1,
         imported: 1,
-        skipped: 0,
-        errors: [],
         warnings: [
           "Row 2: Class 9 targeting NEET — Foundation remap not yet supported, enrolling as-is",
         ],
-        batches_created: [],
-        academic_years_created: [],
-        import_id: "imp-w",
-      },
-    });
+      }),
+    );
 
     renderDialog();
     await user.click(screen.getByRole("button", { name: /import students/i }));
@@ -462,18 +480,22 @@ describe("ImportStudentsDialog", () => {
       },
     });
     post.mockResolvedValueOnce({
-      data: {
+      data: { id: "job-pf", job_status: "processing", total_rows: 2 },
+    });
+    (apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue(
+      completedJob({
+        id: "job-pf",
+        import_id: null,
+        total_rows: 2,
+        processed_rows: 2,
         imported: 0,
         skipped: 2,
         errors: [
           "Row 2: Invalid target_exam 'JEE'.",
           "Row 3: unknown batch code 'MHT-11-A'",
         ],
-        warnings: [],
-        batches_created: [],
-        academic_years_created: [],
-      },
-    });
+      }),
+    );
 
     renderDialog();
     await user.click(screen.getByRole("button", { name: /import students/i }));

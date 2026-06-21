@@ -14,6 +14,7 @@ import type {
   StudentTestHistoryRow,
   StudentTopicMastery,
   StudentUpcomingTest,
+  ImportJob,
   AcademicYearResponse,
 } from "../_schemas/student";
 
@@ -106,6 +107,29 @@ export function useStudentsRoster(
     enabled: !!branchId,
     // Keep the current page visible while the next one loads (no flicker).
     placeholderData: keepPreviousData,
+  });
+}
+
+// Polls a background import job until it finishes, for the progress bar.
+export function useImportJob(
+  branchId: string | undefined,
+  jobId: string | null,
+) {
+  return useQuery<ImportJob>({
+    queryKey: ["students", "import-job", branchId ?? "", jobId ?? ""],
+    queryFn: async () => {
+      const res = await apiClient.get<ImportJob>(
+        `/api/v1/students/import/jobs/${jobId}`,
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!jobId,
+    // Poll while the job is still running; stop once it's done.
+    refetchInterval: (query) => {
+      const s = query.state.data?.job_status;
+      return s === "completed" || s === "failed" ? false : 800;
+    },
   });
 }
 

@@ -1,12 +1,24 @@
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
+from app.modules.student.models.student_models import StudentImportJob
 from app.modules.student.schemas.student_schemas import (
     BulkDeleteSummary,
+    ImportJobResponse,
     ImportPreview,
     ImportSummary,
     ImportUndoSummary,
@@ -209,15 +221,83 @@ async def import_students(
     """Bulk import students. Class, Target Exam, and Batch are read
     per-row from the file so one CSV/Excel can mix cohorts. When
     ``create_missing_batches`` is set, batch codes that don't exist yet are
-    created (course/exam-date derived from the Target column)."""
+    created (course/exam-date derived from the Target column).
+
+    Synchronous engine — fine for small files / API use. The portal uses
+    ``/import/start`` (background job + progress) for large uploads."""
+    content = await file.read()
     return await import_service.import_students(
         session,
-        file,
+        content,
+        file.filename,
         branch_id,
         current_user["user_id"],
         create_missing_batches=create_missing_batches,
         ip_address=request.client.host if request.client else None,
     )
+
+
+def _job_to_response(job: StudentImportJob) -> ImportJobResponse:
+    resp = ImportJobResponse.model_validate(job)
+    # The job id is the import_id; only hand back an undo handle once it has
+    # finished and actually persisted students.
+    resp.import_id = (
+        job.id if job.job_status == "completed" and job.imported > 0 else None
+    )
+    return resp
+
+
+@router.post("/import/start", response_model=ImportJobResponse)
+async def start_import_students(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    branch_id: uuid.UUID = Query(...),
+    create_missing_batches: bool = Query(False),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Start a background import: record a job (with row count) and return it
+    immediately, then process the file after the response. The UI polls
+    ``/import/jobs/{id}`` for progress and the final result — no request
+    timeout regardless of file size."""
+    content = await file.read()
+    ip = request.client.host if request.client else None
+    job = await import_service.start_import_job(
+        session,
+        content,
+        file.filename,
+        branch_id,
+        current_user["user_id"],
+        create_missing_batches,
+    )
+    background_tasks.add_task(
+        import_service.run_import_job,
+        job.id,
+        content,
+        file.filename,
+        branch_id,
+        current_user["user_id"],
+        create_missing_batches,
+        ip,
+    )
+    return _job_to_response(job)
+
+
+@router.get("/import/jobs/{job_id}", response_model=ImportJobResponse)
+async def get_import_job(
+    job_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Poll a background import job's progress + result."""
+    job = await session.get(StudentImportJob, job_id)
+    if job is None or job.branch_id != branch_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Import job not found"
+        )
+    return _job_to_response(job)
 
 
 @router.post("/import/{import_id}/undo", response_model=ImportUndoSummary)
