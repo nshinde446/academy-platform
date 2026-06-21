@@ -1042,3 +1042,30 @@ class TestAcademicYearAutoCreate:
             )
         ).scalar_one()
         assert batch.start_academic_year_id == ay_2030.id
+
+
+class TestLargeImportBulk:
+    @pytest.mark.usefixtures("seed_data")
+    async def test_600_rows_import_in_one_request(self, client, seed_data):
+        """A 600-row import (crossing the 500-row bulk chunk boundary) into a
+        newly-created batch completes in one request and persists every row —
+        guards against the per-row-flush regression that timed out at scale."""
+        token = await _login(client)
+        lines = ["Name,Class,Target,Stream,Academic_year,Batch,Roll No"]
+        for i in range(600):
+            lines.append(f"Bulk{i:04d} X,11,NEET,PCB,2026-2028,BULK-A,BK-{i:04d}")
+        content = ("\n".join(lines) + "\n").encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("big.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["imported"] == 600
+        assert data["skipped"] == 0
+        assert data["batches_created"] == ["BULK-A"]
+        # 2-year NEET course gets its subject skeleton; both AY rows created.
+        assert data["subjects_created"] > 0
+        assert "2026-27" in data["academic_years_created"]
+        assert "2027-28" in data["academic_years_created"]

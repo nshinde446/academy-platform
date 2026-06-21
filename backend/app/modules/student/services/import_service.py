@@ -15,7 +15,6 @@ from app.modules.academic.repositories import academic_repository
 from app.modules.audit.services import audit_service
 from app.modules.batch.models.batch_models import Batch
 from app.modules.student.models.student_models import Student, StudentBatchMapping
-from app.modules.student.repositories import student_repository
 
 # Reserved key the parsers stash the true source row number under. It is not a
 # real column, so _row_to_student_kwargs (which only maps known headers) ignores
@@ -583,42 +582,62 @@ async def _ensure_subject_skeleton(
     existing = await academic_repository.list_subjects(session, branch_id, course.id)
     if existing:
         return 0
+
+    from app.modules.academic.models.academic_models import (
+        Chapter,
+        Subject,
+        Topic,
+    )
+
+    # Build the whole subject -> chapter -> topic tree in memory (ids
+    # pre-generated so children can reference parents) and insert it in a single
+    # bulk flush. The bundled master curriculum is hundreds of rows per course;
+    # the old per-row create+flush made a multi-course import crawl. Tagged with
+    # import_id so undo can reclaim them; a later syllabus import that adds its
+    # own chapters then pins the subject (§7.4). Foundation/Other add nothing.
+    objs: list = []
     for name in names:
-        subject = await academic_repository.create_subject(
-            session,
-            branch_id=branch_id,
-            academic_year_id=academic_year.id,
-            course_id=course.id,
-            name=name,
-            code=_subject_code(name),
-            import_id=import_id,
+        subject_id = uuid.uuid4()
+        objs.append(
+            Subject(
+                id=subject_id,
+                branch_id=branch_id,
+                academic_year_id=academic_year.id,
+                course_id=course.id,
+                name=name,
+                code=_subject_code(name),
+                import_id=import_id,
+            )
         )
-        # Populate chapters + topics from the bundled master curriculum so the
-        # new course isn't an empty skeleton. Tagged with import_id so undo can
-        # reclaim them; a later syllabus import that adds its own chapters then
-        # pins the subject (§7.4). Pairs with no sheet (Foundation) add nothing.
         for ch_order, (ch_name, topics) in enumerate(
             curriculum.chapters_for(syllabus_key or "", name)
         ):
-            chapter = await academic_repository.create_chapter(
-                session,
-                branch_id=branch_id,
-                academic_year_id=academic_year.id,
-                subject_id=subject.id,
-                name=ch_name,
-                order=ch_order,
-                import_id=import_id,
-            )
-            for t_order, t_name in enumerate(topics):
-                await academic_repository.create_topic(
-                    session,
+            chapter_id = uuid.uuid4()
+            objs.append(
+                Chapter(
+                    id=chapter_id,
                     branch_id=branch_id,
                     academic_year_id=academic_year.id,
-                    chapter_id=chapter.id,
-                    name=t_name,
-                    order=t_order,
+                    subject_id=subject_id,
+                    name=ch_name,
+                    order=ch_order,
                     import_id=import_id,
                 )
+            )
+            for t_order, t_name in enumerate(topics):
+                objs.append(
+                    Topic(
+                        id=uuid.uuid4(),
+                        branch_id=branch_id,
+                        academic_year_id=academic_year.id,
+                        chapter_id=chapter_id,
+                        name=t_name,
+                        order=t_order,
+                        import_id=import_id,
+                    )
+                )
+    session.add_all(objs)
+    await session.flush()
     return len(names)
 
 
@@ -761,6 +780,46 @@ async def _load_student_dedup_keys(
         if em:
             emails.add(em.strip().lower())
     return enrols, emails
+
+
+_BULK_CHUNK = 500
+
+
+async def _bulk_insert_students(
+    session: AsyncSession,
+    pending: list[tuple[int, Student, "StudentBatchMapping | None"]],
+) -> tuple[int, list[tuple[int, str]]]:
+    """Insert validated students (+ their batch mappings) in chunks — one flush
+    per chunk instead of per row, which is what kept large imports under the
+    request timeout. If a chunk's flush fails (a stray IntegrityError), that
+    chunk is retried row-by-row in savepoints so a single bad row is isolated
+    and reported, not fatal. Returns (imported_count, [(rownum, error), ...])."""
+    imported = 0
+    skips: list[tuple[int, str]] = []
+    for start in range(0, len(pending), _BULK_CHUNK):
+        chunk = pending[start : start + _BULK_CHUNK]
+        objs: list = []
+        for _, student, mapping in chunk:
+            objs.append(student)
+            if mapping is not None:
+                objs.append(mapping)
+        try:
+            async with session.begin_nested():
+                session.add_all(objs)
+                await session.flush()
+            imported += len(chunk)
+        except Exception:  # noqa: BLE001 - isolate the offending row(s)
+            for rownum, student, mapping in chunk:
+                try:
+                    async with session.begin_nested():
+                        session.add(student)
+                        if mapping is not None:
+                            session.add(mapping)
+                        await session.flush()
+                    imported += 1
+                except Exception as exc:  # noqa: BLE001
+                    skips.append((rownum, str(exc)))
+    return imported, skips
 
 
 # --- Academic-year auto-derivation (design §4 step 1) ----------------------
@@ -1207,6 +1266,10 @@ async def import_students(
     skipped = 0
     errors: list[str] = []
     warnings: list[str] = []
+    # Validated rows are collected here and written in bulk after the loop —
+    # per-row INSERT+flush+savepoint is what made a 1000-row import take ~40s
+    # and time out. (rownum, Student, StudentBatchMapping | None)
+    pending: list[tuple[int, Student, StudentBatchMapping | None]] = []
 
     for idx, row in enumerate(rows, start=2):  # row 1 is header
         rownum = _row_number(row, idx)
@@ -1278,38 +1341,37 @@ async def import_students(
         else:
             kwargs["stream"] = default_stream(kwargs.get("target_exam"))
 
-        try:
-            # Savepoint per row: a row that fails at flush (e.g. a value longer
-            # than its column, or any IntegrityError) rolls back on its own
-            # instead of poisoning the session — which previously cascaded
-            # PendingRollbackError into every remaining row, the audit log, and
-            # the final commit, turning one bad cell into a 500 that saved
-            # nothing. Exiting the savepoint flushes the mapping insert too.
-            async with session.begin_nested():
-                student = await student_repository.create(
-                    session,
-                    **kwargs,
-                    import_id=import_id,
-                    import_source_file=source_file,
-                )
-                if batch_id is not None:
-                    session.add(
-                        StudentBatchMapping(
-                            student_id=student.id,
-                            batch_id=batch_id,
-                            branch_id=branch_id,
-                        )
-                    )
-            imported += 1
-            # Only after a clean insert, so a later duplicate in the same file
-            # is caught against a row that actually persisted.
-            if enr_key is not None:
-                seen_enrols.add(enr_key)
-            if em_key is not None:
-                seen_emails.add(em_key)
-        except Exception as exc:  # noqa: BLE001
-            skipped += 1
-            errors.append(f"Row {rownum}: {exc}")
+        # Build the row in memory (id pre-generated so the batch mapping can
+        # reference it) and defer the write to a single bulk insert below.
+        sid = uuid.uuid4()
+        student = Student(
+            id=sid,
+            import_id=import_id,
+            import_source_file=source_file,
+            **kwargs,
+        )
+        mapping = (
+            StudentBatchMapping(
+                student_id=sid, batch_id=batch_id, branch_id=branch_id
+            )
+            if batch_id is not None
+            else None
+        )
+        pending.append((rownum, student, mapping))
+        # Mark the natural keys now so a later row that repeats them within this
+        # same file is caught as a duplicate.
+        if enr_key is not None:
+            seen_enrols.add(enr_key)
+        if em_key is not None:
+            seen_emails.add(em_key)
+
+    # Bulk-write the validated rows in chunks (one flush per chunk instead of
+    # per row). A chunk whose flush fails (e.g. a stray IntegrityError) falls
+    # back to per-row savepoints so one bad row can't sink the whole chunk.
+    imported, chunk_skips = await _bulk_insert_students(session, pending)
+    for rn, exc in chunk_skips:
+        skipped += 1
+        errors.append(f"Row {rn}: {exc}")
 
     await audit_service.log_action(
         session,
