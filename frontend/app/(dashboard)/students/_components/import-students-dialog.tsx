@@ -545,26 +545,39 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
           )}
 
           {/* Step 3 — background job in progress */}
-          {processing && (
-            <div className="flex flex-col gap-2 rounded-lg border border-border p-3 text-sm">
-              <p className="font-medium">
-                Importing in the background
-                {job && job.total_rows > 0 ? ` — ${pct}%` : "…"}
-              </p>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full bg-emerald-500 transition-all"
-                  style={{ width: `${job && job.total_rows > 0 ? pct : 5}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {job && job.total_rows > 0
-                  ? `${job.processed_rows} of ${job.total_rows} rows processed`
-                  : "Preparing…"}{" "}
-                — you can close this dialog; the import keeps running.
-              </p>
-            </div>
-          )}
+          {processing &&
+            (() => {
+              // The student rows are written last; the earlier phase (creating
+              // batches, courses, academic years + curriculum) reports no rows
+              // yet, so show an indeterminate "Preparing…" state until the row
+              // counter starts moving, rather than a dead 0% bar.
+              const inserting = !!job && job.processed_rows > 0;
+              return (
+                <div className="flex flex-col gap-2 rounded-lg border border-border p-3 text-sm">
+                  <p className="font-medium">
+                    {inserting
+                      ? `Importing students — ${pct}%`
+                      : "Preparing import…"}
+                  </p>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    {inserting ? (
+                      <div
+                        className="h-full bg-emerald-500 transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    ) : (
+                      <div className="h-full w-1/3 animate-pulse rounded-full bg-emerald-500/70" />
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {inserting
+                      ? `${job!.processed_rows} of ${job!.total_rows} rows saved`
+                      : "Creating batches, courses & academic years…"}{" "}
+                    — you can close this dialog; the import keeps running.
+                  </p>
+                </div>
+              );
+            })()}
 
           {/* Job failed */}
           {failed && (

@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import io
 import re
@@ -1450,7 +1451,11 @@ async def start_import_job(
         total_rows=total,
     )
     session.add(job)
-    await session.flush()
+    # Commit now (not just flush): the background task opens its OWN session and
+    # must find this row. FastAPI runs background tasks before the request
+    # session's commit, so without an explicit commit here the job wouldn't be
+    # visible yet and run_import_job would no-op (job stuck at 0%).
+    await session.commit()
     return job
 
 
@@ -1492,7 +1497,14 @@ async def _process_import_job(
 ) -> None:
     """Run the import keyed to ``job_id`` (= import_id), publishing progress per
     chunk and recording the final result or failure on the job row."""
+    # The job is committed by the request before this runs, but retry briefly in
+    # case the background task wins a timing race against the commit landing.
     job = await session.get(StudentImportJob, job_id)
+    for _ in range(5):
+        if job is not None:
+            break
+        await asyncio.sleep(0.3)
+        job = await session.get(StudentImportJob, job_id)
     if job is None:
         return
     job.job_status = "processing"
