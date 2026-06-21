@@ -9,8 +9,9 @@ from app.modules.audit.services import audit_service
 
 
 class TestAuditRepository:
-    async def test_create_log(self, db_session: AsyncSession):
-        user_id = uuid.uuid4()
+    @pytest.mark.usefixtures("seed_data")
+    async def test_create_log(self, db_session: AsyncSession, seed_data):
+        user_id = seed_data["admin_user"].id  # real FK (enforced in tests)
         record_id = uuid.uuid4()
 
         log = await audit_repository.create_log(
@@ -92,8 +93,9 @@ class TestAuditRepository:
 
 
 class TestAuditService:
-    async def test_log_action(self, db_session: AsyncSession):
-        user_id = uuid.uuid4()
+    @pytest.mark.usefixtures("seed_data")
+    async def test_log_action(self, db_session: AsyncSession, seed_data):
+        user_id = seed_data["admin_user"].id  # real FK (enforced in tests)
         record_id = uuid.uuid4()
 
         await audit_service.log_action(
@@ -105,7 +107,7 @@ class TestAuditService:
             old_values={"status": "active"},
             new_values={"status": "inactive"},
             ip_address="192.168.1.1",
-            branch_id=uuid.uuid4(),
+            branch_id=seed_data["branch_a"].id,
         )
         await db_session.commit()
 

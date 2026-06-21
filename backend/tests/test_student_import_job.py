@@ -3,7 +3,8 @@ import uuid as _uuid
 import pytest
 
 BRANCH = "00000000-0000-0000-0000-000000000001"
-USER = _uuid.uuid4()  # sqlite doesn't enforce the audit-log FK
+# The seeded admin (audit_logs.user_id is a real FK, enforced in tests).
+USER = _uuid.UUID("00000000-0000-0000-0000-000000000100")
 
 
 async def _login(client):

@@ -199,10 +199,13 @@ async def test_dependency_validation_blocks_enable(
     await _login_admin(client)
     created = await _create_plugin(client, name="dependent_plugin")
 
-    nonexistent_id = uuid.uuid4()
+    # A real but *disabled* plugin: validate_dependencies treats a missing OR
+    # not-enabled dependency as unsatisfied. (Pointing at a nonexistent id would
+    # violate the depends_on_plugin_id FK, which the test DB now enforces.)
+    disabled_dep = await _create_plugin(client, name="disabled_dep_plugin")
     dep = PluginDependency(
         plugin_id=uuid.UUID(created["id"]),
-        depends_on_plugin_id=nonexistent_id,
+        depends_on_plugin_id=uuid.UUID(disabled_dep["id"]),
         min_version="1.0.0",
     )
     db_session.add(dep)

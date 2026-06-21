@@ -595,15 +595,19 @@ async def _ensure_subject_skeleton(
     )
 
     # Build the whole subject -> chapter -> topic tree in memory (ids
-    # pre-generated so children can reference parents) and insert it in a single
-    # bulk flush. The bundled master curriculum is hundreds of rows per course;
-    # the old per-row create+flush made a multi-course import crawl. Tagged with
-    # import_id so undo can reclaim them; a later syllabus import that adds its
-    # own chapters then pins the subject (§7.4). Foundation/Other add nothing.
-    objs: list = []
+    # pre-generated so children can reference parents) and insert it level by
+    # level — subjects, then chapters, then topics — flushing between levels so
+    # every parent row exists before its children. (One bulk add_all of the
+    # whole tree doesn't guarantee insert order without ORM relationships, which
+    # Postgres rejects as a FK violation; SQLite silently allowed it.) Still far
+    # faster than the old per-row create+flush. Tagged with import_id so undo can
+    # reclaim them. Foundation/Other have no curriculum and add nothing.
+    subjects: list = []
+    chapters: list = []
+    topics_rows: list = []
     for name in names:
         subject_id = uuid.uuid4()
-        objs.append(
+        subjects.append(
             Subject(
                 id=subject_id,
                 branch_id=branch_id,
@@ -618,7 +622,7 @@ async def _ensure_subject_skeleton(
             curriculum.chapters_for(syllabus_key or "", name)
         ):
             chapter_id = uuid.uuid4()
-            objs.append(
+            chapters.append(
                 Chapter(
                     id=chapter_id,
                     branch_id=branch_id,
@@ -630,7 +634,7 @@ async def _ensure_subject_skeleton(
                 )
             )
             for t_order, t_name in enumerate(topics):
-                objs.append(
+                topics_rows.append(
                     Topic(
                         id=uuid.uuid4(),
                         branch_id=branch_id,
@@ -641,7 +645,11 @@ async def _ensure_subject_skeleton(
                         import_id=import_id,
                     )
                 )
-    session.add_all(objs)
+    session.add_all(subjects)
+    await session.flush()
+    session.add_all(chapters)
+    await session.flush()
+    session.add_all(topics_rows)
     await session.flush()
     return len(names)
 
@@ -807,24 +815,28 @@ async def _bulk_insert_students(
     skips: list[tuple[int, str]] = []
     for start in range(0, len(pending), _BULK_CHUNK):
         chunk = pending[start : start + _BULK_CHUNK]
-        objs: list = []
-        for _, student, mapping in chunk:
-            objs.append(student)
-            if mapping is not None:
-                objs.append(mapping)
+        students = [student for _, student, _ in chunk]
+        mappings = [m for _, _, m in chunk if m is not None]
         try:
             async with session.begin_nested():
-                session.add_all(objs)
+                # Students first, then mappings — a mapping FKs its student, so
+                # the parent rows must land before the children (Postgres
+                # enforces this; SQLite doesn't).
+                session.add_all(students)
                 await session.flush()
+                if mappings:
+                    session.add_all(mappings)
+                    await session.flush()
             imported += len(chunk)
         except Exception:  # noqa: BLE001 - isolate the offending row(s)
             for rownum, student, mapping in chunk:
                 try:
                     async with session.begin_nested():
                         session.add(student)
+                        await session.flush()
                         if mapping is not None:
                             session.add(mapping)
-                        await session.flush()
+                            await session.flush()
                     imported += 1
                 except Exception as exc:  # noqa: BLE001
                     skips.append((rownum, str(exc)))
