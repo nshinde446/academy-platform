@@ -1,3 +1,4 @@
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -63,23 +64,29 @@ from app.modules.ai.models.ai_models import (  # noqa: F401
 )
 from app.modules.auth.services.auth_service import hash_password
 
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+# Default to fast in-process SQLite for local runs; CI sets TEST_DATABASE_URL to
+# the real Postgres service so the suite catches PG-only behaviour (ARRAY columns,
+# native FK enforcement, type/constraint mismatches) SQLite would silently pass.
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+aiosqlite:///./test.db")
+_IS_SQLITE = TEST_DATABASE_URL.startswith("sqlite")
 
 engine = create_async_engine(
     TEST_DATABASE_URL,
     echo=False,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False} if _IS_SQLITE else {},
 )
 
 
 # SQLite leaves foreign keys OFF by default, which let a real prod bug
 # (children inserted before parents) pass green here while Postgres rejected it.
-# Enforce FKs so the test DB matches production's referential integrity.
-@event.listens_for(engine.sync_engine, "connect")
-def _enable_sqlite_foreign_keys(dbapi_connection, _):  # noqa: ANN001
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")
-    cursor.close()
+# Enforce FKs so the SQLite test DB matches production's referential integrity.
+# Postgres enforces FKs natively and the PRAGMA is invalid there, so SQLite-only.
+if _IS_SQLITE:
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enable_sqlite_foreign_keys(dbapi_connection, _):  # noqa: ANN001
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 TestSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

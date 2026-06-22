@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from sqlalchemy import JSON, Boolean, Date, ForeignKey, Integer, String, Uuid
+from sqlalchemy import JSON, Boolean, Date, ForeignKey, Index, Integer, String, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database.base import BaseModel
@@ -9,6 +9,22 @@ from app.core.database.base import BaseModel
 
 class Student(BaseModel):
     __tablename__ = "students"
+
+    # Enrollment number is the natural dedup key (per branch, case-insensitive,
+    # live rows only). App-level dedup alone let a re-upload double every student;
+    # this is the DB-level guard. Partial so soft-deleted rows and the many
+    # students without an enrollment number (NULL) never collide. Mirrored by
+    # migration 0034 for prod; created here so create_all (tests) enforces it too.
+    __table_args__ = (
+        Index(
+            "uq_students_active_enrollment",
+            text("branch_id"),
+            text("lower(enrollment_number)"),
+            unique=True,
+            postgresql_where=text("is_deleted = false AND enrollment_number IS NOT NULL"),
+            sqlite_where=text("is_deleted = 0 AND enrollment_number IS NOT NULL"),
+        ),
+    )
 
     branch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=False

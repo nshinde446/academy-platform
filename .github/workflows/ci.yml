@@ -39,6 +39,11 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run backend tests
+        env:
+          # Run the suite against the real Postgres service (above), not SQLite,
+          # so PG-only behaviour (ARRAY columns, native FK enforcement, partial
+          # unique indexes, type mismatches) is exercised in CI.
+          TEST_DATABASE_URL: postgresql+asyncpg://test_user:test_pass@localhost:5432/test_academy
         run: |
           cd backend
           pytest -v --tb=short
