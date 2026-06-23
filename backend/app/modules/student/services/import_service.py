@@ -4,7 +4,7 @@ import io
 import re
 import uuid
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import HTTPException, UploadFile, status
@@ -16,6 +16,7 @@ from app.modules.academic.repositories import academic_repository
 from app.modules.audit.services import audit_service
 from app.modules.batch.models.batch_models import Batch
 from app.modules.student.models.student_models import (
+    Parent,
     Student,
     StudentBatchMapping,
     StudentImportJob,
@@ -42,6 +43,29 @@ COLUMN_MAPPING = {
     "district": "district",
     "caste": "caste",
     "username": "username",
+    # Date of birth — coerced to a real ``date`` in the build loop (multi-format).
+    "dob": "date_of_birth",
+    "date of birth": "date_of_birth",
+    "date_of_birth": "date_of_birth",
+    "birth date": "date_of_birth",
+    "birthdate": "date_of_birth",
+    # Enrollment / admission date — also coerced to a ``date`` in the build loop.
+    "enrollment date": "enrollment_date",
+    "enrollment_date": "enrollment_date",
+    "admission date": "enrollment_date",
+    "admission_date": "enrollment_date",
+    "joining date": "enrollment_date",
+    "date of joining": "enrollment_date",
+    # Fees badge on the roster (paid|due|overdue|partial) — normalized in the loop.
+    "fees": "fees_status",
+    "fee status": "fees_status",
+    "fees status": "fees_status",
+    "fees_status": "fees_status",
+    "payment status": "fees_status",
+    # Original ambition kept when a 9th/10th aspirant is stored as Foundation (§3).
+    "aspiration": "aspiration_target",
+    "aspiration target": "aspiration_target",
+    "aspiration_target": "aspiration_target",
     "rfid": "rfid_number",
     "rfidnumber": "rfid_number",
     "rfid_number": "rfid_number",
@@ -171,6 +195,90 @@ def _split_name(value: str) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
+# Date-of-birth accepts several common spellings; coerced to a real ``date`` in
+# the build loop (a Date column needs a date object, not a string, on Postgres).
+_DOB_FORMATS = (
+    "%Y-%m-%d",
+    "%d/%m/%Y",
+    "%d-%m-%Y",
+    "%d.%m.%Y",
+    "%Y/%m/%d",
+    "%d %b %Y",
+    "%d %B %Y",
+)
+# Fees status enum surfaced as the roster Paid/Due badge (see Student.fees_status).
+_VALID_FEES = {"paid", "due", "overdue", "partial"}
+
+
+def _parse_date(value: Any) -> date | None:
+    """Best-effort parse of a DOB cell to a ``date``. Handles ISO, the common
+    Indian DD/MM/YYYY spellings, and the 'YYYY-MM-DD 00:00:00' that openpyxl
+    renders for date cells. Returns None when nothing matches (the caller warns
+    and leaves the field blank rather than failing the whole row)."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, date):
+        return value
+    s = str(value).strip()
+    if ":" in s:  # drop an Excel datetime's trailing time component
+        s = s.split(" ", 1)[0]
+    try:
+        return date.fromisoformat(s)
+    except ValueError:
+        pass
+    for fmt in _DOB_FORMATS:
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _tidy_name(value: str) -> str:
+    """Title-case names that arrive all-upper or all-lower (common in coaching
+    exports); leave deliberately mixed-case input (e.g. 'McDonald') untouched."""
+    return value.title() if value and (value.isupper() or value.islower()) else value
+
+
+def _tidy_phone(value: str) -> str:
+    """Keep digits and a leading '+', dropping spaces/dashes/parens so phone and
+    parent_mobile store one consistent shape."""
+    return re.sub(r"[^\d+]", "", value)
+
+
+def _coerce_typed_fields(kwargs: dict[str, Any], rownum: int) -> list[str]:
+    """Coerce the optional typed fields read off a row (date_of_birth → date,
+    fees_status → enum) to their stored form. An unparseable value is dropped
+    (not fatal) and reported as a warning so the rest of the row still imports."""
+    warns: list[str] = []
+    for field, label in (
+        ("date_of_birth", "Date of Birth"),
+        ("enrollment_date", "Enrollment Date"),
+    ):
+        raw = kwargs.get(field)
+        if raw is not None and not isinstance(raw, date):
+            parsed = _parse_date(raw)
+            if parsed is None:
+                warns.append(
+                    f"Row {rownum}: unrecognized {label} '{raw}' — left blank"
+                )
+                kwargs.pop(field, None)
+            else:
+                kwargs[field] = parsed
+    fees = kwargs.get("fees_status")
+    if fees is not None:
+        norm = str(fees).strip().lower()
+        if norm in _VALID_FEES:
+            kwargs["fees_status"] = norm
+        else:
+            warns.append(
+                f"Row {rownum}: unrecognized Fees status '{fees}' "
+                f"(use paid/due/overdue/partial) — left blank"
+            )
+            kwargs.pop("fees_status", None)
+    return warns
+
+
 def _normalize(header: str) -> str:
     return header.strip().lower()
 
@@ -230,6 +338,73 @@ def _row_overrides(row: dict[str, Any]) -> dict[str, str]:
         if value:
             out[key] = value
     return out
+
+
+# Optional parent/guardian columns → a Parent row (NOT via COLUMN_MAPPING, so
+# they never reach the Student model). parent_mobile stays a Student column and
+# is used as the Parent's phone when no explicit parent phone is given.
+_PARENT_HEADERS = {
+    "parent name": "name",
+    "parent_name": "name",
+    "father name": "name",
+    "father's name": "name",
+    "fathers name": "name",
+    "mother name": "name",
+    "guardian name": "name",
+    "parent relation": "relation",
+    "parent_relation": "relation",
+    "relation": "relation",
+    "parent occupation": "occupation",
+    "parent_occupation": "occupation",
+    "occupation": "occupation",
+    "parent email": "email",
+    "parent_email": "email",
+    "parent phone": "phone",
+    "parent_phone": "phone",
+}
+
+
+def _parent_fields(row: dict[str, Any]) -> dict[str, str]:
+    """First-seen non-empty parent column values off the raw row."""
+    out: dict[str, str] = {}
+    for raw_key, raw_value in row.items():
+        if raw_key is None:
+            continue
+        key = _PARENT_HEADERS.get(_normalize(str(raw_key)))
+        if key is None or key in out:
+            continue
+        value = str(raw_value).strip() if raw_value not in (None, "") else ""
+        if value:
+            out[key] = value
+    return out
+
+
+def _build_parent(
+    row: dict[str, Any],
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    parent_mobile: str | None,
+    import_id: uuid.UUID | None,
+) -> "Parent | None":
+    """Create a Parent row when the upload carries a parent/guardian name. Phone
+    falls back to the student's parent_mobile; relation defaults to Guardian."""
+    fields = _parent_fields(row)
+    name = fields.get("name")
+    if not name:
+        return None
+    phone = fields.get("phone") or parent_mobile
+    if phone:
+        phone = _tidy_phone(str(phone)) or None
+    return Parent(
+        student_id=student_id,
+        branch_id=branch_id,
+        name=name,
+        relation=fields.get("relation") or "Guardian",
+        phone=phone,
+        email=fields.get("email"),
+        occupation=fields.get("occupation"),
+        import_id=import_id,
+    )
 
 
 def _merge_overrides(into: dict[str, str], row_overrides: dict[str, str]) -> None:
@@ -521,16 +696,150 @@ def _row_to_student_kwargs(
     name_value = mapped.pop("name", None)
     if name_value:
         first, last = _split_name(str(name_value))
-        mapped["first_name"] = first
-        mapped["last_name"] = last
+        mapped["first_name"] = _tidy_name(first)
+        mapped["last_name"] = _tidy_name(last)
 
     if not mapped.get("first_name"):
         return None
+
+    # Normalize phone shapes (digits + optional leading '+'); drop if nothing
+    # usable is left (e.g. a stray 'N/A').
+    for pkey in ("phone", "parent_mobile"):
+        raw = mapped.get(pkey)
+        if isinstance(raw, str):
+            cleaned = _tidy_phone(raw)
+            if cleaned:
+                mapped[pkey] = cleaned
+            else:
+                mapped.pop(pkey, None)
 
     mapped["branch_id"] = branch_id
     mapped["academic_year_id"] = academic_year_id
     mapped.setdefault("last_name", "")
     return mapped
+
+
+# Canonical import fields the column-mapping UI (T3) can target. ``key`` is a
+# header string the parser already understands (it normalizes into
+# COLUMN_MAPPING / _OVERRIDE_HEADERS / _PARENT_HEADERS); ``label`` is what the
+# admin sees in the mapping dropdown.
+IMPORT_FIELDS: list[dict[str, str]] = [
+    {"key": "name", "label": "Name", "required": "1"},
+    {"key": "class", "label": "Class"},
+    {"key": "target", "label": "Target exam"},
+    {"key": "batch", "label": "Batch"},
+    {"key": "roll no", "label": "Roll No / Enrollment"},
+    {"key": "email", "label": "Email"},
+    {"key": "phone", "label": "Phone"},
+    {"key": "parent mobile", "label": "Parent mobile"},
+    {"key": "gender", "label": "Gender"},
+    {"key": "district", "label": "District"},
+    {"key": "caste", "label": "Caste"},
+    {"key": "username", "label": "Username"},
+    {"key": "rfid number", "label": "RFID number"},
+    {"key": "dob", "label": "Date of birth"},
+    {"key": "fees", "label": "Fees status"},
+    {"key": "enrollment date", "label": "Enrollment date"},
+    {"key": "stream", "label": "Stream"},
+    {"key": "aspiration", "label": "Aspiration target"},
+    {"key": "parent name", "label": "Parent name"},
+    {"key": "relation", "label": "Parent relation"},
+    {"key": "occupation", "label": "Parent occupation"},
+    {"key": "parent phone", "label": "Parent phone"},
+    {"key": "course_opt", "label": "Course (override)"},
+    {"key": "duration", "label": "Duration (override)"},
+    {"key": "academic_year", "label": "Academic year (override)"},
+    {"key": "syllabus", "label": "Syllabus (override)"},
+]
+
+
+def _recognized_norm_keys() -> set[str]:
+    return set(COLUMN_MAPPING) | set(_OVERRIDE_HEADERS) | set(_PARENT_HEADERS)
+
+
+def _file_headers(rows: list[dict[str, Any]]) -> list[str]:
+    """The upload's header columns in first-seen order (sans the row-number key)."""
+    out: list[str] = []
+    for row in rows:
+        for k in row.keys():
+            if k is None or k == _ROW_KEY:
+                continue
+            s = str(k)
+            if s not in out:
+                out.append(s)
+        if out:
+            break  # the first data row carries every header
+    return out
+
+
+def _suggest_mapping(headers: list[str]) -> dict[str, str | None]:
+    """Best-guess file-header → canonical-field-key map: a header that already
+    normalizes to a known field maps to it; anything else is left unmapped."""
+    recognized = _recognized_norm_keys()
+    return {
+        h: (_normalize(h) if _normalize(h) in recognized else None) for h in headers
+    }
+
+
+def _apply_column_map(
+    rows: list[dict[str, Any]], column_map: dict[str, str] | None
+) -> list[dict[str, Any]]:
+    """Rename each row's headers per an explicit file-header → canonical-key map
+    (from the mapping UI). Headers not in the map keep their original name, so
+    the existing fixed-alias detection still applies to them. Empty/None mapping
+    targets drop the column."""
+    if not column_map:
+        return rows
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        new: dict[str, Any] = {}
+        for k, v in row.items():
+            if k == _ROW_KEY:
+                new[k] = v
+                continue
+            if k is not None and str(k) in column_map:
+                target = column_map[str(k)]
+                if not target:
+                    continue  # explicitly skipped column
+                new[target] = v
+            else:
+                new[k] = v
+        out.append(new)
+    return out
+
+
+async def detect_columns(
+    file: UploadFile,
+) -> dict[str, Any]:
+    """For the mapping step: the upload's headers, a suggested mapping, and the
+    catalog of fields an admin can map them to."""
+    content = await file.read()
+    rows = _parse_file(file.filename, content)
+    headers = _file_headers(rows)
+    return {
+        "headers": headers,
+        "suggested": _suggest_mapping(headers),
+        "fields": IMPORT_FIELDS,
+    }
+
+
+def _unrecognized_columns(rows: list[dict[str, Any]]) -> list[str]:
+    """File header columns that map to no known field — their data would be
+    silently dropped on import. Returned in original spelling, de-duped in
+    first-seen order. The reserved row-number key and blank headers are ignored."""
+    recognized = set(COLUMN_MAPPING) | set(_OVERRIDE_HEADERS) | set(_PARENT_HEADERS)
+    seen: set[str] = set()
+    out: list[str] = []
+    for row in rows:
+        for raw_key in row.keys():
+            if raw_key is None or raw_key == _ROW_KEY:
+                continue
+            norm = _normalize(str(raw_key))
+            if not norm or norm in recognized or norm in seen:
+                continue
+            seen.add(norm)
+            out.append(str(raw_key).strip())
+    return out
 
 
 async def _load_batch_index(
@@ -795,47 +1104,106 @@ async def _load_student_dedup_keys(
     return enrols, emails
 
 
+def _fuzzy_keys(kwargs: dict[str, Any]) -> set[str]:
+    """Soft identity keys for catching the same human re-entered *without* a roll
+    number: (name + phone) and (name + DOB). Used only for a WARNING — never a
+    hard skip, since genuine homonyms exist. Phone/DOB are normalized so messy
+    spellings still match."""
+    first = str(kwargs.get("first_name") or "").strip().lower()
+    last = str(kwargs.get("last_name") or "").strip().lower()
+    name = f"{first} {last}".strip()
+    if not name:
+        return set()
+    keys: set[str] = set()
+    phone = kwargs.get("phone")
+    if phone:
+        digits = _tidy_phone(str(phone))
+        if digits:
+            keys.add(f"{name}|p|{digits}")
+    dob = _parse_date(kwargs.get("date_of_birth"))
+    if dob is not None:
+        keys.add(f"{name}|d|{dob.isoformat()}")
+    return keys
+
+
+async def _load_fuzzy_keys(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> set[str]:
+    """Fuzzy identity keys (name+phone / name+DOB) for the branch's live
+    students — seeded into the per-import 'seen' set so an existing student
+    re-entered without a roll number is flagged as a possible duplicate."""
+    result = await session.execute(
+        select(
+            Student.first_name,
+            Student.last_name,
+            Student.phone,
+            Student.date_of_birth,
+        ).where(
+            Student.branch_id == branch_id,
+            Student.is_deleted == False,  # noqa: E712
+        )
+    )
+    keys: set[str] = set()
+    for first, last, phone, dob in result.all():
+        keys |= _fuzzy_keys(
+            {
+                "first_name": first,
+                "last_name": last,
+                "phone": phone,
+                "date_of_birth": dob,
+            }
+        )
+    return keys
+
+
 _BULK_CHUNK = 500
 
 
 async def _bulk_insert_students(
     session: AsyncSession,
-    pending: list[tuple[int, Student, "StudentBatchMapping | None"]],
+    pending: list[tuple[int, Student, "StudentBatchMapping | None", "Parent | None"]],
     on_progress=None,
 ) -> tuple[int, list[tuple[int, str]]]:
-    """Insert validated students (+ their batch mappings) in chunks — one flush
-    per chunk instead of per row, which is what kept large imports under the
-    request timeout. If a chunk's flush fails (a stray IntegrityError), that
-    chunk is retried row-by-row in savepoints so a single bad row is isolated
-    and reported, not fatal. ``on_progress`` (if given) is awaited after each
-    chunk with the running processed count, for a job progress bar. Returns
-    (imported_count, [(rownum, error), ...])."""
+    """Insert validated students (+ their batch mappings and parent rows) in
+    chunks — one flush per chunk instead of per row, which is what kept large
+    imports under the request timeout. If a chunk's flush fails (a stray
+    IntegrityError), that chunk is retried row-by-row in savepoints so a single
+    bad row is isolated and reported, not fatal. ``on_progress`` (if given) is
+    awaited after each chunk with the running processed count, for a job progress
+    bar. Returns (imported_count, [(rownum, error), ...])."""
     imported = 0
     processed = 0
     skips: list[tuple[int, str]] = []
     for start in range(0, len(pending), _BULK_CHUNK):
         chunk = pending[start : start + _BULK_CHUNK]
-        students = [student for _, student, _ in chunk]
-        mappings = [m for _, _, m in chunk if m is not None]
+        students = [student for _, student, _, _ in chunk]
+        mappings = [m for _, _, m, _ in chunk if m is not None]
+        parents = [p for _, _, _, p in chunk if p is not None]
         try:
             async with session.begin_nested():
-                # Students first, then mappings — a mapping FKs its student, so
-                # the parent rows must land before the children (Postgres
-                # enforces this; SQLite doesn't).
+                # Students first, then their children (mappings + parents both
+                # FK the student) — parent rows must land before children
+                # (Postgres enforces this; SQLite doesn't).
                 session.add_all(students)
                 await session.flush()
                 if mappings:
                     session.add_all(mappings)
+                if parents:
+                    session.add_all(parents)
+                if mappings or parents:
                     await session.flush()
             imported += len(chunk)
         except Exception:  # noqa: BLE001 - isolate the offending row(s)
-            for rownum, student, mapping in chunk:
+            for rownum, student, mapping, parent in chunk:
                 try:
                     async with session.begin_nested():
                         session.add(student)
                         await session.flush()
                         if mapping is not None:
                             session.add(mapping)
+                        if parent is not None:
+                            session.add(parent)
+                        if mapping is not None or parent is not None:
                             await session.flush()
                     imported += 1
                 except Exception as exc:  # noqa: BLE001
@@ -907,6 +1275,7 @@ async def preview_import(
     session: AsyncSession,
     file: UploadFile,
     branch_id: uuid.UUID,
+    column_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Dry-run a student upload: report row issues and, crucially, which
     batch codes already exist vs. are missing, so the admin can create the
@@ -917,7 +1286,8 @@ async def preview_import(
     )
 
     content = await file.read()
-    rows = _parse_file(file.filename, content)
+    rows = _apply_column_map(_parse_file(file.filename, content), column_map)
+    unrecognized_columns = _unrecognized_columns(rows)
 
     years = await academic_repository.list_academic_years(session, branch_id)
     academic_year = _pick_academic_year(years)
@@ -932,12 +1302,14 @@ async def preview_import(
     courses = await academic_repository.list_courses(session, branch_id)
     courses_by_code = {c.code.strip().lower(): c for c in courses}
     seen_enrols, seen_emails = await _load_student_dedup_keys(session, branch_id)
+    seen_fuzzy = await _load_fuzzy_keys(session, branch_id)
 
     total_rows = 0
     rows_missing_name = 0
     rows_invalid_enrolment = 0
     rows_invalid_consistency = 0
     rows_with_warnings = 0
+    rows_possible_duplicate = 0
     duplicate_rows = 0
     unbatched_rows = 0
     importable_rows = 0
@@ -1006,6 +1378,17 @@ async def preview_import(
                 seen_enrols.add(enr_key)
             if em_key is not None:
                 seen_emails.add(em_key)
+            # Fuzzy possible-duplicate (name+phone / name+DOB): a soft warning,
+            # not a skip — the row still imports.
+            fkeys = _fuzzy_keys(kwargs)
+            if fkeys & seen_fuzzy:
+                rows_possible_duplicate += 1
+                if len(row_issues) < 20:
+                    row_issues.append(
+                        f"Row {rownum}: possible duplicate "
+                        f"(same name + phone/DOB) — imported with a warning"
+                    )
+            seen_fuzzy |= fkeys
 
         # A row only counts as importable if it is valid, consistent, AND not
         # a duplicate.
@@ -1112,6 +1495,7 @@ async def preview_import(
         "rows_invalid_enrolment": rows_invalid_enrolment,
         "rows_invalid_consistency": rows_invalid_consistency,
         "rows_with_warnings": rows_with_warnings,
+        "rows_possible_duplicate": rows_possible_duplicate,
         "duplicate_rows": duplicate_rows,
         "unbatched_rows": unbatched_rows,
         "existing_batches": existing,
@@ -1121,6 +1505,7 @@ async def preview_import(
         "new_academic_years": new_academic_years,
         "batches": batches,
         "row_issues": row_issues,
+        "unrecognized_columns": unrecognized_columns,
     }
 
 
@@ -1134,19 +1519,21 @@ async def import_students(
     ip_address: str | None = None,
     import_id: uuid.UUID | None = None,
     on_progress=None,
+    column_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Engine for a student import. ``content``/``filename`` are the raw upload
     (read by the caller, so this works both in-request and from a background
     job). When ``on_progress`` is given it's awaited with the running count of
     inserted students so a job can publish a progress bar. ``import_id`` lets a
-    job key the run to its own id; otherwise one is generated."""
+    job key the run to its own id; otherwise one is generated. ``column_map``
+    (from the mapping step) renames file headers to canonical fields first."""
     from app.modules.student.services.student_service import (
         VALID_STREAMS,
         _validate_enrolment_fields,
         default_stream,
     )
 
-    rows = _parse_file(filename, content)
+    rows = _apply_column_map(_parse_file(filename, content), column_map)
 
     # One id per import run, stamped on every student (and auto-created batch)
     # so this upload can be audited and undone as a unit (design §9).
@@ -1206,6 +1593,8 @@ async def import_students(
     # Seeded with existing students so a re-upload (or within-file repeats) is
     # skipped instead of silently duplicating every row.
     seen_enrols, seen_emails = await _load_student_dedup_keys(session, branch_id)
+    # Soft (name+phone / name+DOB) keys for the fuzzy possible-duplicate warning.
+    seen_fuzzy = await _load_fuzzy_keys(session, branch_id)
 
     # Optionally create any referenced-but-missing batches up front, so the
     # course/exam-date is decided once per code from its dominant Target.
@@ -1300,8 +1689,10 @@ async def import_students(
     warnings: list[str] = []
     # Validated rows are collected here and written in bulk after the loop —
     # per-row INSERT+flush+savepoint is what made a 1000-row import take ~40s
-    # and time out. (rownum, Student, StudentBatchMapping | None)
-    pending: list[tuple[int, Student, StudentBatchMapping | None]] = []
+    # and time out. (rownum, Student, StudentBatchMapping | None, Parent | None)
+    pending: list[
+        tuple[int, Student, StudentBatchMapping | None, Parent | None]
+    ] = []
 
     for idx, row in enumerate(rows, start=2):  # row 1 is header
         rownum = _row_number(row, idx)
@@ -1373,6 +1764,21 @@ async def import_students(
         else:
             kwargs["stream"] = default_stream(kwargs.get("target_exam"))
 
+        # Coerce optional typed fields (DOB → date, fees → enum). An unparseable
+        # value is dropped with a warning so the rest of the row still imports.
+        warnings.extend(_coerce_typed_fields(kwargs, rownum))
+
+        # Fuzzy possible-duplicate: same name + phone/DOB as a student already on
+        # file (or an earlier row) but a different/absent roll number. Warn only —
+        # never skip, since homonyms are real.
+        fkeys = _fuzzy_keys(kwargs)
+        if fkeys & seen_fuzzy:
+            warnings.append(
+                f"Row {rownum}: possible duplicate of an existing student "
+                f"(same name + phone/DOB) — imported anyway"
+            )
+        seen_fuzzy |= fkeys
+
         # Build the row in memory (id pre-generated so the batch mapping can
         # reference it) and defer the write to a single bulk insert below.
         sid = uuid.uuid4()
@@ -1389,7 +1795,10 @@ async def import_students(
             if batch_id is not None
             else None
         )
-        pending.append((rownum, student, mapping))
+        parent = _build_parent(
+            row, sid, branch_id, kwargs.get("parent_mobile"), import_id
+        )
+        pending.append((rownum, student, mapping, parent))
         # Mark the natural keys now so a later row that repeats them within this
         # same file is caught as a duplicate.
         if enr_key is not None:
@@ -1479,6 +1888,7 @@ async def run_import_job(
     current_user_id: uuid.UUID,
     create_missing_batches: bool,
     ip_address: str | None = None,
+    column_map: dict[str, str] | None = None,
 ) -> None:
     """Background entrypoint: opens its own session (the request's is gone) and
     delegates to _process_import_job."""
@@ -1494,6 +1904,7 @@ async def run_import_job(
             current_user_id,
             create_missing_batches,
             ip_address,
+            column_map,
         )
 
 
@@ -1506,6 +1917,7 @@ async def _process_import_job(
     current_user_id: uuid.UUID,
     create_missing_batches: bool,
     ip_address: str | None = None,
+    column_map: dict[str, str] | None = None,
 ) -> None:
     """Run the import keyed to ``job_id`` (= import_id), publishing progress per
     chunk and recording the final result or failure on the job row."""
@@ -1537,6 +1949,7 @@ async def _process_import_job(
             ip_address=ip_address,
             import_id=job_id,
             on_progress=_progress,
+            column_map=column_map,
         )
         job.imported = result["imported"]
         job.skipped = result["skipped"]
@@ -1596,8 +2009,21 @@ async def undo_import(
             )
         ).scalars().all()
 
+    # Parent rows this import created (stamped with the same import_id).
+    parents = (
+        await session.execute(
+            select(Parent).where(
+                Parent.import_id == import_id,
+                Parent.branch_id == branch_id,
+                Parent.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalars().all()
+
     for m in mappings:
         m.is_deleted = True
+    for p in parents:
+        p.is_deleted = True
     for s in students:
         s.is_deleted = True
     await session.flush()
@@ -1690,6 +2116,7 @@ async def undo_import(
             "students_deleted": len(students),
             "batches_deleted": batches_deleted,
             "subjects_deleted": subjects_deleted,
+            "parents_deleted": len(parents),
         },
         ip_address=ip_address,
         branch_id=branch_id,
@@ -1699,4 +2126,5 @@ async def undo_import(
         "students_deleted": len(students),
         "batches_deleted": batches_deleted,
         "subjects_deleted": subjects_deleted,
+        "parents_deleted": len(parents),
     }

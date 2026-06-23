@@ -6,7 +6,7 @@ import type { StudentWithStats } from "@/app/(dashboard)/students/_schemas/stude
 
 const mockEdit = vi.fn();
 const mockDelete = vi.fn();
-const mockStream = vi.fn();
+const mockField = vi.fn();
 const mockSort = vi.fn();
 
 beforeEach(() => {
@@ -60,7 +60,7 @@ describe("StudentTable (MSA_Design layout)", () => {
         rows={[]}
         onEdit={mockEdit}
         onDelete={mockDelete}
-        onStreamChange={mockStream}
+        onFieldChange={mockField}
         sortBy="name"
         order="asc"
         onSort={mockSort}
@@ -75,13 +75,13 @@ describe("StudentTable (MSA_Design layout)", () => {
     expect(screen.getByText("Fees")).toBeInTheDocument();
   });
 
-  it("renders student rows with batch, rank, score, attendance, and fees badge", () => {
+  it("renders student rows with batch, rank, score, attendance, and fees", () => {
     render(
       <StudentTable
         rows={ROWS}
         onEdit={mockEdit}
         onDelete={mockDelete}
-        onStreamChange={mockStream}
+        onFieldChange={mockField}
         sortBy="name"
         order="asc"
         onSort={mockSort}
@@ -94,8 +94,15 @@ describe("StudentTable (MSA_Design layout)", () => {
     expect(screen.getByText("#1")).toBeInTheDocument();
     expect(screen.getByText("82%")).toBeInTheDocument();
     expect(screen.getByText("95%")).toBeInTheDocument();
-    expect(screen.getByText("Paid")).toBeInTheDocument();
-    expect(screen.getByText("Overdue")).toBeInTheDocument();
+    // Fees is now an inline select showing the current value.
+    const fees0 = screen.getByRole("combobox", {
+      name: /fees for rahul sharma/i,
+    }) as HTMLSelectElement;
+    expect(fees0.value).toBe("paid");
+    const fees1 = screen.getByRole("combobox", {
+      name: /fees for priya patel/i,
+    }) as HTMLSelectElement;
+    expect(fees1.value).toBe("overdue");
   });
 
   it("invokes onEdit with the resolved StudentResponse for the row", async () => {
@@ -105,7 +112,7 @@ describe("StudentTable (MSA_Design layout)", () => {
         rows={ROWS}
         onEdit={mockEdit}
         onDelete={mockDelete}
-        onStreamChange={mockStream}
+        onFieldChange={mockField}
         sortBy="name"
         order="asc"
         onSort={mockSort}
@@ -124,7 +131,7 @@ describe("StudentTable (MSA_Design layout)", () => {
         rows={ROWS}
         onEdit={mockEdit}
         onDelete={mockDelete}
-        onStreamChange={mockStream}
+        onFieldChange={mockField}
         sortBy="name"
         order="asc"
         onSort={mockSort}
@@ -144,7 +151,7 @@ describe("StudentTable (MSA_Design layout)", () => {
         rows={ROWS}
         onEdit={mockEdit}
         onDelete={mockDelete}
-        onStreamChange={mockStream}
+        onFieldChange={mockField}
         sortBy="name"
         order="asc"
         onSort={mockSort}
@@ -157,7 +164,51 @@ describe("StudentTable (MSA_Design layout)", () => {
     expect(select.value).toBe("PCB"); // current stream shown
 
     await user.selectOptions(select, "PCM");
-    expect(mockStream).toHaveBeenCalledWith(ROWS[0], "PCM");
+    expect(mockField).toHaveBeenCalledWith(ROWS[0], { stream: "PCM" });
+  });
+
+  it("saves an inline class change", async () => {
+    const user = userEvent.setup();
+    render(
+      <StudentTable
+        rows={ROWS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
+        onFieldChange={mockField}
+        sortBy="name"
+        order="asc"
+        onSort={mockSort}
+      />,
+    );
+
+    const select = screen.getByRole("combobox", {
+      name: /class for rahul sharma/i,
+    }) as HTMLSelectElement;
+    expect(select.value).toBe("11");
+
+    await user.selectOptions(select, "12");
+    expect(mockField).toHaveBeenCalledWith(ROWS[0], { standard: "12" });
+  });
+
+  it("saves an inline fees change", async () => {
+    const user = userEvent.setup();
+    render(
+      <StudentTable
+        rows={ROWS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
+        onFieldChange={mockField}
+        sortBy="name"
+        order="asc"
+        onSort={mockSort}
+      />,
+    );
+
+    const select = screen.getByRole("combobox", {
+      name: /fees for rahul sharma/i,
+    }) as HTMLSelectElement;
+    await user.selectOptions(select, "due");
+    expect(mockField).toHaveBeenCalledWith(ROWS[0], { fees_status: "due" });
   });
 
   it("marks the active sort column and fires onSort on a header click", async () => {
@@ -167,7 +218,7 @@ describe("StudentTable (MSA_Design layout)", () => {
         rows={ROWS}
         onEdit={mockEdit}
         onDelete={mockDelete}
-        onStreamChange={mockStream}
+        onFieldChange={mockField}
         sortBy="name"
         order="asc"
         onSort={mockSort}

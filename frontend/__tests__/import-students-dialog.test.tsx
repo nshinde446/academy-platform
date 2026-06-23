@@ -87,6 +87,9 @@ describe("ImportStudentsDialog", () => {
     expect(text).toContain("Roll No");
     expect(text).toContain("Parent Mobile");
     expect(text).toContain("RFIDNumber");
+    // Optional profile columns (T1) — real stored fields, not derived stats.
+    expect(text).toContain("DOB");
+    expect(text).toContain("Fees");
     // Optional batch-creation override columns (design §5).
     expect(text).toContain("Course_opt");
     expect(text).toContain("Duration");
@@ -95,12 +98,11 @@ describe("ImportStudentsDialog", () => {
     // Sample rows exercise common class / exam / batch values.
     expect(text).toMatch(/NEET/);
     expect(text).toMatch(/JEE-Main/);
-    // Derived columns must not leak into the template.
+    // Derived/computed roster stats must not leak into the template.
     expect(text).not.toMatch(/\bRank\b/);
     expect(text).not.toMatch(/Avg score/i);
     expect(text).not.toMatch(/Attendance/);
     expect(text).not.toMatch(/\bDPP\b/);
-    expect(text).not.toMatch(/Fees/);
   });
 
   it("sample template exercises every allowed Class and Target value", async () => {
@@ -395,6 +397,46 @@ describe("ImportStudentsDialog", () => {
       await screen.findByText(/Will create academic year\(s\):/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/2026-27, 2027-28/)).toBeInTheDocument();
+  });
+
+  it("warns about columns that won't be imported (T2)", async () => {
+    const user = userEvent.setup();
+    const post = apiClient.post as ReturnType<typeof vi.fn>;
+    post.mockResolvedValueOnce({
+      data: {
+        total_rows: 1,
+        importable_rows: 1,
+        rows_missing_name: 0,
+        rows_invalid_enrolment: 0,
+        rows_invalid_consistency: 0,
+        rows_with_warnings: 0,
+        duplicate_rows: 0,
+        unbatched_rows: 0,
+        existing_batches: 1,
+        missing_batches: 0,
+        blocked_batches: 0,
+        blocking_error: null,
+        new_academic_years: [],
+        batches: [],
+        row_issues: [],
+        unrecognized_columns: ["Blood Group", "Mother Tongue"],
+      },
+    });
+
+    renderDialog();
+    await user.click(screen.getByRole("button", { name: /import students/i }));
+    await user.upload(
+      screen.getByLabelText(/file/i) as HTMLInputElement,
+      new File(["Name\nfoo"], "x.csv", { type: "text/csv" }),
+    );
+    await user.click(screen.getByRole("button", { name: /preview import/i }));
+
+    expect(
+      await screen.findByText(/2 column\(s\) won.t be imported/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Blood Group, Mother Tongue/),
+    ).toBeInTheDocument();
   });
 
   it("flags batches that can't be auto-created in the preview", async () => {

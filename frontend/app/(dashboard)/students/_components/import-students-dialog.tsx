@@ -16,6 +16,9 @@ import {
 } from "@/components/ui/dialog";
 import { downloadCsvTemplate } from "@/lib/csv-template";
 import { studentKeys, useImportJob } from "../_hooks/use-students";
+import { ColumnMapStep } from "./column-map-step";
+import { ImportConfirmMatrix } from "./import-confirm-matrix";
+import type { ColumnMap } from "../_lib/mapping-profile";
 import type {
   ImportJob,
   ImportPreview,
@@ -170,6 +173,18 @@ const SAMPLE_ROWS: string[][] = [
   ],
 ];
 
+// Optional per-student profile columns. DOB is parsed from several formats
+// (YYYY-MM-DD, DD/MM/YYYY, …); Fees accepts paid | due | overdue | partial.
+// Both map to existing student fields — unrecognized values import the row
+// anyway and just leave the field blank.
+const OPTIONAL_PROFILE_HEADERS = [
+  "DOB",
+  "Fees",
+  "Enrollment Date",
+  "Parent Name",
+  "Relation",
+];
+
 // Optional override columns (design §5): if you already know a batch's course,
 // length, and intake year, set them here and a newly-created batch uses them.
 // Left blank, the batch falls back to Target-derived defaults (a 1-year course
@@ -182,14 +197,25 @@ const OPTIONAL_OVERRIDE_HEADERS = [
 ];
 
 function downloadSampleTemplate() {
-  const headers = [...SAMPLE_HEADERS, ...OPTIONAL_OVERRIDE_HEADERS];
-  // First row shows a 2-year override; the rest leave the optional columns
-  // empty so the example reads as "these are optional".
-  const rows = SAMPLE_ROWS.map((r, i) =>
-    i === 0
-      ? [...r, "NEET 2-Year", "2 Years", "2025-2027", "NEET"]
-      : [...r, "", "", "", ""],
-  );
+  const headers = [
+    ...SAMPLE_HEADERS,
+    ...OPTIONAL_PROFILE_HEADERS,
+    ...OPTIONAL_OVERRIDE_HEADERS,
+  ];
+  // First two rows show sample DOB/Fees values; the first also shows a 2-year
+  // batch override. The rest leave the optional columns empty so the example
+  // reads as "these are optional".
+  const profile: string[][] = [
+    ["2009-04-12", "paid", "2026-06-15", "Ramesh Sharma", "Father"],
+    ["2008-11-03", "due", "2026-06-20", "Sunita Singh", "Mother"],
+  ];
+  const blankProfile = OPTIONAL_PROFILE_HEADERS.map(() => "");
+  const rows = SAMPLE_ROWS.map((r, i) => {
+    const prof = profile[i] ?? blankProfile;
+    const override =
+      i === 0 ? ["NEET 2-Year", "2 Years", "2025-2027", "NEET"] : ["", "", "", ""];
+    return [...r, ...prof, ...override];
+  });
   downloadCsvTemplate("students-import-template.csv", headers, rows);
 }
 
@@ -207,6 +233,10 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
   // step 1 — it unmounts once the preview shows, so we need the File to
   // survive into the import step.
   const [file, setFile] = useState<File | null>(null);
+  // T3 — optional column mapping. `mapping` shows the map step; `columnMap`
+  // holds the applied file-header → field map sent with preview/import.
+  const [mapping, setMapping] = useState(false);
+  const [columnMap, setColumnMap] = useState<ColumnMap | null>(null);
   const queryClient = useQueryClient();
 
   // The import runs as a background job; poll it for progress + the result.
@@ -235,6 +265,8 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
     setCreateMissing(true);
     setUndone(null);
     setFile(null);
+    setMapping(false);
+    setColumnMap(null);
   }
 
   function buildFormData(): FormData | null {
@@ -244,6 +276,9 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
     }
     const formData = new FormData();
     formData.append("file", file);
+    if (columnMap && Object.keys(columnMap).length > 0) {
+      formData.append("column_map", JSON.stringify(columnMap));
+    }
     return formData;
   }
 
@@ -364,7 +399,12 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
           MHT-CET, Both, Foundation, Other. You&apos;ll see a preview of which{" "}
           <strong>batches</strong> already exist before anything is saved — any
           that are missing can be created for you. Optional: Roll No, Email,
-          Phone, Parent Mobile, Gender, District, Caste, Username, RFIDNumber.{" "}
+          Phone, Parent Mobile, Gender, District, Caste, Username, RFIDNumber,{" "}
+          <strong>DOB</strong> (e.g. 2009-04-12 or 12/04/2009),{" "}
+          <strong>Fees</strong> (paid / due / overdue / partial),{" "}
+          <strong>Enrollment Date</strong>, and parent details (
+          <strong>Parent Name</strong>, <strong>Relation</strong>,{" "}
+          <strong>Parent Phone</strong>, <strong>Occupation</strong>).{" "}
           To control how a <strong>new</strong> batch is built, also add{" "}
           <strong>Course_opt</strong> (course name),{" "}
           <strong>Duration</strong> (e.g. 1 Year / 2 Years),{" "}
@@ -378,7 +418,7 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           {/* Step 1 — choose a file */}
-          {!preview && !jobId && (
+          {!preview && !jobId && !mapping && (
             <>
               <div>
                 <Button
@@ -396,10 +436,32 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                   id="import_file"
                   type="file"
                   accept=".csv,.xlsx,.xls"
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    setFile(e.target.files?.[0] ?? null);
+                    setColumnMap(null);
+                  }}
                 />
               </div>
+              {columnMap && (
+                <p className="text-xs text-emerald-600">
+                  {Object.keys(columnMap).length} column(s) mapped — they&apos;ll
+                  be applied on preview/import.
+                </p>
+              )}
             </>
+          )}
+
+          {/* Step 1b — optional column mapping */}
+          {!preview && !jobId && mapping && file && (
+            <ColumnMapStep
+              branchId={branchId}
+              file={file}
+              onApply={(m) => {
+                setColumnMap(m);
+                setMapping(false);
+              }}
+              onCancel={() => setMapping(false)}
+            />
           )}
 
           {/* Step 2 — preview the batch split */}
@@ -442,6 +504,13 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                     row(s) will be skipped.
                   </p>
                 )}
+                {(preview.rows_possible_duplicate ?? 0) > 0 && (
+                  <p className="mt-1 text-xs text-amber-600">
+                    {preview.rows_possible_duplicate} possible duplicate(s) (same
+                    name + phone/DOB as an existing student) — imported with a
+                    warning, not skipped.
+                  </p>
+                )}
                 {preview.rows_with_warnings > 0 && (
                   <p className="mt-1 text-xs text-muted-foreground">
                     {preview.rows_with_warnings} row(s) have warnings (imported
@@ -458,6 +527,24 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                   </p>
                 )}
               </div>
+
+              <ImportConfirmMatrix preview={preview} />
+
+              {(preview.unrecognized_columns ?? []).length > 0 && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+                  <p className="font-medium text-amber-700">
+                    {preview.unrecognized_columns.length} column(s) won&apos;t be
+                    imported — they don&apos;t match a known field:
+                  </p>
+                  <p className="mt-1 text-amber-700">
+                    {preview.unrecognized_columns.join(", ")}
+                  </p>
+                  <p className="mt-1 text-muted-foreground">
+                    Their data is ignored. Rename them to a known column or remove
+                    them — see the sample CSV for accepted headers.
+                  </p>
+                </div>
+              )}
 
               {preview.blocking_error && (
                 <p className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
@@ -654,6 +741,8 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
               {undone && (
                 <p className="mt-2 text-xs font-medium text-muted-foreground">
                   Undone — removed {undone.students_deleted} student(s)
+                  {undone.parents_deleted > 0 &&
+                    ` and ${undone.parents_deleted} parent(s)`}
                   {undone.batches_deleted > 0 &&
                     ` and ${undone.batches_deleted} auto-created batch(es)`}
                   {undone.subjects_deleted > 0 &&
@@ -665,15 +754,28 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
           )}
 
           <div className="flex justify-end gap-2">
-            <DialogClose
-              render={
-                <Button variant="outline" type="button">
-                  {jobId ? "Close" : "Cancel"}
-                </Button>
-              }
-            />
+            {/* The mapping sub-step renders its own Back / Apply buttons. */}
+            {!mapping && (
+              <DialogClose
+                render={
+                  <Button variant="outline" type="button">
+                    {jobId ? "Close" : "Cancel"}
+                  </Button>
+                }
+              />
+            )}
 
-            {!preview && !jobId && (
+            {!preview && !jobId && !mapping && (
+              <Button
+                variant="outline"
+                onClick={() => setMapping(true)}
+                disabled={!file || previewing}
+              >
+                {columnMap ? "Edit mapping" : "Map columns"}
+              </Button>
+            )}
+
+            {!preview && !jobId && !mapping && (
               <Button onClick={handlePreview} disabled={previewing}>
                 {previewing ? "Reading..." : "Preview import"}
               </Button>

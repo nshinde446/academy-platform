@@ -392,6 +392,7 @@ class TestStudentImportTraceabilityAndUndo:
             "students_deleted": 0,
             "batches_deleted": 0,
             "subjects_deleted": 0,
+            "parents_deleted": 0,
         }
 
     @pytest.mark.usefixtures("seed_data")
@@ -1069,3 +1070,406 @@ class TestLargeImportBulk:
         assert data["subjects_created"] > 0
         assert "2026-27" in data["academic_years_created"]
         assert "2027-28" in data["academic_years_created"]
+
+
+class TestProfileColumnMapping:
+    """T1: DOB / Fees / aspiration mapping + name/phone/DOB/fees normalization."""
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_dob_fees_and_normalization_are_stored(
+        self, client, seed_data, db_session
+    ):
+        from datetime import date
+
+        from sqlalchemy import select
+
+        from app.modules.student.models.student_models import Student
+
+        token = await _login(client)
+        header = (
+            "Name,Class,Target,Batch,Roll No,Phone,Parent Mobile,DOB,Fees,Aspiration"
+        )
+        content = (
+            "\n".join(
+                [
+                    header,
+                    # ISO DOB, messy phones, ALLCAPS name, valid fees.
+                    "ASHA RAO,11,NEET,BATCH-A,P-001,+91 98765-43210,(91) 91234 56780,2009-04-12,PAID,NEET",
+                    # DD/MM/YYYY DOB, lower-case name, mixed-case kept elsewhere.
+                    "bina roy,11,NEET,BATCH-A,P-002,9876500000,,03/11/2008,partial,",
+                ]
+            )
+            + "\n"
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("profile.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["imported"] == 2
+
+        rows = (
+            (
+                await db_session.execute(
+                    select(Student).where(
+                        Student.enrollment_number.in_(["P-001", "P-002"])
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        by_roll = {s.enrollment_number: s for s in rows}
+        asha = by_roll["P-001"]
+        bina = by_roll["P-002"]
+
+        # Name title-cased from ALLCAPS / all-lower.
+        assert (asha.first_name, asha.last_name) == ("Asha", "Rao")
+        assert (bina.first_name, bina.last_name) == ("Bina", "Roy")
+        # Phones reduced to digits (+ kept), parent_mobile normalized too.
+        assert asha.phone == "+919876543210"
+        assert asha.parent_mobile == "919123456780"
+        # DOB parsed from both ISO and DD/MM/YYYY into real dates.
+        assert asha.date_of_birth == date(2009, 4, 12)
+        assert bina.date_of_birth == date(2008, 11, 3)
+        # Fees normalized to the lowercase enum; aspiration mapped through.
+        assert asha.fees_status == "paid"
+        assert bina.fees_status == "partial"
+        assert asha.aspiration_target == "NEET"
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_bad_dob_and_fees_warn_but_row_imports(
+        self, client, seed_data, db_session
+    ):
+        from sqlalchemy import select
+
+        from app.modules.student.models.student_models import Student
+
+        token = await _login(client)
+        header = "Name,Class,Target,Batch,Roll No,DOB,Fees"
+        content = (
+            "\n".join(
+                [
+                    header,
+                    "Cara Sen,11,NEET,BATCH-A,P-010,not-a-date,unknown",
+                ]
+            )
+            + "\n"
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("bad.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        # Row still imports — the bad fields are dropped, not fatal.
+        assert data["imported"] == 1
+        warnings = " ".join(data["warnings"])
+        assert "Date of Birth" in warnings
+        assert "Fees status" in warnings
+
+        student = (
+            (
+                await db_session.execute(
+                    select(Student).where(Student.enrollment_number == "P-010")
+                )
+            )
+            .scalars()
+            .one()
+        )
+        assert student.date_of_birth is None
+        assert student.fees_status is None
+
+
+class TestUnrecognizedColumns:
+    """T2: preview surfaces file columns that match no known field."""
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_preview_lists_unrecognized_columns(self, client, seed_data):
+        token = await _login(client)
+        header = "Name,Class,Target,Batch,Roll No,Blood Group,Mother Tongue"
+        content = (
+            "\n".join([header, "Aman Sharma,11,NEET,BATCH-A,S-001,B+,Marathi"]) + "\n"
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import/preview?branch_id={BRANCH}",
+            files={"file": ("students.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        # Unknown columns surface in original spelling; known ones never do.
+        assert data["unrecognized_columns"] == ["Blood Group", "Mother Tongue"]
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_known_and_alias_columns_are_not_flagged(self, client, seed_data):
+        token = await _login(client)
+        # Mix of canonical + alias headers (incl. the T1 additions) — all known.
+        header = "Name,Class,Target,Batch,Roll No,DOB,Fees,Parent Mobile,Course_opt"
+        content = (
+            "\n".join(
+                [header, "Aman Sharma,11,NEET,BATCH-A,S-001,2009-04-12,paid,9123456780,NEET 1-Year"]
+            )
+            + "\n"
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import/preview?branch_id={BRANCH}",
+            files={"file": ("students.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["unrecognized_columns"] == []
+
+
+class TestColumnMapping:
+    """T3: a column_map renames arbitrary file headers to canonical fields."""
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_detect_columns_returns_headers_and_fields(
+        self, client, seed_data
+    ):
+        token = await _login(client)
+        content = b"Student Name,Std,Exam,Group\nAman,11,NEET,BATCH-A\n"
+        resp = await client.post(
+            f"/api/v1/students/import/columns?branch_id={BRANCH}",
+            files={"file": ("x.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["headers"] == ["Student Name", "Std", "Exam", "Group"]
+        # Unknown spellings are not auto-mapped.
+        assert data["suggested"]["Student Name"] is None
+        # The field catalog includes Name (and marks it required).
+        keys = {f["key"] for f in data["fields"]}
+        assert "name" in keys and "batch" in keys
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_import_applies_column_map(self, client, seed_data, db_session):
+        import json
+
+        from sqlalchemy import select
+
+        from app.modules.student.models.student_models import Student
+
+        token = await _login(client)
+        content = b"Student Name,Std,Exam,Group,Roll\nAman Sharma,11,NEET,BATCH-A,M-1\n"
+        column_map = {
+            "Student Name": "name",
+            "Std": "class",
+            "Exam": "target",
+            "Group": "batch",
+            "Roll": "roll no",
+        }
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("x.csv", content, "text/csv")},
+            data={"column_map": json.dumps(column_map)},
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["imported"] == 1
+
+        s = (
+            await db_session.execute(
+                select(Student).where(Student.enrollment_number == "M-1")
+            )
+        ).scalar_one()
+        assert (s.first_name, s.last_name) == ("Aman", "Sharma")
+        assert s.standard == "11" and s.target_exam == "NEET"
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_preview_with_map_clears_unrecognized(self, client, seed_data):
+        import json
+
+        token = await _login(client)
+        content = b"Student Name,Std,Exam,Group\nAman,11,NEET,BATCH-A\n"
+        # Without a map, the odd headers are unrecognized.
+        bare = await client.post(
+            f"/api/v1/students/import/preview?branch_id={BRANCH}",
+            files={"file": ("x.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        assert "Student Name" in bare.json()["unrecognized_columns"]
+
+        mapped = await client.post(
+            f"/api/v1/students/import/preview?branch_id={BRANCH}",
+            files={"file": ("x.csv", content, "text/csv")},
+            data={
+                "column_map": json.dumps(
+                    {
+                        "Student Name": "name",
+                        "Std": "class",
+                        "Exam": "target",
+                        "Group": "batch",
+                    }
+                )
+            },
+            cookies={"access_token": token},
+        )
+        assert mapped.json()["unrecognized_columns"] == []
+
+
+class TestFuzzyDuplicateWarning:
+    """T12: same name + phone/DOB as an existing student → warn, don't skip."""
+
+    HEADER = "Name,Class,Target,Batch,Roll No,Phone,DOB"
+
+    async def _import(self, client, token, *lines):
+        content = ("\n".join([self.HEADER, *lines]) + "\n").encode("utf-8")
+        return await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("f.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_reentered_person_warns_but_imports(self, client, seed_data):
+        token = await _login(client)
+        # First copy: roll Z-1, phone + DOB.
+        await self._import(
+            client, token, "Asha Rao,11,NEET,BATCH-A,Z-1,9876500000,2009-04-12"
+        )
+        # Same human, different roll number (no enrolment-dup) — should warn.
+        resp = await self._import(
+            client, token, "Asha Rao,11,NEET,BATCH-A,Z-2,9876500000,2009-04-12"
+        )
+        data = resp.json()
+        assert data["imported"] == 1  # NOT skipped
+        assert any("possible duplicate" in w for w in data["warnings"])
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_preview_counts_possible_duplicates(self, client, seed_data):
+        token = await _login(client)
+        await self._import(
+            client, token, "Asha Rao,11,NEET,BATCH-A,Z-3,9876511111,2008-01-02"
+        )
+        content = (
+            self.HEADER + "\nAsha Rao,11,NEET,BATCH-A,Z-4,9876511111,2008-01-02\n"
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import/preview?branch_id={BRANCH}",
+            files={"file": ("f.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        data = resp.json()
+        assert data["rows_possible_duplicate"] == 1
+        assert data["importable_rows"] == 1  # still imports
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_distinct_people_not_flagged(self, client, seed_data):
+        token = await _login(client)
+        resp = await self._import(
+            client,
+            token,
+            "Asha Rao,11,NEET,BATCH-A,Z-5,9000000001,2009-04-12",
+            "Bina Roy,11,NEET,BATCH-A,Z-6,9000000002,2009-04-12",
+        )
+        data = resp.json()
+        assert data["imported"] == 2
+        assert not any("possible duplicate" in w for w in data["warnings"])
+
+
+class TestParentAndEnrollmentImport:
+    """T14: parent rows + enrollment_date from the import, reclaimed on undo."""
+
+    HEADER = (
+        "Name,Class,Target,Batch,Roll No,Parent Mobile,"
+        "Parent Name,Relation,Occupation,Enrollment Date"
+    )
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_parent_row_and_enrollment_date_created(
+        self, client, seed_data, db_session
+    ):
+        from datetime import date
+
+        from sqlalchemy import select
+
+        from app.modules.student.models.student_models import Parent, Student
+
+        token = await _login(client)
+        content = (
+            self.HEADER
+            + "\nAsha Rao,11,NEET,BATCH-A,E-1,9123456780,"
+            + "Ramesh Rao,Father,Engineer,2026-06-15\n"
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("p.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["imported"] == 1
+
+        student = (
+            await db_session.execute(
+                select(Student).where(Student.enrollment_number == "E-1")
+            )
+        ).scalar_one()
+        assert student.enrollment_date == date(2026, 6, 15)
+
+        parent = (
+            await db_session.execute(
+                select(Parent).where(Parent.student_id == student.id)
+            )
+        ).scalar_one()
+        assert parent.name == "Ramesh Rao"
+        assert parent.relation == "Father"
+        assert parent.occupation == "Engineer"
+        assert parent.phone == "9123456780"  # fell back to Parent Mobile
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_undo_reclaims_parent_rows(self, client, seed_data, db_session):
+        from sqlalchemy import select
+
+        from app.modules.student.models.student_models import Parent
+
+        token = await _login(client)
+        content = (
+            self.HEADER
+            + "\nBina Roy,11,NEET,BATCH-A,E-2,9123400000,"
+            + "Suresh Roy,Father,,2026-06-10\n"
+        ).encode("utf-8")
+        imp = await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={"file": ("p.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        import_id = imp.json()["import_id"]
+
+        undo = await client.post(
+            f"/api/v1/students/import/{import_id}/undo?branch_id={BRANCH}",
+            cookies={"access_token": token},
+        )
+        assert undo.status_code == 200, undo.text
+        assert undo.json()["parents_deleted"] == 1
+
+        live = (
+            await db_session.execute(
+                select(Parent).where(
+                    Parent.name == "Suresh Roy",
+                    Parent.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalars().all()
+        assert live == []
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_parent_columns_not_flagged_as_unrecognized(
+        self, client, seed_data
+    ):
+        token = await _login(client)
+        content = (
+            self.HEADER
+            + "\nCara Sen,11,NEET,BATCH-A,E-3,9123411111,Mohan Sen,Father,,2026-06-12\n"
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import/preview?branch_id={BRANCH}",
+            files={"file": ("p.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        assert resp.json()["unrecognized_columns"] == []

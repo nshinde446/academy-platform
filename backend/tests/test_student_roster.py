@@ -73,3 +73,68 @@ class TestRosterPagination:
         )
         names = [r["first_name"] for r in resp.json()["items"]]
         assert names == sorted(names, reverse=True)
+
+
+class TestRosterFilters:
+    @pytest.mark.usefixtures("seed_data")
+    async def test_filter_by_class_and_target(self, client, seed_data):
+        token = await _login(client)
+        # Mixed cohorts in one import.
+        await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={
+                "file": (
+                    "s.csv",
+                    _csv(
+                        "Aman X,11,NEET,BATCH-A,F-1",
+                        "Bina X,12,JEE-Main,JEE-12,F-2",
+                        "Cara X,12,NEET,NEET-12,F-3",
+                    ),
+                    "text/csv",
+                )
+            },
+            cookies={"access_token": token},
+        )
+
+        only12 = (
+            await client.get(
+                f"/api/v1/students/roster?branch_id={BRANCH}&search=X&standard=12",
+                cookies={"access_token": token},
+            )
+        ).json()
+        assert {r["enrollment_number"] for r in only12["items"]} == {"F-2", "F-3"}
+
+        neet12 = (
+            await client.get(
+                f"/api/v1/students/roster?branch_id={BRANCH}"
+                f"&search=X&standard=12&target_exam=NEET",
+                cookies={"access_token": token},
+            )
+        ).json()
+        assert {r["enrollment_number"] for r in neet12["items"]} == {"F-3"}
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_filter_by_fees_status(self, client, seed_data):
+        token = await _login(client)
+        await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}",
+            files={
+                "file": (
+                    "s.csv",
+                    (
+                        "Name,Class,Target,Batch,Roll No,Fees\n"
+                        "Paid One,11,NEET,BATCH-A,G-1,paid\n"
+                        "Due Two,11,NEET,BATCH-A,G-2,due\n"
+                    ).encode("utf-8"),
+                    "text/csv",
+                )
+            },
+            cookies={"access_token": token},
+        )
+        due = (
+            await client.get(
+                f"/api/v1/students/roster?branch_id={BRANCH}&fees_status=due",
+                cookies={"access_token": token},
+            )
+        ).json()
+        assert {r["enrollment_number"] for r in due["items"]} == {"G-2"}
