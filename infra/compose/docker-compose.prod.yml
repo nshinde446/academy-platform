@@ -28,6 +28,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      # Grace window before failed probes count: Postgres may need to run crash
+      # recovery on boot (e.g. after a disk-full or unclean shutdown) and won't
+      # accept connections until it finishes. Without this the deploy's
+      # `--wait`/service_healthy gate gave up mid-recovery and failed the deploy.
+      start_period: 60s
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }

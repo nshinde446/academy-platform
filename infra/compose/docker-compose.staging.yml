@@ -27,6 +27,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      # Grace window before failed probes count, so Postgres crash recovery on
+      # boot (e.g. after an unclean shutdown) doesn't fail the deploy's
+      # service_healthy gate mid-recovery. Mirrors prod.
+      start_period: 60s
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
