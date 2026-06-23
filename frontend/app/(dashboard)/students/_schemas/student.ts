@@ -201,10 +201,25 @@ export interface ImportJob {
   import_id: string | null;
 }
 
+// Column-mapping step (T3): the upload's headers, a suggested file-header →
+// field-key map, and the catalog of fields to map to.
+export interface ImportField {
+  key: string;
+  label: string;
+  required?: string;
+}
+
+export interface ImportColumnsResponse {
+  headers: string[];
+  suggested: Record<string, string | null>;
+  fields: ImportField[];
+}
+
 export interface ImportUndoSummary {
   students_deleted: number;
   batches_deleted: number;
   subjects_deleted: number;
+  parents_deleted: number;
 }
 
 // One distinct Batch code referenced by an upload — whether it already
@@ -232,6 +247,8 @@ export interface ImportPreview {
   // §3 cross-field contradictions (block) and non-blocking advisories.
   rows_invalid_consistency: number;
   rows_with_warnings: number;
+  // Fuzzy possible duplicates (same name + phone/DOB) — imported with a warning.
+  rows_possible_duplicate: number;
   duplicate_rows: number;
   unbatched_rows: number;
   existing_batches: number;
@@ -243,6 +260,9 @@ export interface ImportPreview {
   new_academic_years: string[];
   batches: ImportPreviewBatch[];
   row_issues: string[];
+  // File columns matching no known field — their data would be dropped on
+  // import; surfaced so the admin can rename/remove them first.
+  unrecognized_columns: string[];
 }
 
 export interface AcademicYearResponse {

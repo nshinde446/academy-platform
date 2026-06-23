@@ -138,6 +138,28 @@ class BulkDeleteSummary(BaseModel):
     deleted: int
 
 
+class BulkStudentUpdate(BaseModel):
+    """Apply one field change to a set of selected students (roster bulk
+    actions). Any field left null is untouched; ``batch_id`` reassigns each
+    student's active batch mapping."""
+
+    student_ids: list[uuid.UUID]
+    fees_status: str | None = None
+    standard: str | None = None
+    stream: str | None = None
+    batch_id: uuid.UUID | None = None
+
+
+class BulkStudentDelete(BaseModel):
+    student_ids: list[uuid.UUID]
+
+
+class BulkActionSummary(BaseModel):
+    """Result of a bulk field update — how many live students were changed."""
+
+    updated: int
+
+
 class ImportJobResponse(BaseModel):
     """A background import job — the UI polls this for a progress bar
     (processed_rows/total_rows) and, on completion, the result fields."""
@@ -186,6 +208,7 @@ class ImportUndoSummary(BaseModel):
     students_deleted: int
     batches_deleted: int
     subjects_deleted: int = 0
+    parents_deleted: int = 0
 
 
 class ImportPreviewBatch(BaseModel):
@@ -217,6 +240,8 @@ class ImportPreview(BaseModel):
     # §3 cross-field contradictions that block a row, and non-blocking advisories.
     rows_invalid_consistency: int = 0
     rows_with_warnings: int = 0
+    # Fuzzy possible duplicates (same name + phone/DOB) — imported with a warning.
+    rows_possible_duplicate: int = 0
     duplicate_rows: int = 0
     unbatched_rows: int
     existing_batches: int
@@ -229,6 +254,10 @@ class ImportPreview(BaseModel):
     new_academic_years: list[str] = []
     batches: list[ImportPreviewBatch] = []
     row_issues: list[str] = []
+    # File header columns that match no known field — their data would be
+    # silently dropped on import, so we surface them for the admin to notice
+    # (in their original spelling), e.g. ["Mother Tongue", "Blood Group"].
+    unrecognized_columns: list[str] = []
 
 
 class StudentUpcomingTest(BaseModel):

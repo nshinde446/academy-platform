@@ -162,10 +162,17 @@ async def list_students_roster(
     search: str = "",
     sort_by: str = "name",
     order: str = "asc",
+    standard: str | None = None,
+    target_exam: str | None = None,
+    fees_status: str | None = None,
+    batch_id: uuid.UUID | None = None,
 ):
     """One page of the roster. Stats (incl. batch rank) are computed across the
-    whole branch for correctness, then the result is searched, sorted, and
-    sliced — so the client only ships/renders a page, not thousands of rows."""
+    whole branch for correctness, then the result is searched, filtered, sorted,
+    and sliced — so the client only ships/renders a page, not thousands of rows.
+
+    The optional ``standard`` / ``target_exam`` / ``fees_status`` / ``batch_id``
+    filters power the roster's faceted view + Saved Views."""
     rows = await student_repository.list_with_stats(session, branch_id)
 
     q = search.strip().lower()
@@ -176,6 +183,16 @@ async def list_students_roster(
             if q in f"{r['first_name']} {r['last_name']}".lower()
             or q in (r.get("enrollment_number") or "").lower()
         ]
+
+    if standard:
+        rows = [r for r in rows if r.get("standard") == standard]
+    if target_exam:
+        rows = [r for r in rows if r.get("target_exam") == target_exam]
+    if fees_status:
+        rows = [r for r in rows if r.get("fees_status") == fees_status]
+    if batch_id is not None:
+        bid = str(batch_id)
+        rows = [r for r in rows if str(r.get("batch_id")) == bid]
 
     key = _STATS_SORT_KEYS.get(sort_by, _STATS_SORT_KEYS["name"])
     # 'name' ascending is the natural default; numeric stats are usually most
@@ -268,6 +285,178 @@ async def delete_all_students(
         branch_id=branch_id,
     )
     return {"deleted": int(count)}
+
+
+_VALID_FEES = {"paid", "due", "overdue", "partial"}
+
+
+async def bulk_update_students(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    student_ids: list[uuid.UUID],
+    *,
+    fees_status: str | None = None,
+    standard: str | None = None,
+    stream: str | None = None,
+    batch_id: uuid.UUID | None = None,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict[str, int]:
+    """Apply one field change to a set of selected students. Only live students
+    in this branch are touched (cross-branch ids are silently ignored). When
+    ``batch_id`` is given, each student's active batch mapping is replaced."""
+    from sqlalchemy import select, update
+
+    from app.modules.batch.models.batch_models import Batch
+    from app.modules.student.models.student_models import (
+        Student,
+        StudentBatchMapping,
+    )
+
+    if not student_ids:
+        return {"updated": 0}
+
+    # Validate the requested values once, before touching any rows.
+    if standard is not None:
+        _validate_enrolment_fields(standard, None)
+    if stream is not None:
+        _validate_stream(stream)
+    if fees_status is not None and fees_status not in _VALID_FEES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid fees_status '{fees_status}'. Allowed: {sorted(_VALID_FEES)}",
+        )
+
+    valid_ids = list(
+        (
+            await session.execute(
+                select(Student.id).where(
+                    Student.id.in_(student_ids),
+                    Student.branch_id == branch_id,
+                    Student.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalars().all()
+    )
+    if not valid_ids:
+        return {"updated": 0}
+
+    values: dict[str, str] = {}
+    if fees_status is not None:
+        values["fees_status"] = fees_status
+    if standard is not None:
+        values["standard"] = standard
+    if stream is not None:
+        values["stream"] = stream
+    if values:
+        await session.execute(
+            update(Student).where(Student.id.in_(valid_ids)).values(**values)
+        )
+
+    if batch_id is not None:
+        batch = (
+            await session.execute(
+                select(Batch).where(
+                    Batch.id == batch_id,
+                    Batch.branch_id == branch_id,
+                    Batch.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalar_one_or_none()
+        if batch is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found"
+            )
+        # Retire any existing active mappings, then assign the new batch.
+        await session.execute(
+            update(StudentBatchMapping)
+            .where(
+                StudentBatchMapping.student_id.in_(valid_ids),
+                StudentBatchMapping.is_deleted == False,  # noqa: E712
+            )
+            .values(is_deleted=True)
+        )
+        for sid in valid_ids:
+            session.add(
+                StudentBatchMapping(
+                    student_id=sid, batch_id=batch_id, branch_id=branch_id
+                )
+            )
+        await session.flush()
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="BULK_UPDATE",
+        table_name="students",
+        record_id=uuid.uuid4(),
+        new_values={
+            "count": len(valid_ids),
+            **values,
+            "batch_id": str(batch_id) if batch_id else None,
+        },
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return {"updated": len(valid_ids)}
+
+
+async def bulk_delete_students(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    student_ids: list[uuid.UUID],
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict[str, int]:
+    """Soft-delete a selected set of students (+ their batch mappings). Only
+    live students in this branch are affected; recoverable like delete-all."""
+    from sqlalchemy import select, update
+
+    from app.modules.student.models.student_models import (
+        Student,
+        StudentBatchMapping,
+    )
+
+    if not student_ids:
+        return {"deleted": 0}
+
+    valid_ids = list(
+        (
+            await session.execute(
+                select(Student.id).where(
+                    Student.id.in_(student_ids),
+                    Student.branch_id == branch_id,
+                    Student.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalars().all()
+    )
+    if not valid_ids:
+        return {"deleted": 0}
+
+    await session.execute(
+        update(Student).where(Student.id.in_(valid_ids)).values(is_deleted=True)
+    )
+    await session.execute(
+        update(StudentBatchMapping)
+        .where(
+            StudentBatchMapping.student_id.in_(valid_ids),
+            StudentBatchMapping.is_deleted == False,  # noqa: E712
+        )
+        .values(is_deleted=True)
+    )
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="BULK_DELETE",
+        table_name="students",
+        record_id=uuid.uuid4(),
+        new_values={"deleted": len(valid_ids)},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return {"deleted": len(valid_ids)}
 
 
 async def get_student_syllabus(

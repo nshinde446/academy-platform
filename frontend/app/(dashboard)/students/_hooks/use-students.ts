@@ -24,6 +24,10 @@ export interface RosterParams {
   search: string;
   sortBy?: string;
   order?: "asc" | "desc";
+  standard?: string;
+  targetExam?: string;
+  feesStatus?: string;
+  batchId?: string;
 }
 
 export const studentKeys = {
@@ -99,6 +103,10 @@ export function useStudentsRoster(
             search: params.search || undefined,
             sort_by: params.sortBy,
             order: params.order,
+            standard: params.standard || undefined,
+            target_exam: params.targetExam || undefined,
+            fees_status: params.feesStatus || undefined,
+            batch_id: params.batchId || undefined,
           },
         }
       );
@@ -222,6 +230,62 @@ export function useDeleteStudent(branchId: string | undefined) {
         queryClient.invalidateQueries({
           queryKey: studentKeys.roster(branchId),
         });
+      }
+    },
+  });
+}
+
+export interface BulkUpdatePayload {
+  student_ids: string[];
+  fees_status?: string | null;
+  standard?: string | null;
+  stream?: string | null;
+  batch_id?: string | null;
+}
+
+// Apply one field change to a set of selected students (roster bulk actions).
+export function useBulkUpdateStudents(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: BulkUpdatePayload) => {
+      const res = await apiClient.post<{ updated: number }>(
+        "/api/v1/students/bulk-update",
+        payload,
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({
+          queryKey: studentKeys.withStats(branchId),
+        });
+        queryClient.invalidateQueries({ queryKey: studentKeys.roster(branchId) });
+      }
+    },
+  });
+}
+
+// Soft-deletes a selected set of students.
+export function useBulkDeleteStudents(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (studentIds: string[]) => {
+      const res = await apiClient.post<{ deleted: number }>(
+        "/api/v1/students/bulk-delete",
+        { student_ids: studentIds },
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({
+          queryKey: studentKeys.withStats(branchId),
+        });
+        queryClient.invalidateQueries({ queryKey: studentKeys.roster(branchId) });
       }
     },
   });

@@ -1,10 +1,13 @@
 import uuid
 
+import json
+
 from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
     File,
+    Form,
     HTTPException,
     Query,
     Request,
@@ -17,7 +20,10 @@ from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.student.models.student_models import StudentImportJob
 from app.modules.student.schemas.student_schemas import (
+    BulkActionSummary,
     BulkDeleteSummary,
+    BulkStudentDelete,
+    BulkStudentUpdate,
     ImportJobResponse,
     ImportPreview,
     ImportSummary,
@@ -80,13 +86,27 @@ async def list_students_roster(
     search: str = Query(""),
     sort_by: str = Query("name"),
     order: str = Query("asc", pattern="^(asc|desc)$"),
+    standard: str | None = Query(None),
+    target_exam: str | None = Query(None),
+    fees_status: str | None = Query(None),
+    batch_id: uuid.UUID | None = Query(None),
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
-    """One page of the roster — server-side paginated/searched/sorted so large
-    branches stay fast. Powers the MSA_Design students table."""
+    """One page of the roster — server-side paginated/searched/filtered/sorted so
+    large branches stay fast. Powers the MSA_Design students table."""
     return await student_service.list_students_roster(
-        session, branch_id, offset, limit, search, sort_by, order
+        session,
+        branch_id,
+        offset,
+        limit,
+        search,
+        sort_by,
+        order,
+        standard=standard,
+        target_exam=target_exam,
+        fees_status=fees_status,
+        batch_id=batch_id,
     )
 
 
@@ -168,6 +188,47 @@ async def delete_all_students(
     )
 
 
+@router.post("/bulk-update", response_model=BulkActionSummary)
+async def bulk_update_students(
+    body: BulkStudentUpdate,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Apply one field change (fees/class/stream or batch reassignment) to a set
+    of selected students from the roster."""
+    return await student_service.bulk_update_students(
+        session,
+        branch_id,
+        body.student_ids,
+        fees_status=body.fees_status,
+        standard=body.standard,
+        stream=body.stream,
+        batch_id=body.batch_id,
+        current_user_id=current_user["user_id"],
+        ip_address=request.client.host if request.client else None,
+    )
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteSummary)
+async def bulk_delete_students(
+    body: BulkStudentDelete,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Soft-delete a selected set of students from the roster."""
+    return await student_service.bulk_delete_students(
+        session,
+        branch_id,
+        body.student_ids,
+        current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
 @router.get("/{student_id}/syllabus", response_model=StudentSyllabus)
 async def get_student_syllabus(
     student_id: uuid.UUID,
@@ -196,17 +257,51 @@ async def update_student(
     )
 
 
+def _parse_column_map(raw: str | None) -> dict[str, str] | None:
+    """Parse the optional column-map form field (JSON: file-header → field-key).
+    A bad payload is a client error, not a 500."""
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="column_map must be valid JSON",
+        )
+    if not isinstance(data, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="column_map must be a JSON object",
+        )
+    return {str(k): str(v) for k, v in data.items()}
+
+
+@router.post("/import/columns")
+async def detect_import_columns(
+    file: UploadFile = File(...),
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+):
+    """The upload's header columns, a suggested file-header → field mapping, and
+    the catalog of fields they can be mapped to — drives the mapping step."""
+    return await import_service.detect_columns(file)
+
+
 @router.post("/import/preview", response_model=ImportPreview)
 async def preview_import_students(
     file: UploadFile = File(...),
     branch_id: uuid.UUID = Query(...),
+    column_map: str | None = Form(None),
     current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
     session: AsyncSession = Depends(get_db),
 ):
     """Dry-run a student upload — report row issues and which Batch codes
     exist vs. are missing, so the admin can choose to create the missing
     ones before committing the import."""
-    return await import_service.preview_import(session, file, branch_id)
+    return await import_service.preview_import(
+        session, file, branch_id, _parse_column_map(column_map)
+    )
 
 
 @router.post("/import", response_model=ImportSummary)
@@ -215,6 +310,7 @@ async def import_students(
     file: UploadFile = File(...),
     branch_id: uuid.UUID = Query(...),
     create_missing_batches: bool = Query(False),
+    column_map: str | None = Form(None),
     current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
     session: AsyncSession = Depends(get_db),
 ):
@@ -234,6 +330,7 @@ async def import_students(
         current_user["user_id"],
         create_missing_batches=create_missing_batches,
         ip_address=request.client.host if request.client else None,
+        column_map=_parse_column_map(column_map),
     )
 
 
@@ -254,6 +351,7 @@ async def start_import_students(
     file: UploadFile = File(...),
     branch_id: uuid.UUID = Query(...),
     create_missing_batches: bool = Query(False),
+    column_map: str | None = Form(None),
     current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
     session: AsyncSession = Depends(get_db),
 ):
@@ -263,6 +361,7 @@ async def start_import_students(
     timeout regardless of file size."""
     content = await file.read()
     ip = request.client.host if request.client else None
+    parsed_map = _parse_column_map(column_map)
     job = await import_service.start_import_job(
         session,
         content,
@@ -280,6 +379,7 @@ async def start_import_students(
         current_user["user_id"],
         create_missing_batches,
         ip,
+        parsed_map,
     )
     return _job_to_response(job)
 

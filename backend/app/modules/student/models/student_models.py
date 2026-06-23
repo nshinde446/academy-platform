@@ -37,6 +37,8 @@ class Student(BaseModel):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # When the student joined — drives pro-rata fees / attendance start (§5).
+    enrollment_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     enrollment_number: Mapped[str | None] = mapped_column(
         String(50), nullable=True
     )
@@ -107,6 +109,12 @@ class Parent(BaseModel):
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     occupation: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Groups Parent rows created by one bulk import so the import can be undone
+    # as a unit (mirrors students.import_id, design §9). Null for parents added
+    # through the single-student form.
+    import_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, index=True
+    )
 
 
 class StudentImportJob(BaseModel):
