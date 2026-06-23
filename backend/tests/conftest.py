@@ -6,7 +6,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool, StaticPool
 
 from app.core.database.base import Base
 from app.core.database.session import get_db
@@ -74,6 +74,11 @@ engine = create_async_engine(
     TEST_DATABASE_URL,
     echo=False,
     connect_args={"check_same_thread": False} if _IS_SQLITE else {},
+    # pytest-asyncio runs each test in a fresh event loop; a pooled asyncpg
+    # connection from a previous (now-closed) loop blows up on reuse with
+    # InterfaceError. NullPool opens a fresh connection per checkout and closes
+    # it on release, so nothing survives across loops. (SQLite isn't affected.)
+    **({} if _IS_SQLITE else {"poolclass": NullPool}),
 )
 
 

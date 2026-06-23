@@ -194,19 +194,6 @@ async def _refresh_teacher_summaries(
                 delays.append(max(0, delta))
         avg_delay = sum(delays) / len(delays) if delays else 0.0
 
-        att_result = await session.execute(
-            select(func.avg(AttendanceRecord.id)).where(
-                AttendanceRecord.lecture_id.in_(
-                    select(Lecture.id).where(
-                        Lecture.teacher_id == teacher_id,
-                        Lecture.branch_id == branch_id,
-                        Lecture.is_deleted == False,
-                    )
-                ),
-                AttendanceRecord.attendance_status == "PRESENT",
-                AttendanceRecord.is_deleted == False,
-            )
-        )
         total_present = await session.execute(
             select(func.count(AttendanceRecord.id)).where(
                 AttendanceRecord.lecture_id.in_(
