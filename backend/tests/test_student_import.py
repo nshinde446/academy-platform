@@ -1323,7 +1323,11 @@ class TestColumnMapping:
         self, client, seed_data
     ):
         token = await _login(client)
-        content = b"Student Name,Std,Exam,Group\nAman,11,NEET,BATCH-A\n"
+        # Mix of unknown spellings and *aliases* of known fields.
+        content = (
+            b"Student Name,Standard,Date of Birth,Father Name,Roll No\n"
+            b"Aman,11,2009-04-12,Ramesh,R-1\n"
+        )
         resp = await client.post(
             f"/api/v1/students/import/columns?branch_id={BRANCH}",
             files={"file": ("x.csv", content, "text/csv")},
@@ -1331,9 +1335,14 @@ class TestColumnMapping:
         )
         assert resp.status_code == 200, resp.text
         data = resp.json()
-        assert data["headers"] == ["Student Name", "Std", "Exam", "Group"]
-        # Unknown spellings are not auto-mapped.
+        assert data["headers"][0] == "Student Name"
+        # Unknown spellings are not auto-mapped...
         assert data["suggested"]["Student Name"] is None
+        # ...but aliases resolve to the canonical IMPORT_FIELDS key.
+        assert data["suggested"]["Standard"] == "class"
+        assert data["suggested"]["Date of Birth"] == "dob"
+        assert data["suggested"]["Father Name"] == "parent name"
+        assert data["suggested"]["Roll No"] == "roll no"
         # The field catalog includes Name (and marks it required).
         keys = {f["key"] for f in data["fields"]}
         assert "name" in keys and "batch" in keys

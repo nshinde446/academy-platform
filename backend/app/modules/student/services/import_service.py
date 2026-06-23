@@ -753,10 +753,6 @@ IMPORT_FIELDS: list[dict[str, str]] = [
 ]
 
 
-def _recognized_norm_keys() -> set[str]:
-    return set(COLUMN_MAPPING) | set(_OVERRIDE_HEADERS) | set(_PARENT_HEADERS)
-
-
 def _build_field_key_for_header() -> dict[str, str]:
     """Map every recognized normalized header → its canonical IMPORT_FIELDS key,
     so the grid collapses aliases (e.g. 'standard' and 'class' both → 'class';
@@ -834,12 +830,11 @@ def _file_headers(rows: list[dict[str, Any]]) -> list[str]:
 
 
 def _suggest_mapping(headers: list[str]) -> dict[str, str | None]:
-    """Best-guess file-header → canonical-field-key map: a header that already
-    normalizes to a known field maps to it; anything else is left unmapped."""
-    recognized = _recognized_norm_keys()
-    return {
-        h: (_normalize(h) if _normalize(h) in recognized else None) for h in headers
-    }
+    """Best-guess file-header → canonical IMPORT_FIELDS key. Resolves *aliases*
+    too (e.g. 'Standard'→'class', 'Father Name'→'parent name', 'Date of
+    Birth'→'dob'), not just headers that already equal a field key; anything
+    unrecognized is left unmapped so the UI shows it as 'Ignore'."""
+    return {h: _FIELD_KEY_FOR_HEADER.get(_normalize(h)) for h in headers}
 
 
 def _apply_column_map(
