@@ -79,3 +79,8 @@ jobs:
             bash infra/scripts/deploy.sh prod \
                 ${{ env.BACKEND_IMAGE_NAME }}:${{ github.sha }} \
                 ${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
+            # Reclaim disk from superseded images now the new ones are running.
+            # Runs only after a successful deploy (set -e above), so the just-
+            # deployed images (in use) are kept and the previous deploys' images
+            # are pruned — the disk-full deploy failure was these piling up.
+            docker image prune -af

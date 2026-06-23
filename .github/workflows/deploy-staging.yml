@@ -73,3 +73,6 @@ jobs:
             bash infra/scripts/deploy.sh staging \
                 ${{ env.BACKEND_IMAGE_NAME }}:staging-${{ github.sha }} \
                 ${{ env.FRONTEND_IMAGE_NAME }}:staging-${{ github.sha }}
+            # Reclaim disk from superseded images once the new ones are running
+            # (only after a successful deploy — set -e above). Mirrors prod.
+            docker image prune -af
