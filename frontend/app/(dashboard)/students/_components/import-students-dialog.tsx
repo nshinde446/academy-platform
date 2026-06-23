@@ -17,6 +17,7 @@ import {
 import { downloadCsvTemplate } from "@/lib/csv-template";
 import { studentKeys, useImportJob } from "../_hooks/use-students";
 import { ColumnMapStep } from "./column-map-step";
+import { ValidationGridStep } from "./validation-grid-step";
 import { ImportConfirmMatrix } from "./import-confirm-matrix";
 import type { ColumnMap } from "../_lib/mapping-profile";
 import type {
@@ -237,6 +238,8 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
   // holds the applied file-header → field map sent with preview/import.
   const [mapping, setMapping] = useState(false);
   const [columnMap, setColumnMap] = useState<ColumnMap | null>(null);
+  // T4 — the editable validation grid (an alternative to the count-only preview).
+  const [gridding, setGridding] = useState(false);
   const queryClient = useQueryClient();
 
   // The import runs as a background job; poll it for progress + the result.
@@ -267,6 +270,7 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
     setFile(null);
     setMapping(false);
     setColumnMap(null);
+    setGridding(false);
   }
 
   function buildFormData(): FormData | null {
@@ -328,6 +332,34 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
       );
       setJobId(res.data.id);
       setPreview(null);
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Import failed to start");
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  // From the validation grid: import a CSV the admin already fixed/curated. It
+  // has canonical headers, so no column_map — straight into the background job.
+  async function handleGridImport(csvFile: File, gridCreateMissing: boolean) {
+    setStarting(true);
+    setError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", csvFile);
+      const res = await apiClient.post<ImportJob>(
+        `/api/v1/students/import/start`,
+        formData,
+        {
+          params: {
+            branch_id: branchId,
+            create_missing_batches: gridCreateMissing,
+          },
+          headers: { "Content-Type": "multipart/form-data" },
+        },
+      );
+      setJobId(res.data.id);
+      setGridding(false);
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Import failed to start");
     } finally {
@@ -418,7 +450,7 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           {/* Step 1 — choose a file */}
-          {!preview && !jobId && !mapping && (
+          {!preview && !jobId && !mapping && !gridding && (
             <>
               <div>
                 <Button
@@ -449,6 +481,17 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                 </p>
               )}
             </>
+          )}
+
+          {/* Step 1c — editable validation grid (T4) */}
+          {!preview && !jobId && gridding && file && (
+            <ValidationGridStep
+              branchId={branchId}
+              file={file}
+              columnMap={columnMap}
+              onImport={handleGridImport}
+              onBack={() => setGridding(false)}
+            />
           )}
 
           {/* Step 1b — optional column mapping */}
@@ -757,9 +800,9 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
             </div>
           )}
 
-          <div className="flex justify-end gap-2">
-            {/* The mapping sub-step renders its own Back / Apply buttons. */}
-            {!mapping && (
+          <div className="flex flex-wrap justify-end gap-2">
+            {/* The mapping + grid sub-steps render their own Back buttons. */}
+            {!mapping && !gridding && (
               <DialogClose
                 render={
                   <Button variant="outline" type="button">
@@ -769,7 +812,7 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
               />
             )}
 
-            {!preview && !jobId && !mapping && (
+            {!preview && !jobId && !mapping && !gridding && (
               <Button
                 variant="outline"
                 onClick={() => setMapping(true)}
@@ -779,7 +822,17 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
               </Button>
             )}
 
-            {!preview && !jobId && !mapping && (
+            {!preview && !jobId && !mapping && !gridding && (
+              <Button
+                variant="outline"
+                onClick={() => setGridding(true)}
+                disabled={!file || previewing}
+              >
+                Review &amp; fix rows
+              </Button>
+            )}
+
+            {!preview && !jobId && !mapping && !gridding && (
               <Button onClick={handlePreview} disabled={previewing}>
                 {previewing ? "Reading..." : "Preview import"}
               </Button>

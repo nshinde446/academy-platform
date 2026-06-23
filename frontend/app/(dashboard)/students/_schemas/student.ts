@@ -215,6 +215,28 @@ export interface ImportColumnsResponse {
   fields: ImportField[];
 }
 
+// Editable validation grid (T4).
+export type ImportRowValues = Record<string, string>;
+
+export interface ImportParseRow {
+  index: number;
+  row_number: number;
+  values: ImportRowValues;
+}
+
+export interface ImportRowValidation {
+  index: number;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface ImportParseResponse {
+  fields: string[];
+  import_fields: ImportField[];
+  rows: ImportParseRow[];
+  validation: ImportRowValidation[];
+}
+
 export interface ImportUndoSummary {
   students_deleted: number;
   batches_deleted: number;

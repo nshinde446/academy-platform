@@ -164,10 +164,13 @@ Shipped + tested this session (backend pytest + frontend vitest, all green):
 
 Remaining:
 
-- **T4** — *partial-accept already works at the row level today* (clean rows
-  commit, rejected rows are reported with per-row reasons). The remaining piece
-  is the **inline-editable grid** (fix bad cells in place) + a downloadable
-  rejected-rows file — a larger frontend build; deferred.
+- **T4** ✅ SHIPPED — editable validation grid. New `/import/parse` (file →
+  canonical rows + per-row errors/warnings) and `/import/validate` (re-validate
+  edited rows, no writes) reuse the import's own validators. `ValidationGridStep`
+  shows rows in an editable table (problem rows first), highlights errors, live
+  re-validates on edit, downloads rejected rows, and commits the ready rows by
+  building a canonical CSV back through the existing background-job pipeline
+  (partial-accept). Reached from the dialog's "Review & fix rows".
 - **T11** — the syllabus-overwrite protection it specifies is **already enforced
   via the derived check** (skeleton only created when a course-year has no
   subjects; undo keeps chaptered subjects — both tested). An *explicit*

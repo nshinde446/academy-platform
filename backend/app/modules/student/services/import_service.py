@@ -757,6 +757,67 @@ def _recognized_norm_keys() -> set[str]:
     return set(COLUMN_MAPPING) | set(_OVERRIDE_HEADERS) | set(_PARENT_HEADERS)
 
 
+def _build_field_key_for_header() -> dict[str, str]:
+    """Map every recognized normalized header → its canonical IMPORT_FIELDS key,
+    so the grid collapses aliases (e.g. 'standard' and 'class' both → 'class';
+    'date of birth' and 'dob' both → 'dob') onto one column per field."""
+    key_by_student: dict[str, str] = {}
+    key_by_override: dict[str, str] = {}
+    key_by_parent: dict[str, str] = {}
+    for f in IMPORT_FIELDS:
+        k = f["key"]
+        if k in COLUMN_MAPPING:
+            key_by_student.setdefault(COLUMN_MAPPING[k], k)
+        elif k in _OVERRIDE_HEADERS:
+            key_by_override.setdefault(_OVERRIDE_HEADERS[k], k)
+        elif k in _PARENT_HEADERS:
+            key_by_parent.setdefault(_PARENT_HEADERS[k], k)
+    out: dict[str, str] = {}
+    for header, target in COLUMN_MAPPING.items():
+        if target in key_by_student:
+            out[header] = key_by_student[target]
+    for header, target in _OVERRIDE_HEADERS.items():
+        if target in key_by_override:
+            out[header] = key_by_override[target]
+    for header, target in _PARENT_HEADERS.items():
+        if target in key_by_parent:
+            out[header] = key_by_parent[target]
+    return out
+
+
+_FIELD_KEY_FOR_HEADER = _build_field_key_for_header()
+
+
+def parse_import_rows(
+    filename: str | None,
+    content: bytes,
+    column_map: dict[str, str] | None,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """Parse an upload into the editable grid's shape: the canonical fields
+    present (in IMPORT_FIELDS order) and one ``{index, row_number, values}`` per
+    data row, where ``values`` is keyed by canonical field key. Column-map (or
+    the file's own canonical headers) decides which file column feeds each field."""
+    raw = _apply_column_map(_parse_file(filename, content), column_map)
+    present: set[str] = set()
+    rows: list[dict[str, Any]] = []
+    for idx, r in enumerate(raw):
+        rownum = _row_number(r, idx + 2)
+        values: dict[str, str] = {}
+        for k, v in r.items():
+            if k is None or k == _ROW_KEY:
+                continue
+            field_key = _FIELD_KEY_FOR_HEADER.get(_normalize(str(k)))
+            if field_key is None or field_key in values:
+                continue
+            val = str(v).strip() if v not in (None, "") else ""
+            if val:
+                values[field_key] = val
+                present.add(field_key)
+        rows.append({"index": idx, "row_number": rownum, "values": values})
+    fields = [f["key"] for f in IMPORT_FIELDS if f["key"] in present]
+    return fields, rows
+
+
 def _file_headers(rows: list[dict[str, Any]]) -> list[str]:
     """The upload's header columns in first-seen order (sans the row-number key)."""
     out: list[str] = []
@@ -1523,6 +1584,120 @@ async def preview_import(
         "row_issues": row_issues,
         "unrecognized_columns": unrecognized_columns,
     }
+
+
+async def validate_import_rows(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    value_dicts: list[dict[str, Any]],
+    create_missing_batches: bool,
+) -> list[dict[str, Any]]:
+    """Validate a set of (edited) grid rows against the same rules the import
+    enforces — without writing anything. Each ``value_dicts`` entry is keyed by
+    canonical field key. Returns one ``{index, errors, warnings}`` per row so the
+    grid can flag what's wrong and the admin can fix it inline before committing."""
+    from app.modules.student.services.student_service import (
+        _validate_enrolment_fields,
+    )
+
+    years = await academic_repository.list_academic_years(session, branch_id)
+    academic_year = _pick_academic_year(years)
+    placeholder = academic_year.id if academic_year else uuid.uuid4()
+    default_start = _derive_current_ay_start()
+    existing_ay_starts = {y.start_year for y in years}
+    batch_index = await _load_batch_index(session, branch_id)
+    courses = await academic_repository.list_courses(session, branch_id)
+    courses_by_code = {c.code.strip().lower(): c for c in courses}
+    seen_enrols, seen_emails = await _load_student_dedup_keys(session, branch_id)
+    seen_fuzzy = await _load_fuzzy_keys(session, branch_id)
+
+    results: list[dict[str, Any]] = []
+    for idx, values in enumerate(value_dicts):
+        row = dict(values)
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        kwargs = _row_to_student_kwargs(row, branch_id, placeholder)
+        if kwargs is None:
+            results.append(
+                {"index": idx, "errors": ["Name is required"], "warnings": []}
+            )
+            continue
+
+        batch_code = kwargs.pop("_batch_code", None)
+        try:
+            _validate_enrolment_fields(
+                kwargs.get("standard"), kwargs.get("target_exam")
+            )
+        except HTTPException as exc:
+            errors.append(str(exc.detail))
+
+        row_ov = _row_overrides(row)
+        c_errors, c_warnings = _validate_row_consistency(
+            kwargs.get("standard"), kwargs.get("target_exam"), row_ov
+        )
+        errors.extend(c_errors)
+        warnings.extend(c_warnings)
+
+        enr_key, em_key = _dup_keys(kwargs)
+        is_dup = (enr_key is not None and enr_key in seen_enrols) or (
+            em_key is not None and em_key in seen_emails
+        )
+        if is_dup:
+            errors.append("Duplicate student (already on file)")
+        else:
+            if enr_key is not None:
+                seen_enrols.add(enr_key)
+            if em_key is not None:
+                seen_emails.add(em_key)
+
+        if batch_code:
+            norm = _norm_code(str(batch_code))
+            if norm not in batch_index:
+                if not create_missing_batches:
+                    errors.append(f"Unknown batch '{batch_code}'")
+                else:
+                    req = _required_ay_starts(
+                        kwargs.get("target_exam"),
+                        row_ov,
+                        courses_by_code,
+                        default_start,
+                    )
+                    blocker = _missing_batch_blocker(
+                        kwargs.get("target_exam"),
+                        default_start,
+                        courses_by_code,
+                        existing_ay_starts | req | {default_start},
+                        row_ov,
+                    )
+                    if blocker:
+                        errors.append(
+                            f"Batch '{batch_code}' can't be created — {blocker}"
+                        )
+                    else:
+                        warnings.append(f"Batch '{batch_code}' will be created")
+
+        # Typed-field shape warnings (don't block; import leaves them blank).
+        for field, label in (
+            ("date_of_birth", "Date of Birth"),
+            ("enrollment_date", "Enrollment Date"),
+        ):
+            v = kwargs.get(field)
+            if v and _parse_date(v) is None:
+                warnings.append(f"Unrecognized {label} — will be left blank")
+        fees = kwargs.get("fees_status")
+        if fees and str(fees).strip().lower() not in _VALID_FEES:
+            warnings.append("Unrecognized Fees status — will be left blank")
+
+        if not is_dup:
+            fkeys = _fuzzy_keys(kwargs)
+            if fkeys & seen_fuzzy:
+                warnings.append("Possible duplicate (same name + phone/DOB)")
+            seen_fuzzy |= fkeys
+
+        results.append({"index": idx, "errors": errors, "warnings": warnings})
+
+    return results
 
 
 async def import_students(

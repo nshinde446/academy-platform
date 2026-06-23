@@ -25,6 +25,7 @@ from app.modules.student.schemas.student_schemas import (
     BulkStudentDelete,
     BulkStudentUpdate,
     ImportJobResponse,
+    ImportRowsValidateRequest,
     ImportPreview,
     ImportSummary,
     ImportUndoSummary,
@@ -286,6 +287,50 @@ async def detect_import_columns(
     """The upload's header columns, a suggested file-header → field mapping, and
     the catalog of fields they can be mapped to — drives the mapping step."""
     return await import_service.detect_columns(file)
+
+
+@router.post("/import/parse")
+async def parse_import_students(
+    file: UploadFile = File(...),
+    branch_id: uuid.UUID = Query(...),
+    create_missing_batches: bool = Query(False),
+    column_map: str | None = Form(None),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Parse an upload into the editable validation grid (T4): the canonical
+    fields present, one row per record (keyed by field), and per-row
+    errors/warnings so the admin can fix cells inline before committing."""
+    content = await file.read()
+    fields, rows = import_service.parse_import_rows(
+        file.filename, content, _parse_column_map(column_map)
+    )
+    validation = await import_service.validate_import_rows(
+        session,
+        branch_id,
+        [r["values"] for r in rows],
+        create_missing_batches,
+    )
+    return {
+        "fields": fields,
+        "import_fields": import_service.IMPORT_FIELDS,
+        "rows": rows,
+        "validation": validation,
+    }
+
+
+@router.post("/import/validate")
+async def validate_import_students(
+    body: ImportRowsValidateRequest,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Re-validate edited grid rows (no writes) — powers live cell validation."""
+    validation = await import_service.validate_import_rows(
+        session, branch_id, body.rows, body.create_missing_batches
+    )
+    return {"validation": validation}
 
 
 @router.post("/import/preview", response_model=ImportPreview)

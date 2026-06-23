@@ -154,6 +154,14 @@ class BulkStudentDelete(BaseModel):
     student_ids: list[uuid.UUID]
 
 
+class ImportRowsValidateRequest(BaseModel):
+    """Edited grid rows to re-validate (T4). Each row is keyed by canonical
+    field key (name / class / target / batch / …)."""
+
+    rows: list[dict[str, str]]
+    create_missing_batches: bool = False
+
+
 class BulkActionSummary(BaseModel):
     """Result of a bulk field update — how many live students were changed."""
 

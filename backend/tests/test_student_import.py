@@ -1404,6 +1404,80 @@ class TestColumnMapping:
         assert mapped.json()["unrecognized_columns"] == []
 
 
+class TestValidationGrid:
+    """T4: parse an upload into editable rows + per-row validation, and
+    re-validate edited rows without writing."""
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_parse_returns_rows_and_validation(self, client, seed_data):
+        token = await _login(client)
+        content = (
+            "Name,Class,Target,Batch,Roll No\n"
+            "Aman Sharma,11,NEET,BATCH-A,V-1\n"      # valid
+            ",11,NEET,BATCH-A,V-2\n"                  # missing name
+            "Bad Row,11,NOPE,BATCH-A,V-3\n"           # invalid target
+        ).encode("utf-8")
+        resp = await client.post(
+            f"/api/v1/students/import/parse?branch_id={BRANCH}",
+            files={"file": ("g.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        # Canonical fields present, in catalog order.
+        assert data["fields"][:3] == ["name", "class", "target"]
+        assert len(data["rows"]) == 3
+        assert data["rows"][0]["values"]["name"] == "Aman Sharma"
+
+        v = {r["index"]: r for r in data["validation"]}
+        assert v[0]["errors"] == []                       # valid row
+        assert any("Name" in e for e in v[1]["errors"])   # missing name
+        assert any("target" in e.lower() for e in v[2]["errors"])  # bad target
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_validate_edited_rows_clears_errors(self, client, seed_data):
+        token = await _login(client)
+        # The fixed-up version of the bad rows above — should now be clean.
+        resp = await client.post(
+            f"/api/v1/students/import/validate?branch_id={BRANCH}",
+            json={
+                "rows": [
+                    {"name": "Was Blank", "class": "11", "target": "NEET", "batch": "BATCH-A"},
+                    {"name": "Fixed Target", "class": "11", "target": "JEE-Main", "batch": "BATCH-A"},
+                ],
+                "create_missing_batches": False,
+            },
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200, resp.text
+        validation = resp.json()["validation"]
+        assert all(r["errors"] == [] for r in validation)
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_validate_flags_unknown_batch_unless_create_missing(
+        self, client, seed_data
+    ):
+        token = await _login(client)
+        row = [{"name": "X Y", "class": "11", "target": "NEET", "batch": "GHOST-1"}]
+        off = (
+            await client.post(
+                f"/api/v1/students/import/validate?branch_id={BRANCH}",
+                json={"rows": row, "create_missing_batches": False},
+                cookies={"access_token": token},
+            )
+        ).json()["validation"]
+        assert any("batch" in e.lower() for e in off[0]["errors"])
+
+        on = (
+            await client.post(
+                f"/api/v1/students/import/validate?branch_id={BRANCH}",
+                json={"rows": row, "create_missing_batches": True},
+                cookies={"access_token": token},
+            )
+        ).json()["validation"]
+        assert on[0]["errors"] == []  # creatable → no longer an error
+
+
 class TestFuzzyDuplicateWarning:
     """T12: same name + phone/DOB as an existing student → warn, don't skip."""
 
