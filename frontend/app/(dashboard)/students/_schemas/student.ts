@@ -220,6 +220,8 @@ export interface ImportUndoSummary {
   batches_deleted: number;
   subjects_deleted: number;
   parents_deleted: number;
+  courses_deleted: number;
+  academic_years_deleted: number;
 }
 
 // One distinct Batch code referenced by an upload — whether it already

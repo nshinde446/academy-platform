@@ -861,18 +861,25 @@ async def _get_or_create_course(
     code: str,
     name: str,
     duration_years: int = 1,
+    import_id: uuid.UUID | None = None,
 ):
+    """Course identity is code (which encodes duration, design §1). Reuse an
+    existing course with this code; otherwise create it and tag the new row with
+    ``import_id`` so undo can reclaim a course this import brought into being."""
     courses = await academic_repository.list_courses(session, branch_id)
     for c in courses:
         if c.code.strip().lower() == code.lower():
             return c
-    return await academic_repository.create_course(
+    course = await academic_repository.create_course(
         session,
         branch_id=branch_id,
         name=name,
         code=code,
         duration_years=duration_years,
     )
+    if import_id is not None:
+        course.import_id = import_id
+    return course
 
 
 async def _ensure_subject_skeleton(
@@ -1003,7 +1010,12 @@ async def _create_derived_batch(
         target, duration, (overrides or {}).get("course_opt")
     )
     course = await _get_or_create_course(
-        session, branch_id, course_code, course_name, duration_years=duration
+        session,
+        branch_id,
+        course_code,
+        course_name,
+        duration_years=duration,
+        import_id=import_id,
     )
     data = BatchCreate(
         branch_id=branch_id,
@@ -1253,8 +1265,10 @@ async def _ensure_academic_year(
     branch_id: uuid.UUID,
     start_year: int,
     current_user_id: uuid.UUID | None = None,
+    import_id: uuid.UUID | None = None,
 ):
-    """Get-or-create the academic year row for ``start_year`` (name 'YYYY-YY')."""
+    """Get-or-create the academic year row for ``start_year`` (name 'YYYY-YY').
+    A newly-created year is tagged with ``import_id`` so undo can reclaim it."""
     existing = await academic_repository.get_academic_year_by_start_year(
         session, branch_id, start_year
     )
@@ -1268,6 +1282,8 @@ async def _ensure_academic_year(
         end_year=start_year + 1,
         created_by=current_user_id,
     )
+    if import_id is not None:
+        ay.import_id = import_id
     return ay, True
 
 
@@ -1573,7 +1589,7 @@ async def import_students(
     academic_years_created: list[str] = []
     for start in sorted(required_starts):
         _, created = await _ensure_academic_year(
-            session, branch_id, start, current_user_id
+            session, branch_id, start, current_user_id, import_id=import_id
         )
         if created:
             academic_years_created.append(_ay_name(start))
@@ -1983,7 +1999,9 @@ async def undo_import(
     which no chapters have since been loaded. Scoped to the branch so an import
     id can't reach across branches. Idempotent — re-running finds nothing."""
     from app.modules.academic.models.academic_models import (
+        AcademicYear,
         Chapter,
+        Course,
         Subject,
         Topic,
     )
@@ -2105,6 +2123,96 @@ async def undo_import(
             subjects_deleted += 1
     await session.flush()
 
+    # Reclaim courses this import created, but only when nothing live still
+    # points at them — no live batch on the course and no live subject under it
+    # (a course a syllabus import has since built curriculum on is kept).
+    courses = (
+        await session.execute(
+            select(Course).where(
+                Course.import_id == import_id,
+                Course.branch_id == branch_id,
+                Course.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalars().all()
+
+    courses_deleted = 0
+    for c in courses:
+        live_batches = (
+            await session.execute(
+                select(func.count())
+                .select_from(Batch)
+                .where(
+                    Batch.course_id == c.id,
+                    Batch.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalar_one()
+        live_subjects = (
+            await session.execute(
+                select(func.count())
+                .select_from(Subject)
+                .where(
+                    Subject.course_id == c.id,
+                    Subject.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalar_one()
+        if live_batches == 0 and live_subjects == 0:
+            c.is_deleted = True
+            courses_deleted += 1
+    await session.flush()
+
+    # Reclaim academic years this import created, but only when no live batch
+    # (start or end), subject, or student still references them.
+    academic_years = (
+        await session.execute(
+            select(AcademicYear).where(
+                AcademicYear.import_id == import_id,
+                AcademicYear.branch_id == branch_id,
+                AcademicYear.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalars().all()
+
+    academic_years_deleted = 0
+    for ay in academic_years:
+        refs = (
+            await session.execute(
+                select(func.count())
+                .select_from(Batch)
+                .where(
+                    Batch.is_deleted == False,  # noqa: E712
+                    (Batch.start_academic_year_id == ay.id)
+                    | (Batch.end_academic_year_id == ay.id),
+                )
+            )
+        ).scalar_one()
+        refs += (
+            await session.execute(
+                select(func.count())
+                .select_from(Subject)
+                .where(
+                    Subject.academic_year_id == ay.id,
+                    Subject.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalar_one()
+        refs += (
+            await session.execute(
+                select(func.count())
+                .select_from(Student)
+                .where(
+                    Student.academic_year_id == ay.id,
+                    Student.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalar_one()
+        if refs == 0:
+            ay.is_deleted = True
+            academic_years_deleted += 1
+    await session.flush()
+
     await audit_service.log_action(
         session,
         user_id=current_user_id,
@@ -2117,6 +2225,8 @@ async def undo_import(
             "batches_deleted": batches_deleted,
             "subjects_deleted": subjects_deleted,
             "parents_deleted": len(parents),
+            "courses_deleted": courses_deleted,
+            "academic_years_deleted": academic_years_deleted,
         },
         ip_address=ip_address,
         branch_id=branch_id,
@@ -2127,4 +2237,6 @@ async def undo_import(
         "batches_deleted": batches_deleted,
         "subjects_deleted": subjects_deleted,
         "parents_deleted": len(parents),
+        "courses_deleted": courses_deleted,
+        "academic_years_deleted": academic_years_deleted,
     }

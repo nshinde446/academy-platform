@@ -209,6 +209,8 @@ class ImportUndoSummary(BaseModel):
     batches_deleted: int
     subjects_deleted: int = 0
     parents_deleted: int = 0
+    courses_deleted: int = 0
+    academic_years_deleted: int = 0
 
 
 class ImportPreviewBatch(BaseModel):

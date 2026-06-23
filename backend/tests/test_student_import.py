@@ -393,6 +393,8 @@ class TestStudentImportTraceabilityAndUndo:
             "batches_deleted": 0,
             "subjects_deleted": 0,
             "parents_deleted": 0,
+            "courses_deleted": 0,
+            "academic_years_deleted": 0,
         }
 
     @pytest.mark.usefixtures("seed_data")
@@ -1222,6 +1224,95 @@ class TestUnrecognizedColumns:
         )
         assert resp.status_code == 200, resp.text
         assert resp.json()["unrecognized_columns"] == []
+
+
+class TestCourseAndAcademicYearTraceability:
+    """T10: import-created Courses + Academic Years carry import_id and are
+    reclaimed on undo (no orphans), but kept when something else still uses them."""
+
+    async def _import(self, client, token, *lines, undo_id=False):
+        header = "Name,Class,Target,Stream,Academic_year,Batch,Roll No"
+        content = ("\n".join([header, *lines]) + "\n").encode("utf-8")
+        return await client.post(
+            f"/api/v1/students/import?branch_id={BRANCH}&create_missing_batches=true",
+            files={"file": ("s.csv", content, "text/csv")},
+            cookies={"access_token": token},
+        )
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_created_course_and_years_tagged_then_reclaimed(
+        self, client, seed_data, db_session
+    ):
+        from sqlalchemy import select
+
+        from app.modules.academic.models.academic_models import (
+            AcademicYear,
+            Course,
+        )
+
+        token = await _login(client)
+        # A brand-new 2-year NEET cohort → new course (NEET-2Y) + two AYs.
+        imp = await self._import(
+            client, token, "Aarav X,11,NEET,PCB,2030-2032,T10-A,TT-1"
+        )
+        data = imp.json()
+        import_id = data["import_id"]
+        assert import_id is not None
+        assert "2030-31" in data["academic_years_created"]
+
+        course = (
+            await db_session.execute(
+                select(Course).where(Course.code == "NEET-2Y")
+            )
+        ).scalar_one()
+        assert str(course.import_id) == import_id
+
+        ay = (
+            await db_session.execute(
+                select(AcademicYear).where(AcademicYear.start_year == 2030)
+            )
+        ).scalar_one()
+        assert str(ay.import_id) == import_id
+
+        undo = await client.post(
+            f"/api/v1/students/import/{import_id}/undo?branch_id={BRANCH}",
+            cookies={"access_token": token},
+        )
+        u = undo.json()
+        assert u["courses_deleted"] == 1
+        assert u["academic_years_deleted"] >= 1  # 2030-31 and 2031-32
+
+        # No orphans: the course + year are gone (soft-deleted).
+        live_course = (
+            await db_session.execute(
+                select(Course).where(
+                    Course.code == "NEET-2Y",
+                    Course.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalars().all()
+        assert live_course == []
+
+    @pytest.mark.usefixtures("seed_data")
+    async def test_undo_keeps_course_used_by_another_import(
+        self, client, seed_data
+    ):
+        token = await _login(client)
+        # Two separate imports both land on the same new course (JEE 1-year).
+        first = await self._import(
+            client, token, "Bina X,12,JEE-Main,PCM,2031-2032,T10-J1,TJ-1"
+        )
+        await self._import(
+            client, token, "Cara X,12,JEE-Main,PCM,2031-2032,T10-J2,TJ-2"
+        )
+        first_id = first.json()["import_id"]
+
+        undo = await client.post(
+            f"/api/v1/students/import/{first_id}/undo?branch_id={BRANCH}",
+            cookies={"access_token": token},
+        )
+        # The course (and shared year) are still used by the 2nd import → kept.
+        assert undo.json()["courses_deleted"] == 0
 
 
 class TestColumnMapping:

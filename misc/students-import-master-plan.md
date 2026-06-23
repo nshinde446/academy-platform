@@ -56,7 +56,7 @@ These were genuine forks. Decisions, with rationale, so the build is unambiguous
 | **Validation grid scope** | The grid is a **relational validator**, not a cell-format checker. It runs the §6 contradiction rules *and* cross-row collision rules (same Batch code → two Courses), surfacing them inline. | A per-cell "is this a date" grid is shallow; the domain edge is cross-row cohort consistency. |
 | **Auto-derive batches from a column** (read_this Phase 3) | **Dropped.** Keep explicit `Batch` codes + preview. | A "make a batch per unique Class value" rules-builder generates junk batches and is strictly worse than the explicit-code flow already shipped. |
 | **Edit-offline-and-reimport vs. inline edit** | **Both, scoped.** Inline grid edit = fix a few bad cells *during* import. Export→edit→reimport = mass changes to *existing* records. Documented so we don't build the wrong one. | They serve different jobs; the docs conflated them. |
-| **Batch-code namespace** (design §6.7) | **Per `(branch_id, start_academic_year_id)`** — codes may repeat across intake years; importer matches on code + start-AY. | Coachings reuse "NEET-11-A" each intake. Confirm with client before the DB constraint lands (see Open items). |
+| **Batch-code namespace** (design §6.7) | **RESOLVED (client, 2026-06-23): per-branch unique.** Batch codes are arbitrary, institute-chosen *unique* names (`SPRING`, `ALPHA`, `NEET-11_A`) — they do NOT repeat across intake years, so per-branch uniqueness (the current importer behavior) stands; no per-(branch,start-AY) change needed. | If an institute ever reuses a semantic code yearly, the importer matches the existing batch; switch to per-(branch,start-year) only if that becomes a real need. |
 | **Dedup beyond enrollment number** | Add **fuzzy person-match** warning: same `(lower(name), phone)` or `(lower(name), date_of_birth)` against existing live students → WARN in preview/grid (not a hard block). | Today dedup is enrollment-number-only; the same human re-entered without a roll no slips through. |
 | **Reusable mapping profiles** | **Yes.** Persist a per-branch column→field mapping so a returning school maps once. | Biggest repeat-pain; cheap once the mapping UI exists. |
 
@@ -134,8 +134,14 @@ Phases map 1:1 to the session task list. Each phase ships independently.
 
 ## 8. Open items needing the client (block only the phases noted)
 
-- **Batch-code namespace** (§3) — confirm codes repeat per intake year before the DB uniqueness constraint in T10.
-- **Course catalog & naming, MHT-CET PCM/PCB split, Foundation durations, subject naming** (design §6) — needed for T10/T11 defaults, not for Phase 0–2.
+- ~~**Batch-code namespace**~~ — **RESOLVED 2026-06-23**: per-branch unique, arbitrary institute-chosen codes (don't repeat across years). Keep current behavior.
+- ~~**Course catalog & naming**~~ — **RESOLVED 2026-06-23**: generic naming (the existing Target+Duration derivation). No catalogue table.
+- **Still open (have working defaults; not blocking T10's core):** MHT-CET PCM/PCB split (current: union set on one course, per-student stream filters), Foundation durations (current: derived from class), subject sets (current: NEET=P/C/Botany/Zoology, JEE=PCM, etc.), per-programme exam dates (current: derived defaults), intake year (current: from import date / Academic_year column). These can land as config later.
+
+**Net: T10's structural core is now unblocked** — generic course naming + per-branch
+unique batch codes are settled, and #2–#6 already have sensible defaults in the
+importer. T10 can build on the existing get-or-create (batches/AYs/subjects) by
+adding the explicit Course catalogue upsert + single-transaction guarantee.
 
 ## 8b. Build status (2026-06-23)
 

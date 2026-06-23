@@ -25,6 +25,12 @@ class AcademicYear(BaseModel):
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     start_year: Mapped[int] = mapped_column(Integer, nullable=False)
     end_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Set when a student import auto-created this year, so "undo import" can
+    # reclaim it (only when nothing else references it). Null for years made
+    # through the Academic Years UI.
+    import_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, index=True
+    )
 
 
 class Course(BaseModel):
@@ -37,6 +43,11 @@ class Course(BaseModel):
     code: Mapped[str] = mapped_column(String(50), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     duration_years: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Set when a student import auto-created this course, so "undo import" can
+    # reclaim it (only when no batch/subject still references it).
+    import_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, nullable=True, index=True
+    )
 
 
 class Subject(BaseModel):

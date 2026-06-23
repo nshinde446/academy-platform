@@ -745,6 +745,10 @@ export function ImportStudentsDialog({ branchId }: ImportStudentsDialogProps) {
                     ` and ${undone.parents_deleted} parent(s)`}
                   {undone.batches_deleted > 0 &&
                     ` and ${undone.batches_deleted} auto-created batch(es)`}
+                  {undone.courses_deleted > 0 &&
+                    ` and ${undone.courses_deleted} course(s)`}
+                  {undone.academic_years_deleted > 0 &&
+                    ` and ${undone.academic_years_deleted} academic year(s)`}
                   {undone.subjects_deleted > 0 &&
                     ` and ${undone.subjects_deleted} subject(s)`}
                   .
