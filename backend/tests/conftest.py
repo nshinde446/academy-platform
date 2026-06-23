@@ -67,18 +67,24 @@ from app.modules.auth.services.auth_service import hash_password
 # Default to fast in-process SQLite for local runs; CI sets TEST_DATABASE_URL to
 # the real Postgres service so the suite catches PG-only behaviour (ARRAY columns,
 # native FK enforcement, type/constraint mismatches) SQLite would silently pass.
-TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+aiosqlite:///./test.db")
+# In-memory (not a file) so each run starts pristine and there's no shared file a
+# pooled connection could race on.
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 _IS_SQLITE = TEST_DATABASE_URL.startswith("sqlite")
 
 engine = create_async_engine(
     TEST_DATABASE_URL,
     echo=False,
     connect_args={"check_same_thread": False} if _IS_SQLITE else {},
-    # pytest-asyncio runs each test in a fresh event loop; a pooled asyncpg
-    # connection from a previous (now-closed) loop blows up on reuse with
-    # InterfaceError. NullPool opens a fresh connection per checkout and closes
-    # it on release, so nothing survives across loops. (SQLite isn't affected.)
-    **({} if _IS_SQLITE else {"poolclass": NullPool}),
+    # SQLite (local): StaticPool keeps ONE shared connection for the engine's
+    # life, so the per-test create_all/drop_all and every session hit the same
+    # in-memory DB deterministically. A pooled file DB previously let a stale
+    # connection observe a half-dropped schema -> a different test flaked each
+    # run (all green in isolation). StaticPool is also what keeps an in-memory
+    # SQLite DB from vanishing between connections.
+    # Postgres (CI): NullPool so an asyncpg connection bound to a previous,
+    # now-closed event loop is never reused (InterfaceError).
+    poolclass=StaticPool if _IS_SQLITE else NullPool,
 )
 
 
