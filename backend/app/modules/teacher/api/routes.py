@@ -9,6 +9,8 @@ from app.modules.teacher.schemas.teacher_schemas import (
     ImportSummary,
     TeacherCreate,
     TeacherResponse,
+    TeacherSubjectsResponse,
+    TeacherSubjectsUpdate,
     TeacherUpdate,
     TeacherWithStats,
 )
@@ -52,6 +54,18 @@ async def list_teachers_with_stats(
     return await teacher_service.list_teachers_with_stats(session, branch_id)
 
 
+@router.get("/subject-options", response_model=list[str])
+async def list_subject_options(
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Distinct subject names in the branch — the assignable-subjects picker for
+    the teacher create/edit dialogs. Before ``/{teacher_id}`` so the literal
+    path wins."""
+    return await teacher_service.list_subject_options(session, branch_id)
+
+
 @router.get("/by-subject", response_model=list[TeacherResponse])
 async def list_teachers_by_subject(
     branch_id: uuid.UUID = Query(...),
@@ -77,6 +91,39 @@ async def get_teacher(
     session: AsyncSession = Depends(get_db),
 ):
     return await teacher_service.get_teacher(session, teacher_id, branch_id)
+
+
+@router.get("/{teacher_id}/subjects", response_model=TeacherSubjectsResponse)
+async def get_teacher_subjects(
+    teacher_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Subject names a teacher is assigned to teach."""
+    subjects = await teacher_service.get_teacher_subjects(
+        session, teacher_id, branch_id
+    )
+    return {"subjects": subjects}
+
+
+@router.put("/{teacher_id}/subjects", response_model=TeacherSubjectsResponse)
+async def set_teacher_subjects(
+    teacher_id: uuid.UUID,
+    body: TeacherSubjectsUpdate,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Replace a teacher's subject assignments (by name). Powers the
+    Subject→Teacher lock so the teacher becomes schedulable for those subjects.
+    """
+    subjects = await teacher_service.set_teacher_subjects(
+        session, teacher_id, branch_id, body.subjects, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+    return {"subjects": subjects}
 
 
 @router.patch("/{teacher_id}", response_model=TeacherResponse)

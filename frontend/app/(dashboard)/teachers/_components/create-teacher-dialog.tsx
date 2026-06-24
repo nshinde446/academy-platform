@@ -13,10 +13,12 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import type { TeacherCreate } from "../_schemas/teacher";
+import { SubjectPicker } from "./subject-picker";
 
 interface CreateTeacherDialogProps {
   onSubmit: (data: Omit<TeacherCreate, "branch_id">) => Promise<void> | void;
   isPending: boolean;
+  subjectOptions: string[];
 }
 
 const EMPTY_FORM = {
@@ -31,13 +33,16 @@ const EMPTY_FORM = {
 export function CreateTeacherDialog({
   onSubmit,
   isPending,
+  subjectOptions,
 }: CreateTeacherDialogProps) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [subjects, setSubjects] = useState<string[]>([]);
   const [error, setError] = useState("");
 
   function reset() {
     setForm(EMPTY_FORM);
+    setSubjects([]);
     setError("");
   }
 
@@ -56,6 +61,7 @@ export function CreateTeacherDialog({
         phone: form.phone || undefined,
         qualification: form.qualification || undefined,
         years_experience: years === "" ? undefined : Number(years),
+        subjects,
       });
       reset();
       setOpen(false);
@@ -150,6 +156,12 @@ export function CreateTeacherDialog({
               />
             </div>
           </div>
+
+          <SubjectPicker
+            options={subjectOptions}
+            selected={subjects}
+            onChange={setSubjects}
+          />
 
           <div className="flex justify-end gap-2 pt-2">
             <DialogClose

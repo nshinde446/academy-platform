@@ -12,13 +12,17 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import type { TeacherResponse, TeacherUpdate } from "../_schemas/teacher";
+import { SubjectPicker } from "./subject-picker";
 
 interface EditTeacherDialogProps {
   teacher: TeacherResponse | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (data: TeacherUpdate) => Promise<void> | void;
+  onSubmit: (data: TeacherUpdate, subjects: string[]) => Promise<void> | void;
   isPending: boolean;
+  subjectOptions: string[];
+  currentSubjects: string[];
+  subjectsLoading: boolean;
 }
 
 function buildForm(t: TeacherResponse | null) {
@@ -39,8 +43,12 @@ export function EditTeacherDialog({
   onOpenChange,
   onSubmit,
   isPending,
+  subjectOptions,
+  currentSubjects,
+  subjectsLoading,
 }: EditTeacherDialogProps) {
   const [form, setForm] = useState(() => buildForm(teacher));
+  const [subjects, setSubjects] = useState<string[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -50,6 +58,11 @@ export function EditTeacherDialog({
     }
   }, [open, teacher]);
 
+  // Seed the subject selection once the teacher's current subjects load.
+  useEffect(() => {
+    if (open) setSubjects(currentSubjects);
+  }, [open, currentSubjects]);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.first_name) {
@@ -58,14 +71,17 @@ export function EditTeacherDialog({
     }
     try {
       const years = form.years_experience.trim();
-      await onSubmit({
-        first_name: form.first_name,
-        last_name: form.last_name || null,
-        email: form.email || null,
-        phone: form.phone || null,
-        qualification: form.qualification || null,
-        years_experience: years === "" ? null : Number(years),
-      });
+      await onSubmit(
+        {
+          first_name: form.first_name,
+          last_name: form.last_name || null,
+          email: form.email || null,
+          phone: form.phone || null,
+          qualification: form.qualification || null,
+          years_experience: years === "" ? null : Number(years),
+        },
+        subjects
+      );
       onOpenChange(false);
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Failed to update teacher");
@@ -147,6 +163,16 @@ export function EditTeacherDialog({
               />
             </div>
           </div>
+
+          {subjectsLoading ? (
+            <p className="text-xs text-muted-foreground">Loading subjects…</p>
+          ) : (
+            <SubjectPicker
+              options={subjectOptions}
+              selected={subjects}
+              onChange={setSubjects}
+            />
+          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <DialogClose

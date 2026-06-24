@@ -3,6 +3,7 @@ import apiClient from "@/services/api-client";
 import type {
   TeacherResponse,
   TeacherCreate,
+  TeacherSubjects,
   TeacherUpdate,
   TeacherWithStats,
 } from "../_schemas/teacher";
@@ -14,7 +15,68 @@ export const teacherKeys = {
     [...teacherKeys.all, "with-stats", branchId] as const,
   detail: (branchId: string, id: string) =>
     [...teacherKeys.all, "detail", branchId, id] as const,
+  subjectOptions: (branchId: string) =>
+    [...teacherKeys.all, "subject-options", branchId] as const,
+  subjects: (branchId: string, id: string) =>
+    [...teacherKeys.all, "subjects", branchId, id] as const,
 };
+
+export function useSubjectOptions(branchId: string | undefined) {
+  return useQuery<string[]>({
+    queryKey: teacherKeys.subjectOptions(branchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<string[]>(
+        "/api/v1/teachers/subject-options",
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    enabled: !!branchId,
+  });
+}
+
+export function useTeacherSubjects(
+  branchId: string | undefined,
+  teacherId: string | undefined
+) {
+  return useQuery<string[]>({
+    queryKey: teacherKeys.subjects(branchId!, teacherId!),
+    queryFn: async () => {
+      const res = await apiClient.get<TeacherSubjects>(
+        `/api/v1/teachers/${teacherId}/subjects`,
+        { params: { branch_id: branchId } }
+      );
+      return res.data.subjects;
+    },
+    enabled: !!branchId && !!teacherId,
+  });
+}
+
+export function useSetTeacherSubjects(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      teacherId,
+      subjects,
+    }: {
+      teacherId: string;
+      subjects: string[];
+    }) => {
+      const res = await apiClient.put<TeacherSubjects>(
+        `/api/v1/teachers/${teacherId}/subjects`,
+        { subjects },
+        { params: { branch_id: branchId } }
+      );
+      return res.data.subjects;
+    },
+    onSuccess: () => {
+      // Invalidate the whole teachers namespace so the schedule form's
+      // subject-filtered dropdown (teacherKeys.bySubject in the lectures
+      // module) refreshes too.
+      queryClient.invalidateQueries({ queryKey: teacherKeys.all });
+    },
+  });
+}
 
 export function useTeachers(branchId: string | undefined) {
   return useQuery<TeacherResponse[]>({
@@ -56,12 +118,10 @@ export function useCreateTeacher(branchId: string | undefined) {
       return res.data;
     },
     onSuccess: () => {
-      if (branchId) {
-        queryClient.invalidateQueries({ queryKey: teacherKeys.list(branchId) });
-        queryClient.invalidateQueries({
-          queryKey: teacherKeys.withStats(branchId),
-        });
-      }
+      if (!branchId) return;
+      // Whole namespace — a create-with-subjects must refresh the schedule
+      // form's subject-filtered teacher dropdown too.
+      queryClient.invalidateQueries({ queryKey: teacherKeys.all });
     },
   });
 }

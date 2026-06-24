@@ -12,6 +12,17 @@ class TeacherCreate(BaseModel):
     qualification: str | None = None
     years_experience: int | None = None
     user_id: uuid.UUID | None = None
+    # Subject names the teacher teaches (resolved to every matching subject row
+    # across courses). Drives the Subject→Teacher schedule lock.
+    subjects: list[str] = []
+
+
+class TeacherSubjectsUpdate(BaseModel):
+    subjects: list[str] = []
+
+
+class TeacherSubjectsResponse(BaseModel):
+    subjects: list[str]
 
 
 class TeacherUpdate(BaseModel):

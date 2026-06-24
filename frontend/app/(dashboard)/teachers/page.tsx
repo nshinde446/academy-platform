@@ -11,6 +11,9 @@ import {
   useCreateTeacher,
   useUpdateTeacher,
   useDeleteTeacher,
+  useSubjectOptions,
+  useTeacherSubjects,
+  useSetTeacherSubjects,
 } from "./_hooks/use-teachers";
 import type {
   TeacherCreate,
@@ -56,6 +59,11 @@ export default function TeachersPage() {
   const createMutation = useCreateTeacher(branchId);
   const updateMutation = useUpdateTeacher(branchId);
   const deleteMutation = useDeleteTeacher(branchId);
+  const subjectOptionsQuery = useSubjectOptions(branchId);
+  const editSubjectsQuery = useTeacherSubjects(branchId, editTarget?.id);
+  const setSubjectsMutation = useSetTeacherSubjects(branchId);
+
+  const subjectOptions = subjectOptionsQuery.data ?? [];
 
   const teachersById = useMemo(() => {
     const map: Record<string, TeacherResponse> = {};
@@ -78,9 +86,13 @@ export default function TeachersPage() {
     setEditOpen(true);
   }
 
-  async function handleUpdate(data: TeacherUpdate) {
+  async function handleUpdate(data: TeacherUpdate, subjects: string[]) {
     if (!editTarget) return;
     await updateMutation.mutateAsync({ teacherId: editTarget.id, data });
+    await setSubjectsMutation.mutateAsync({
+      teacherId: editTarget.id,
+      subjects,
+    });
   }
 
   function handleDeleteClick(teacher: TeacherResponse) {
@@ -107,6 +119,7 @@ export default function TeachersPage() {
           <CreateTeacherDialog
             onSubmit={handleCreate}
             isPending={createMutation.isPending}
+            subjectOptions={subjectOptions}
           />
         </div>
       </div>
@@ -147,7 +160,10 @@ export default function TeachersPage() {
         open={editOpen}
         onOpenChange={setEditOpen}
         onSubmit={handleUpdate}
-        isPending={updateMutation.isPending}
+        isPending={updateMutation.isPending || setSubjectsMutation.isPending}
+        subjectOptions={subjectOptions}
+        currentSubjects={editSubjectsQuery.data ?? []}
+        subjectsLoading={editSubjectsQuery.isLoading}
       />
 
       <ConfirmDialog

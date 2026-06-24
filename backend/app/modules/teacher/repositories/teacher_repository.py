@@ -209,6 +209,53 @@ async def teacher_teaches_subject(
     return result.scalar_one_or_none() is not None
 
 
+async def list_subject_ids_for_teacher(
+    session: AsyncSession, teacher_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """Active subject IDs a teacher is assigned to."""
+    result = await session.execute(
+        select(TeacherSubjectMapping.subject_id).where(
+            TeacherSubjectMapping.teacher_id == teacher_id,
+            TeacherSubjectMapping.is_deleted == False,  # noqa: E712
+        )
+    )
+    return [r[0] for r in result.all()]
+
+
+async def set_subject_mappings(
+    session: AsyncSession,
+    teacher_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    subject_ids: list[uuid.UUID],
+) -> None:
+    """Replace a teacher's subject assignments with ``subject_ids`` (a delta:
+    existing rows that survive are kept, removed ones are soft-deleted, new ones
+    added). Idempotent — re-applying the same set is a no-op."""
+    keep = set(subject_ids)
+    result = await session.execute(
+        select(TeacherSubjectMapping).where(
+            TeacherSubjectMapping.teacher_id == teacher_id,
+            TeacherSubjectMapping.is_deleted == False,  # noqa: E712
+        )
+    )
+    have: set[uuid.UUID] = set()
+    for mapping in result.scalars().all():
+        if mapping.subject_id in keep:
+            have.add(mapping.subject_id)
+        else:
+            mapping.is_deleted = True
+    for sid in keep:
+        if sid not in have:
+            session.add(
+                TeacherSubjectMapping(
+                    teacher_id=teacher_id,
+                    subject_id=sid,
+                    branch_id=branch_id,
+                )
+            )
+    await session.flush()
+
+
 async def list_for_subject(
     session: AsyncSession,
     branch_id: uuid.UUID,

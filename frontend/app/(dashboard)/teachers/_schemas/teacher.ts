@@ -21,6 +21,12 @@ export interface TeacherCreate {
   phone?: string | null;
   qualification?: string | null;
   years_experience?: number | null;
+  // Subject names the teacher teaches — drives the Subject→Teacher schedule lock.
+  subjects?: string[];
+}
+
+export interface TeacherSubjects {
+  subjects: string[];
 }
 
 export interface TeacherUpdate {
