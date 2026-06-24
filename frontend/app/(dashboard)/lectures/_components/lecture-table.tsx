@@ -34,6 +34,14 @@ interface LectureTableProps {
   onDelete: (lecture: LectureResponse) => void;
   onSubstitute: (lecture: LectureResponse) => void;
   onNoShow: (lecture: LectureResponse) => void;
+  onActuals: (lecture: LectureResponse) => void;
+}
+
+function formatDuration(min: number | null): string | null {
+  if (min === null || min === undefined) return null;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
 // Status pill derivation. Inspired by Google Classroom's mutually-exclusive
@@ -141,6 +149,7 @@ export function LectureTable({
   onDelete,
   onSubstitute,
   onNoShow,
+  onActuals,
 }: LectureTableProps) {
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
@@ -180,6 +189,12 @@ export function LectureTable({
             const canSubstitute =
               l.lecture_status !== "cancelled" &&
               l.lecture_status !== "no_show";
+            // End-of-day actuals can be recorded/edited anytime the class
+            // happened or is still expected to (mirrors the backend guard).
+            const canActuals =
+              l.lecture_status !== "cancelled" &&
+              l.lecture_status !== "no_show";
+            const duration = formatDuration(l.actual_duration_min);
 
             return (
               <TableRow key={l.id}>
@@ -222,6 +237,16 @@ export function LectureTable({
                         {s.subLabel && (
                           <span className="text-[10px] text-muted-foreground">
                             {s.subLabel}
+                          </span>
+                        )}
+                        {l.late_flag === true && (
+                          <span className="text-[10px] font-medium text-destructive">
+                            started late
+                          </span>
+                        )}
+                        {duration && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {duration}
                           </span>
                         )}
                       </div>
@@ -283,6 +308,17 @@ export function LectureTable({
                         aria-label={`Mark substitute for lecture ${l.id}`}
                       >
                         {l.actual_teacher_id ? "Edit Sub" : "Substitute"}
+                      </Button>
+                    )}
+                    {canActuals && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onActuals(l)}
+                        aria-label={`Record end-of-day actuals for lecture ${l.id}`}
+                      >
+                        {l.actual_start ? "Edit Actuals" : "End of Day"}
                       </Button>
                     )}
                     <Link

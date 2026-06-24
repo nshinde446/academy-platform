@@ -313,6 +313,18 @@ async def seed_data(db_session: AsyncSession):
     db_session.add(teacher)
     await db_session.flush()
 
+    # Qualify the seed teacher for the seed subject so the Subject→Teacher lock
+    # (lecture scheduling) is satisfied for the lecture tests.
+    teacher_subject = TeacherSubjectMapping(
+        teacher_id=teacher.id,
+        subject_id=subject.id,
+        branch_id=branch_a.id,
+        status="active",
+        is_deleted=False,
+    )
+    db_session.add(teacher_subject)
+    await db_session.flush()
+
     batch = Batch(
         id=uuid.UUID("00000000-0000-0000-0000-000000000070"),
         branch_id=branch_a.id,

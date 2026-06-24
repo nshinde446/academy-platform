@@ -3,12 +3,15 @@ import apiClient from "@/services/api-client";
 import type {
   BatchSummary,
   ClassroomSummary,
+  CopyScheduleSummary,
+  LectureActuals,
   LectureCreate,
   LectureNoShow,
   LectureResponse,
   LectureSessionCreate,
   LectureSessionResponse,
   LectureSubstitute,
+  ProductivityResponse,
   SubjectSummary,
   TeacherSummary,
   TopicSummary,
@@ -27,6 +30,14 @@ export const sessionKeys = {
 export const teacherKeys = {
   all: ["teachers"] as const,
   list: (branchId: string) => [...teacherKeys.all, "list", branchId] as const,
+  bySubject: (branchId: string, subjectId: string) =>
+    [...teacherKeys.all, "by-subject", branchId, subjectId] as const,
+};
+
+export const productivityKeys = {
+  all: ["lecture-productivity"] as const,
+  range: (branchId: string, from: string, to: string) =>
+    [...productivityKeys.all, branchId, from, to] as const,
 };
 
 export const subjectKeys = {
@@ -247,6 +258,104 @@ export function useTeachers(branchId: string | undefined) {
       const res = await apiClient.get<TeacherSummary[]>("/api/v1/teachers", {
         params: { branch_id: branchId, limit: 200 },
       });
+      return res.data;
+    },
+    enabled: !!branchId,
+  });
+}
+
+export function useTeachersBySubject(
+  branchId: string | undefined,
+  subjectId: string | undefined
+) {
+  return useQuery<TeacherSummary[]>({
+    queryKey: teacherKeys.bySubject(branchId!, subjectId!),
+    queryFn: async () => {
+      const res = await apiClient.get<TeacherSummary[]>(
+        "/api/v1/teachers/by-subject",
+        { params: { branch_id: branchId, subject_id: subjectId } }
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!subjectId,
+  });
+}
+
+export function useUpdateActuals(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      lectureId,
+      data,
+    }: {
+      lectureId: string;
+      data: LectureActuals;
+    }) => {
+      const res = await apiClient.patch<LectureResponse>(
+        `/api/v1/lectures/${lectureId}/actuals`,
+        data,
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: lectureKeys.list(branchId) });
+        queryClient.invalidateQueries({ queryKey: productivityKeys.all });
+      }
+    },
+  });
+}
+
+export function useCopyToNextDay(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      sourceDate,
+      targetDate,
+    }: {
+      sourceDate: string;
+      targetDate?: string;
+    }) => {
+      const res = await apiClient.post<CopyScheduleSummary>(
+        "/api/v1/lectures/copy-to-next-day",
+        null,
+        {
+          params: {
+            branch_id: branchId,
+            source_date: sourceDate,
+            ...(targetDate ? { target_date: targetDate } : {}),
+          },
+        }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: lectureKeys.list(branchId) });
+      }
+    },
+  });
+}
+
+export function useProductivityInsights(
+  branchId: string | undefined,
+  fromDate: string,
+  toDate: string
+) {
+  return useQuery<ProductivityResponse>({
+    queryKey: productivityKeys.range(branchId!, fromDate, toDate),
+    queryFn: async () => {
+      const res = await apiClient.get<ProductivityResponse>(
+        "/api/v1/lectures/insights/productivity",
+        {
+          params: {
+            branch_id: branchId,
+            ...(fromDate ? { from_date: `${fromDate}T00:00:00Z` } : {}),
+            ...(toDate ? { to_date: `${toDate}T23:59:59Z` } : {}),
+          },
+        }
+      );
       return res.data;
     },
     enabled: !!branchId,

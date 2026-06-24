@@ -39,6 +39,8 @@ function makeLecture(over: Partial<LectureResponse> = {}): LectureResponse {
     scheduled_end: "2026-05-27T11:00:00Z",
     actual_start: null,
     actual_end: null,
+    late_flag: null,
+    actual_duration_min: null,
     delivery_mode: "online",
     lecture_status: "scheduled",
     notes: null,

@@ -34,6 +34,8 @@ export interface LectureResponse {
   scheduled_end: string;
   actual_start: string | null;
   actual_end: string | null;
+  late_flag: boolean | null;
+  actual_duration_min: number | null;
   delivery_mode: string;
   lecture_status: LectureStatus;
   notes: string | null;
@@ -55,6 +57,49 @@ export interface LectureSubstitute {
 export interface LectureNoShow {
   no_show_reason: NoShowReason;
   notes?: string | null;
+}
+
+export interface LectureActuals {
+  actual_start?: string | null;
+  actual_end?: string | null;
+  topic_id?: string | null;
+  notes?: string | null;
+}
+
+export interface CopyScheduleSummary {
+  source_date: string;
+  target_date: string;
+  copied: number;
+  skipped: number;
+  errors: string[];
+}
+
+export interface ProductivityTeacherRow {
+  teacher_id: string;
+  first_name: string;
+  last_name: string;
+  lectures_taught: number;
+  hours_taught: number;
+  avg_lecture_min: number;
+  late_count: number;
+  on_time_count: number;
+  punctuality_pct: number;
+  distinct_topics: number;
+}
+
+export interface ProductivitySummary {
+  teachers: number;
+  total_lectures: number;
+  total_hours: number;
+  total_late: number;
+  branch_punctuality_pct: number;
+}
+
+export interface ProductivityResponse {
+  from_date: string | null;
+  to_date: string | null;
+  summary: ProductivitySummary;
+  by_teacher: ProductivityTeacherRow[];
 }
 
 export interface LectureCreate {

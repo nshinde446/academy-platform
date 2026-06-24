@@ -630,6 +630,65 @@ async def batch_syllabus_coverage(
     return result
 
 
+async def teacher_productivity_in_range(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+) -> list[dict]:
+    """Per effective-teacher productivity over completed lectures in window.
+
+    The effective teacher is ``coalesce(actual_teacher_id, teacher_id)`` so a
+    substitute earns the credit for the class they actually delivered. Returns
+    raw counts; the service derives hours / punctuality / averages.
+    """
+    effective_teacher = func.coalesce(
+        Lecture.actual_teacher_id, Lecture.teacher_id
+    ).label("teacher_id")
+
+    filters = [
+        Lecture.branch_id == branch_id,
+        Lecture.is_deleted == False,  # noqa: E712
+        Lecture.lecture_status == "completed",
+    ]
+    if from_dt is not None:
+        filters.append(Lecture.scheduled_start >= from_dt)
+    if to_dt is not None:
+        filters.append(Lecture.scheduled_start <= to_dt)
+
+    late = Lecture.late_flag.is_(True)
+    on_time = Lecture.late_flag.is_(False)
+
+    stmt = (
+        select(
+            effective_teacher,
+            func.count().label("lectures_taught"),
+            func.coalesce(func.sum(Lecture.actual_duration_min), 0).label(
+                "total_minutes"
+            ),
+            func.count(Lecture.actual_duration_min).label("timed_lectures"),
+            func.count().filter(late).label("late_count"),
+            func.count().filter(on_time).label("on_time_count"),
+            func.count(func.distinct(Lecture.topic_id)).label("distinct_topics"),
+        )
+        .where(and_(*filters))
+        .group_by(effective_teacher)
+    )
+    rows = (await session.execute(stmt)).all()
+    return [
+        {
+            "teacher_id": r.teacher_id,
+            "lectures_taught": int(r.lectures_taught or 0),
+            "total_minutes": int(r.total_minutes or 0),
+            "timed_lectures": int(r.timed_lectures or 0),
+            "late_count": int(r.late_count or 0),
+            "on_time_count": int(r.on_time_count or 0),
+            "distinct_topics": int(r.distinct_topics or 0),
+        }
+        for r in rows
+    ]
+
+
 async def list_session_plans_for_sessions(
     session: AsyncSession, session_ids: list[uuid.UUID]
 ) -> list[LectureSessionPlan]:

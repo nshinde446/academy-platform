@@ -25,10 +25,12 @@ import {
   useMarkNoShow,
   useMarkSubstitute,
   useStartLecture,
+  useUpdateActuals,
   useClassrooms,
   useTeachers,
 } from "./_hooks/use-lectures";
 import type {
+  LectureActuals,
   LectureCreate,
   LectureNoShow,
   LectureResponse,
@@ -51,6 +53,9 @@ import { MarkSubstituteDialog } from "./_components/mark-substitute-dialog";
 import { MarkNoShowDialog } from "./_components/mark-no-show-dialog";
 import { RecordMakeupDialog } from "./_components/record-makeup-dialog";
 import { ImportScheduleDialog } from "./_components/import-schedule-dialog";
+import { CopyScheduleDialog } from "./_components/copy-schedule-dialog";
+import { EndOfDayDialog } from "./_components/end-of-day-dialog";
+import { TeacherProductivityPanel } from "./_components/teacher-productivity-panel";
 import { SessionList } from "./_components/session-list";
 
 const SELECT_CLASS =
@@ -179,6 +184,10 @@ function LecturesPageBody() {
   const [dppOpen, setDppOpen] = useState(false);
   const [makeupOpen, setMakeupOpen] = useState(false);
   const [makeupPrefillId, setMakeupPrefillId] = useState<string | null>(null);
+  const [actualsTarget, setActualsTarget] = useState<LectureResponse | null>(
+    null
+  );
+  const [actualsOpen, setActualsOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
   const lecturesQuery = useLectures(branchId);
@@ -195,6 +204,7 @@ function LecturesPageBody() {
   const substituteMutation = useMarkSubstitute(branchId);
   const noShowMutation = useMarkNoShow(branchId);
   const sessionMutation = useCreateLectureSession(branchId);
+  const actualsMutation = useUpdateActuals(branchId);
 
   const batches = batchesQuery.data ?? [];
   const teachers = teachersQuery.data ?? [];
@@ -424,6 +434,13 @@ function LecturesPageBody() {
     setMakeupPrefillId(l.id);
     setMakeupOpen(true);
   }
+  function handleActuals(l: LectureResponse) {
+    setActualsTarget(l);
+    setActualsOpen(true);
+  }
+  async function handleActualsSubmit(lectureId: string, data: LectureActuals) {
+    await actualsMutation.mutateAsync({ lectureId, data });
+  }
 
   const hasFilter = !!(
     debouncedSearch ||
@@ -437,6 +454,7 @@ function LecturesPageBody() {
   const headerActions = (
     <div className="flex flex-wrap gap-2">
       <ImportScheduleDialog branchId={branchId} />
+      <CopyScheduleDialog branchId={branchId} />
       <Button
         type="button"
         variant="outline"
@@ -450,7 +468,6 @@ function LecturesPageBody() {
       <CreateLectureDialog
         branchId={branchId}
         batches={batches}
-        teachers={teachers}
         classrooms={classrooms}
         onSubmit={handleCreate}
         isPending={createMutation.isPending}
@@ -657,6 +674,7 @@ function LecturesPageBody() {
               onDelete={handleDeleteClick}
               onSubstitute={handleSubstitute}
               onNoShow={handleNoShow}
+              onActuals={handleActuals}
             />
           )}
 
@@ -665,6 +683,12 @@ function LecturesPageBody() {
             batches={batches}
             teachers={teachers}
             subjects={allSubjects}
+          />
+
+          <TeacherProductivityPanel
+            branchId={branchId}
+            fromDate={fromDate}
+            toDate={toDate}
           />
         </>
       )}
@@ -683,6 +707,18 @@ function LecturesPageBody() {
           if (!o) setMakeupPrefillId(null);
         }}
         prefillLectureId={makeupPrefillId}
+      />
+
+      <EndOfDayDialog
+        branchId={branchId}
+        lecture={actualsTarget}
+        open={actualsOpen}
+        onOpenChange={(o) => {
+          setActualsOpen(o);
+          if (!o) setActualsTarget(null);
+        }}
+        onSubmit={handleActualsSubmit}
+        isPending={actualsMutation.isPending}
       />
 
       <GenerateDppModal

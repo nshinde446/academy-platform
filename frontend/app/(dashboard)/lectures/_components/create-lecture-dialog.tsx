@@ -14,19 +14,18 @@ import {
 } from "@/components/ui/dialog";
 import {
   useSubjectsByCourse,
+  useTeachersBySubject,
   useTopicsBySubject,
 } from "../_hooks/use-lectures";
 import type {
   BatchSummary,
   ClassroomSummary,
   LectureCreate,
-  TeacherSummary,
 } from "../_schemas/lecture";
 
 interface CreateLectureDialogProps {
   branchId: string | undefined;
   batches: BatchSummary[];
-  teachers: TeacherSummary[];
   classrooms: ClassroomSummary[];
   onSubmit: (data: LectureCreate) => Promise<void> | void;
   isPending: boolean;
@@ -64,7 +63,6 @@ function defaultEnd(start: string): string {
 export function CreateLectureDialog({
   branchId,
   batches,
-  teachers,
   classrooms,
   onSubmit,
   isPending,
@@ -88,19 +86,26 @@ export function CreateLectureDialog({
 
   const subjectsQuery = useSubjectsByCourse(branchId, selectedBatch?.course_id);
   const topicsQuery = useTopicsBySubject(branchId, subjectId || undefined);
+  // Subject→Teacher lock: only teachers assigned to the picked subject are
+  // offered. The backend still validates on save — this is just the UX half.
+  const teachersQuery = useTeachersBySubject(branchId, subjectId || undefined);
 
   const subjects = subjectsQuery.data ?? [];
   const topics = topicsQuery.data ?? [];
+  const teachers = teachersQuery.data ?? [];
 
-  // When batch changes, clear stale subject/topic.
+  // When batch changes, clear stale subject/topic/teacher.
   useEffect(() => {
     setSubjectId("");
     setTopicId("");
+    setTeacherId("");
   }, [batchId]);
 
-  // When subject changes, clear stale topic.
+  // When subject changes, clear stale topic + teacher (teacher list is
+  // subject-scoped, so the previously picked teacher may no longer qualify).
   useEffect(() => {
     setTopicId("");
+    setTeacherId("");
   }, [subjectId]);
 
   function reset() {
@@ -169,6 +174,7 @@ export function CreateLectureDialog({
 
   const subjectsDisabled = !selectedBatch || subjectsQuery.isLoading;
   const topicsDisabled = !subjectId || topicsQuery.isLoading;
+  const teachersDisabled = !subjectId || teachersQuery.isLoading;
 
   return (
     <Dialog
@@ -186,13 +192,15 @@ export function CreateLectureDialog({
       <DialogPopup className="max-w-2xl">
         <DialogTitle>Schedule Lecture</DialogTitle>
         <DialogDescription>
-          Pick a batch and the subject + topic dropdowns will filter to its
-          course. Backend rejects scheduling conflicts on teacher, batch, or
-          classroom.
+          Batch → Subject → Teacher cascade: each dropdown filters the next, so
+          only teachers assigned to the chosen subject are offered. Backend
+          enforces the same lock and rejects teacher / batch / classroom
+          scheduling conflicts.
         </DialogDescription>
         <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
 
+          {/* Cascade: Batch → Subject (course-scoped) → Teacher (subject-scoped). */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="lecture_batch">Batch *</Label>
@@ -211,26 +219,6 @@ export function CreateLectureDialog({
                 ))}
               </select>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="lecture_teacher">Teacher *</Label>
-              <select
-                id="lecture_teacher"
-                value={teacherId}
-                onChange={(e) => setTeacherId(e.target.value)}
-                className={SELECT_CLASS}
-                required
-              >
-                <option value="">Select a teacher...</option>
-                {teachers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.first_name} {t.last_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="lecture_subject">Subject *</Label>
               <select
@@ -256,6 +244,41 @@ export function CreateLectureDialog({
                   </option>
                 ))}
               </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="lecture_teacher">Teacher *</Label>
+              <select
+                id="lecture_teacher"
+                value={teacherId}
+                onChange={(e) => setTeacherId(e.target.value)}
+                className={SELECT_CLASS}
+                disabled={teachersDisabled}
+                required
+              >
+                <option value="">
+                  {!subjectId
+                    ? "Pick a subject first"
+                    : teachersQuery.isLoading
+                    ? "Loading..."
+                    : teachers.length === 0
+                    ? "No teacher assigned to this subject"
+                    : "Select a teacher..."}
+                </option>
+                {teachers.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.first_name} {t.last_name}
+                  </option>
+                ))}
+              </select>
+              {subjectId && !teachersQuery.isLoading && teachers.length === 0 && (
+                <p className="text-xs text-destructive">
+                  Assign this subject to a teacher (on Teachers) before
+                  scheduling it.
+                </p>
+              )}
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="lecture_topic">Topic</Label>

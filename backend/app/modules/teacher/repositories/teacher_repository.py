@@ -186,3 +186,51 @@ async def add_subject_mappings(
             )
         )
     await session.flush()
+
+
+async def teacher_teaches_subject(
+    session: AsyncSession,
+    teacher_id: uuid.UUID,
+    subject_id: uuid.UUID,
+) -> bool:
+    """Whether an active TeacherSubjectMapping links this teacher to this
+    subject. The single source of truth for the Subject→Teacher lock — both
+    the schedule form's dropdown filter and the backend write-path validation
+    resolve through here."""
+    result = await session.execute(
+        select(TeacherSubjectMapping.id)
+        .where(
+            TeacherSubjectMapping.teacher_id == teacher_id,
+            TeacherSubjectMapping.subject_id == subject_id,
+            TeacherSubjectMapping.is_deleted == False,  # noqa: E712
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def list_for_subject(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    subject_id: uuid.UUID,
+) -> list[Teacher]:
+    """Active teachers in the branch assigned to teach ``subject_id``.
+
+    Powers the schedule form's teacher dropdown so a wrong-subject teacher is
+    never even offered (the backend still validates on save — UI filtering is
+    convenience, not the guarantee)."""
+    result = await session.execute(
+        select(Teacher)
+        .join(
+            TeacherSubjectMapping,
+            TeacherSubjectMapping.teacher_id == Teacher.id,
+        )
+        .where(
+            Teacher.branch_id == branch_id,
+            Teacher.is_deleted == False,  # noqa: E712
+            TeacherSubjectMapping.subject_id == subject_id,
+            TeacherSubjectMapping.is_deleted == False,  # noqa: E712
+        )
+        .order_by(Teacher.first_name, Teacher.last_name)
+    )
+    return list(result.scalars().unique().all())

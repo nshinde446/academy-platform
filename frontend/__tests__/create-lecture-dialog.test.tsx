@@ -33,7 +33,7 @@ function withQuery(ui: React.ReactNode) {
 beforeEach(() => {
   vi.clearAllMocks();
   (apiClient.get as ReturnType<typeof vi.fn>).mockImplementation(
-    (url: string, opts: any) => {
+    (url: string) => {
       if (url.includes("/subjects")) {
         return Promise.resolve({
           data: [
@@ -45,6 +45,10 @@ beforeEach(() => {
         return Promise.resolve({
           data: [{ id: "tp1", name: "Newton's Laws", chapter_id: "ch1" }],
         });
+      }
+      // Subject→Teacher lock: teachers are loaded scoped to the picked subject.
+      if (url.includes("/teachers/by-subject")) {
+        return Promise.resolve({ data: TEACHERS });
       }
       return Promise.resolve({ data: [] });
     }
@@ -59,7 +63,6 @@ describe("CreateLectureDialog", () => {
         <CreateLectureDialog
           branchId="br1"
           batches={BATCHES}
-          teachers={TEACHERS}
           classrooms={[]}
           onSubmit={onSubmit}
           isPending={false}
@@ -78,7 +81,6 @@ describe("CreateLectureDialog", () => {
         <CreateLectureDialog
           branchId="br1"
           batches={BATCHES}
-          teachers={TEACHERS}
           classrooms={[]}
           onSubmit={vi.fn()}
           isPending={false}
@@ -100,7 +102,6 @@ describe("CreateLectureDialog", () => {
         <CreateLectureDialog
           branchId="br1"
           batches={BATCHES}
-          teachers={TEACHERS}
           classrooms={[]}
           onSubmit={vi.fn()}
           isPending={false}
@@ -135,7 +136,6 @@ describe("CreateLectureDialog", () => {
         <CreateLectureDialog
           branchId="br1"
           batches={BATCHES}
-          teachers={TEACHERS}
           classrooms={[]}
           onSubmit={vi.fn()}
           isPending={false}
@@ -173,7 +173,6 @@ describe("CreateLectureDialog", () => {
         <CreateLectureDialog
           branchId="br1"
           batches={BATCHES}
-          teachers={TEACHERS}
           classrooms={[]}
           onSubmit={onSubmit}
           isPending={false}
@@ -186,12 +185,17 @@ describe("CreateLectureDialog", () => {
     );
 
     await user.selectOptions(screen.getByLabelText(/^batch \*/i), "b1");
-    await user.selectOptions(screen.getByLabelText(/^teacher \*/i), "t1");
 
     await waitFor(() => {
       expect(screen.getByLabelText(/^subject \*/i)).not.toBeDisabled();
     });
     await user.selectOptions(screen.getByLabelText(/^subject \*/i), "s1");
+
+    // Teacher is subject-scoped — enabled only after the subject loads it.
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^teacher \*/i)).not.toBeDisabled();
+    });
+    await user.selectOptions(screen.getByLabelText(/^teacher \*/i), "t1");
 
     // Set datetime inputs deterministically — JSDOM doesn't render the
     // value attribute the same way browsers do.

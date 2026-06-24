@@ -27,6 +27,28 @@ class LectureUpdate(BaseModel):
     notes: str | None = None
 
 
+class LectureActuals(BaseModel):
+    """End-of-day actuals entry (PDF §3): admin backfills what actually
+    happened. Setting actual_end marks the lecture completed; late_flag and
+    actual_duration_min are derived server-side. Any field omitted is left
+    unchanged (topic_id can be cleared via the dedicated update path)."""
+
+    actual_start: datetime | None = None
+    actual_end: datetime | None = None
+    topic_id: uuid.UUID | None = None
+    notes: str | None = None
+
+
+class CopyScheduleSummary(BaseModel):
+    """Result of copying a day's lecture plan to another date."""
+
+    source_date: str
+    target_date: str
+    copied: int
+    skipped: int
+    errors: list[str] = []
+
+
 class LectureReschedule(BaseModel):
     scheduled_start: datetime
     scheduled_end: datetime
@@ -63,6 +85,8 @@ class LectureResponse(BaseModel):
     scheduled_end: datetime
     actual_start: datetime | None = None
     actual_end: datetime | None = None
+    late_flag: bool | None = None
+    actual_duration_min: int | None = None
     delivery_mode: str
     lecture_status: str
     notes: str | None = None
@@ -308,6 +332,35 @@ class OutcomeResponse(BaseModel):
     summary: OutcomeSummary
     by_teacher: list[OutcomeTeacherRow]
     attendance_buckets: list[OutcomeAttendanceBucket]
+
+
+class ProductivityTeacherRow(BaseModel):
+    teacher_id: uuid.UUID
+    first_name: str
+    last_name: str
+    lectures_taught: int
+    hours_taught: float
+    avg_lecture_min: float
+    late_count: int
+    on_time_count: int
+    # Share of timed lectures that started on time (the punctuality KPI).
+    punctuality_pct: float
+    distinct_topics: int
+
+
+class ProductivitySummary(BaseModel):
+    teachers: int
+    total_lectures: int
+    total_hours: float
+    total_late: int
+    branch_punctuality_pct: float
+
+
+class ProductivityResponse(BaseModel):
+    from_date: datetime | None = None
+    to_date: datetime | None = None
+    summary: ProductivitySummary
+    by_teacher: list[ProductivityTeacherRow]
 
 
 class AttendanceMark(BaseModel):

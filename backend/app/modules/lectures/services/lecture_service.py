@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -11,14 +11,71 @@ from app.modules.events.services import event_service
 from app.modules.lectures.repositories import lecture_repository
 from app.modules.academic.models.academic_models import Subject
 from app.modules.teacher.models.teacher_models import Teacher
+from app.modules.teacher.repositories import teacher_repository
 from app.modules.lectures.schemas.lecture_schemas import (
     AttendanceMark,
+    LectureActuals,
     LectureCreate,
     LectureNoShow,
     LectureReschedule,
     LectureSessionCreate,
     LectureSubstitute,
 )
+
+# A lecture is "late" when it actually started more than this many minutes
+# after its scheduled start (PDF §3 late-start rule).
+LATE_THRESHOLD_MIN = 10
+
+
+def _aware(dt: datetime | None) -> datetime | None:
+    """Coerce a possibly-naive datetime to UTC. SQLite (test DB) returns naive
+    datetimes even for timezone=True columns, so comparisons would otherwise
+    raise."""
+    if dt is None:
+        return None
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def _derive_actuals(
+    scheduled_start: datetime | None,
+    actual_start: datetime | None,
+    actual_end: datetime | None,
+) -> tuple[bool | None, int | None]:
+    """Pure derivation of (late_flag, actual_duration_min) from the timestamps.
+
+    Single source of truth used by both the live complete path and the
+    end-of-day actuals backfill, so the two can never disagree.
+    """
+    late_flag: bool | None = None
+    duration: int | None = None
+    a_start = _aware(actual_start)
+    ss = _aware(scheduled_start)
+    if a_start is not None and ss is not None:
+        late_flag = a_start > ss + timedelta(minutes=LATE_THRESHOLD_MIN)
+    a_end = _aware(actual_end)
+    if a_start is not None and a_end is not None:
+        duration = max(int((a_end - a_start).total_seconds() // 60), 0)
+    return late_flag, duration
+
+
+async def _validate_teacher_subject(
+    session: AsyncSession,
+    teacher_id: uuid.UUID,
+    subject_id: uuid.UUID,
+) -> None:
+    """Subject→Teacher lock (PDF §2): reject when the teacher isn't assigned to
+    the subject. UI dropdown filtering is convenience; this is the guarantee —
+    it fires even for direct API callers that bypass the form."""
+    if not await teacher_repository.teacher_teaches_subject(
+        session, teacher_id, subject_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Teacher is not assigned to this subject. Assign the subject to "
+                "the teacher first, or pick a teacher who teaches it."
+            ),
+        )
 
 VALID_TRANSITIONS = {
     "scheduled": ["started", "cancelled", "no_show", "rescheduled"],
@@ -119,10 +176,14 @@ async def schedule_lecture(
     if not batch:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
 
+    # Subject→Teacher lock — the form's #1 rule (PDF §2). Runs after the slot
+    # conflict checks so a genuine double-booking still surfaces as a 409.
     await _check_conflicts(
         session, data.teacher_id, data.batch_id, data.classroom_id,
         data.scheduled_start, data.scheduled_end,
     )
+
+    await _validate_teacher_subject(session, data.teacher_id, data.subject_id)
 
     lecture = await lecture_repository.create(
         session,
@@ -228,8 +289,18 @@ async def complete_lecture(
 
     now = datetime.now(timezone.utc)
     old_status = lecture.lecture_status
+    # Derive punctuality + duration from the actuals captured live (actual_start
+    # was stamped on start_lecture). Same helper the EOD backfill uses.
+    late_flag, duration = _derive_actuals(
+        lecture.scheduled_start, lecture.actual_start, now
+    )
     lecture = await lecture_repository.update(
-        session, lecture, lecture_status="completed", actual_end=now
+        session,
+        lecture,
+        lecture_status="completed",
+        actual_end=now,
+        late_flag=late_flag,
+        actual_duration_min=duration,
     )
 
     await audit_service.log_action(
@@ -342,6 +413,213 @@ async def reschedule_lecture(
     return lecture
 
 
+async def update_actuals(
+    session: AsyncSession,
+    lecture_id: uuid.UUID,
+    data: LectureActuals,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+):
+    """End-of-day actuals entry (PDF §3).
+
+    Lets an admin backfill what actually happened — actual_start, actual_end,
+    topic taught — without needing the live Start/Complete clicks (the common
+    coaching reality). Recomputes late_flag + duration from the same helper the
+    live path uses. Providing actual_end marks the lecture completed.
+
+    Allowed from any non-terminal state except cancelled / no_show — those mean
+    the class didn't happen, so use reschedule / makeup / substitute instead.
+    """
+    lecture = await lecture_repository.get_by_id(session, lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture not found")
+    if lecture.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    if lecture.lecture_status in ("cancelled", "no_show"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Cannot record actuals on a {lecture.lecture_status} lecture — "
+                f"use reschedule or record a makeup session instead."
+            ),
+        )
+
+    # Resolve effective timestamps (incoming value wins, else what's stored).
+    actual_start = data.actual_start if data.actual_start is not None else lecture.actual_start
+    actual_end = data.actual_end if data.actual_end is not None else lecture.actual_end
+
+    if actual_start is None and actual_end is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="actual_start is required when actual_end is given",
+        )
+    if (
+        actual_start is not None
+        and actual_end is not None
+        and _aware(actual_end) <= _aware(actual_start)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="actual_end must be after actual_start",
+        )
+
+    late_flag, duration = _derive_actuals(
+        lecture.scheduled_start, actual_start, actual_end
+    )
+
+    old_values = {
+        "actual_start": str(lecture.actual_start) if lecture.actual_start else None,
+        "actual_end": str(lecture.actual_end) if lecture.actual_end else None,
+        "topic_id": str(lecture.topic_id) if lecture.topic_id else None,
+        "lecture_status": lecture.lecture_status,
+    }
+
+    # Setting an end time means the lecture is done; otherwise (only a start) it
+    # is in progress. Never downgrade an already-completed lecture.
+    new_status = lecture.lecture_status
+    if actual_end is not None:
+        new_status = "completed"
+    elif actual_start is not None and lecture.lecture_status in ("scheduled", "rescheduled"):
+        new_status = "started"
+
+    # Write directly (repo.update() skips None, which would prevent clearing /
+    # setting a False late_flag) so the derived fields land deterministically.
+    lecture.actual_start = actual_start
+    lecture.actual_end = actual_end
+    lecture.late_flag = late_flag
+    lecture.actual_duration_min = duration
+    lecture.lecture_status = new_status
+    if data.topic_id is not None:
+        lecture.topic_id = data.topic_id
+    if data.notes is not None:
+        lecture.notes = data.notes
+    await session.flush()
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="UPDATE",
+        table_name="lectures",
+        record_id=lecture.id,
+        old_values=old_values,
+        new_values={
+            "actual_start": str(actual_start) if actual_start else None,
+            "actual_end": str(actual_end) if actual_end else None,
+            "topic_id": str(lecture.topic_id) if lecture.topic_id else None,
+            "late_flag": late_flag,
+            "actual_duration_min": duration,
+            "lecture_status": new_status,
+        },
+        ip_address=ip_address,
+        branch_id=lecture.branch_id,
+    )
+    return lecture
+
+
+async def copy_to_next_day(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    source_date: date,
+    target_date: date | None,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    """Clone a day's lecture plan to another date (PDF §5).
+
+    Copies the plan fields (batch, subject, teacher, classroom, delivery mode,
+    scheduled times shifted by the date delta) and resets everything that's a
+    fresh-day concern: actuals, topic, late flag, substitute, status→scheduled.
+
+    Idempotent and conflict-aware — each cloned row is conflict-checked against
+    the target day and skipped (not failed) on collision, so re-running doesn't
+    double-book. Returns {source_date, target_date, copied, skipped, errors[]}.
+    """
+    if target_date is None:
+        target_date = source_date + timedelta(days=1)
+    if target_date == source_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="target_date must differ from source_date",
+        )
+    delta = target_date - source_date
+
+    day_start = datetime(
+        source_date.year, source_date.month, source_date.day, tzinfo=timezone.utc
+    )
+    day_end = day_start + timedelta(days=1) - timedelta(microseconds=1)
+    sources = await lecture_repository.list_lectures_for_day(
+        session, branch_id, day_start, day_end
+    )
+
+    copied = 0
+    skipped = 0
+    errors: list[str] = []
+    created_ids: list[uuid.UUID] = []
+    for src in sources:
+        new_start = src.scheduled_start + delta
+        new_end = src.scheduled_end + delta
+        try:
+            await _check_conflicts(
+                session,
+                src.teacher_id,
+                src.batch_id,
+                src.classroom_id,
+                new_start,
+                new_end,
+            )
+        except HTTPException as exc:
+            skipped += 1
+            errors.append(
+                f"{new_start.strftime('%H:%M')} {src.id}: {exc.detail}"
+            )
+            continue
+
+        new_lecture = await lecture_repository.create(
+            session,
+            teacher_id=src.teacher_id,
+            batch_id=src.batch_id,
+            classroom_id=src.classroom_id,
+            subject_id=src.subject_id,
+            topic_id=None,  # topic is taught fresh — entered at the new EOD
+            scheduled_start=new_start,
+            scheduled_end=new_end,
+            delivery_mode=src.delivery_mode,
+            lecture_status="scheduled",
+            notes=src.notes,
+            branch_id=src.branch_id,
+            academic_year_id=src.academic_year_id,
+        )
+        created_ids.append(new_lecture.id)
+        copied += 1
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="CREATE",
+        table_name="lectures",
+        record_id=created_ids[0] if created_ids else uuid.uuid4(),
+        new_values={
+            "operation": "copy_to_next_day",
+            "source_date": source_date.isoformat(),
+            "target_date": target_date.isoformat(),
+            "copied": copied,
+            "skipped": skipped,
+        },
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+
+    return {
+        "source_date": source_date.isoformat(),
+        "target_date": target_date.isoformat(),
+        "copied": copied,
+        "skipped": skipped,
+        "errors": errors,
+    }
+
+
 async def mark_attendance(
     session: AsyncSession,
     lecture_id: uuid.UUID,
@@ -417,6 +695,13 @@ async def mark_substitute(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Substitute teacher must differ from the scheduled teacher",
+        )
+
+    # The substitute must also be qualified for the lecture's subject
+    # (Subject→Teacher lock applies to whoever actually delivers it).
+    if data.actual_teacher_id is not None:
+        await _validate_teacher_subject(
+            session, data.actual_teacher_id, lecture.subject_id
         )
 
     reason = data.change_reason
@@ -625,6 +910,9 @@ async def create_lecture_session(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="actual_end must be after actual_start",
         )
+
+    # Subject→Teacher lock — whoever delivered this session must teach it.
+    await _validate_teacher_subject(session, data.teacher_id, data.subject_id)
 
     # Validate every batch belongs to this branch and pick an academic year.
     academic_year_id: uuid.UUID | None = None
@@ -920,6 +1208,87 @@ async def get_adherence_insights(
         "no_show_breakdown": no_show_breakdown,
         "by_teacher": teacher_rows,
         "by_batch_syllabus": syllabus_rows,
+    }
+
+
+async def get_productivity_insights(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+) -> dict:
+    """Teacher productivity (PDF §3–4): hours taught, punctuality, topic
+    coverage, per teacher over a window, plus a branch summary.
+
+    Built on the persisted late_flag / actual_duration_min, so it only reflects
+    lectures whose actuals were captured (live complete or EOD backfill).
+    """
+    rows = await lecture_repository.teacher_productivity_in_range(
+        session, branch_id, from_dt, to_dt
+    )
+
+    teacher_ids = [r["teacher_id"] for r in rows]
+    teachers_by_id: dict[uuid.UUID, Teacher] = {}
+    if teacher_ids:
+        result = await session.execute(
+            select(Teacher).where(
+                Teacher.id.in_(teacher_ids),
+                Teacher.is_deleted == False,  # noqa: E712
+            )
+        )
+        teachers_by_id = {t.id: t for t in result.scalars().all()}
+
+    by_teacher: list[dict] = []
+    total_lectures = 0
+    total_minutes = 0
+    total_late = 0
+    total_timed = 0
+    for r in rows:
+        t = teachers_by_id.get(r["teacher_id"])
+        if t is None:
+            continue
+        timed = r["on_time_count"] + r["late_count"]
+        hours = round(r["total_minutes"] / 60, 1)
+        avg_min = (
+            round(r["total_minutes"] / r["timed_lectures"], 1)
+            if r["timed_lectures"] > 0
+            else 0.0
+        )
+        punctuality = _safe_pct(r["on_time_count"], timed)
+        by_teacher.append(
+            {
+                "teacher_id": r["teacher_id"],
+                "first_name": t.first_name,
+                "last_name": t.last_name,
+                "lectures_taught": r["lectures_taught"],
+                "hours_taught": hours,
+                "avg_lecture_min": avg_min,
+                "late_count": r["late_count"],
+                "on_time_count": r["on_time_count"],
+                "punctuality_pct": punctuality,
+                "distinct_topics": r["distinct_topics"],
+            }
+        )
+        total_lectures += r["lectures_taught"]
+        total_minutes += r["total_minutes"]
+        total_late += r["late_count"]
+        total_timed += timed
+
+    # Most hours first — the productivity leaderboard.
+    by_teacher.sort(key=lambda r: r["hours_taught"], reverse=True)
+
+    summary = {
+        "teachers": len(by_teacher),
+        "total_lectures": total_lectures,
+        "total_hours": round(total_minutes / 60, 1),
+        "total_late": total_late,
+        "branch_punctuality_pct": _safe_pct(total_timed - total_late, total_timed),
+    }
+    return {
+        "from_date": from_dt,
+        "to_date": to_dt,
+        "summary": summary,
+        "by_teacher": by_teacher,
     }
 
 

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database.base import BaseModel
@@ -37,6 +37,11 @@ class Lecture(BaseModel):
     actual_end: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Derived from the actuals (see lecture_service._derive_actuals), persisted
+    # so the teacher-productivity report can aggregate/index without recomputing
+    # the formula per row. late_flag = actual_start > scheduled_start + 10 min.
+    late_flag: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    actual_duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     delivery_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, default="offline"
     )

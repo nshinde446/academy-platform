@@ -10,7 +10,9 @@ from app.modules.lectures.schemas.lecture_schemas import (
     AdherenceResponse,
     AttendanceMark,
     AttendanceResponse,
+    CopyScheduleSummary,
     ImportScheduleSummary,
+    LectureActuals,
     LectureCreate,
     LectureNoShow,
     LectureReschedule,
@@ -19,6 +21,7 @@ from app.modules.lectures.schemas.lecture_schemas import (
     LectureSessionResponse,
     LectureSubstitute,
     OutcomeResponse,
+    ProductivityResponse,
     RosterResponse,
 )
 from app.modules.lectures.services import import_service, lecture_service
@@ -166,6 +169,58 @@ async def get_adherence_insights(
     )
 
 
+@router.get("/insights/productivity", response_model=ProductivityResponse)
+async def get_productivity_insights(
+    branch_id: uuid.UUID = Query(...),
+    from_date: datetime | None = Query(None),
+    to_date: datetime | None = Query(None),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Teacher productivity: hours taught, punctuality (late-start rate), and
+    topic coverage per teacher over the window, plus a branch summary. Derived
+    from the actuals captured live or via the end-of-day backfill."""
+    return await lecture_service.get_productivity_insights(
+        session, branch_id, from_date, to_date
+    )
+
+
+@router.post("/copy-to-next-day", response_model=CopyScheduleSummary)
+async def copy_to_next_day(
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    source_date: str = Query(..., description="YYYY-MM-DD day to copy from"),
+    target_date: str | None = Query(
+        None, description="YYYY-MM-DD destination; defaults to source + 1 day"
+    ),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Duplicate a day's lecture plan to another date (PDF §5).
+
+    Idempotent + conflict-aware: clones the plan, resets actuals/topic/late, and
+    skips (rather than fails) any row that would collide on the target day.
+    """
+    from datetime import date as _date
+    from fastapi import HTTPException, status as http_status
+
+    def _parse(label: str, value: str) -> _date:
+        try:
+            return _date.fromisoformat(value)
+        except ValueError:
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"{label} must be YYYY-MM-DD",
+            )
+
+    src = _parse("source_date", source_date)
+    tgt = _parse("target_date", target_date) if target_date else None
+    return await lecture_service.copy_to_next_day(
+        session, branch_id, src, tgt, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
 @router.get("/{lecture_id}", response_model=LectureResponse)
 async def get_lecture(
     lecture_id: uuid.UUID,
@@ -249,6 +304,24 @@ async def mark_no_show(
     for unplanned absence.
     """
     return await lecture_service.mark_no_show(
+        session, lecture_id, body, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.patch("/{lecture_id}/actuals", response_model=LectureResponse)
+async def update_actuals(
+    lecture_id: uuid.UUID,
+    body: LectureActuals,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """End-of-day actuals entry (PDF §3): backfill actual_start / actual_end /
+    topic without the live Start/Complete clicks. Recomputes late_flag +
+    duration; setting actual_end completes the lecture."""
+    return await lecture_service.update_actuals(
         session, lecture_id, body, branch_id, current_user["user_id"],
         request.client.host if request.client else None,
     )

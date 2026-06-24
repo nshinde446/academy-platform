@@ -45,6 +45,13 @@ async def list_teachers_with_stats(session: AsyncSession, branch_id: uuid.UUID):
     return await teacher_repository.list_with_stats(session, branch_id)
 
 
+async def list_teachers_for_subject(
+    session: AsyncSession, branch_id: uuid.UUID, subject_id: uuid.UUID
+):
+    """Teachers assigned to a subject — the schedule form's filtered dropdown."""
+    return await teacher_repository.list_for_subject(session, branch_id, subject_id)
+
+
 async def update_teacher(
     session: AsyncSession,
     teacher_id: uuid.UUID,

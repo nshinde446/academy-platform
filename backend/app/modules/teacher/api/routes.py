@@ -52,6 +52,23 @@ async def list_teachers_with_stats(
     return await teacher_service.list_teachers_with_stats(session, branch_id)
 
 
+@router.get("/by-subject", response_model=list[TeacherResponse])
+async def list_teachers_by_subject(
+    branch_id: uuid.UUID = Query(...),
+    subject_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Teachers assigned to the given subject (Subject→Teacher lock).
+
+    Registered before ``/{teacher_id}`` so the literal path wins over the
+    UUID path param. Drives the schedule form's teacher dropdown.
+    """
+    return await teacher_service.list_teachers_for_subject(
+        session, branch_id, subject_id
+    )
+
+
 @router.get("/{teacher_id}", response_model=TeacherResponse)
 async def get_teacher(
     teacher_id: uuid.UUID,
