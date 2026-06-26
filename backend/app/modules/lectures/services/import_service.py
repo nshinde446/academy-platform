@@ -37,9 +37,11 @@ from app.modules.audit.services import audit_service
 from app.modules.auth.models.auth_models import User
 from app.modules.batch.models.batch_models import Batch, BatchSubjectMapping
 from app.modules.classroom.models.classroom_models import Classroom
+from app.modules.lectures.repositories import lecture_repository
 from app.modules.lectures.schemas.lecture_schemas import LectureCreate
 from app.modules.lectures.services import lecture_service
 from app.modules.teacher.models.teacher_models import Teacher
+from app.modules.teacher.repositories import teacher_repository
 
 
 REQUIRED_COLUMNS = (
@@ -207,6 +209,114 @@ async def _resolve_lookups(
             raise ValueError(f"unknown classroom_code: {classroom_code}")
 
     return teacher, batch, subject, classroom
+
+
+async def preview_schedule(
+    session: AsyncSession,
+    file: UploadFile,
+    branch_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Dry-run validation of an import sheet — resolves every row and reports
+    what would happen, WITHOUT creating anything.
+
+    Brings the lecture importer up to the student importer's maturity: the admin
+    sees exactly which rows are clean and which would be skipped (and why) before
+    committing. Each row is checked for code resolution, time validity, the
+    Subject→Teacher lock, teacher leave, and existing-schedule conflicts.
+    """
+    content = await file.read()
+    filename = (file.filename or "").lower()
+
+    if filename.endswith(".csv"):
+        rows = _parse_csv(content)
+    elif filename.endswith((".xlsx", ".xls")):
+        rows = _parse_xlsx(content)
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported file type. Use .csv or .xlsx",
+        )
+
+    if rows:
+        present = {_normalize(k) for k in rows[0].keys() if k}
+        missing = [c for c in REQUIRED_COLUMNS if c not in present]
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Missing required columns: {', '.join(missing)}",
+            )
+
+    out_rows: list[dict[str, Any]] = []
+    ok_count = 0
+    error_count = 0
+
+    for idx, raw in enumerate(rows, start=2):  # row 1 is header
+        row = {_normalize(k): v for k, v in raw.items() if k}
+        result: dict[str, Any] = {
+            "row_number": idx,
+            "date": str(row.get("date", "")),
+            "start_time": str(row.get("start_time", "")),
+            "end_time": str(row.get("end_time", "")),
+            "teacher": str(row.get("teacher_email", "")),
+            "batch": str(row.get("batch_code", "")),
+            "subject": str(row.get("subject_code", "")),
+            "status": "ok",
+            "message": "",
+        }
+        try:
+            date_part = _parse_date(row.get("date"))
+            start_t = _parse_time(row.get("start_time"))
+            end_t = _parse_time(row.get("end_time"))
+            scheduled_start = datetime.combine(date_part.date(), start_t)
+            scheduled_end = datetime.combine(date_part.date(), end_t)
+            if scheduled_end <= scheduled_start:
+                raise ValueError("end_time must be after start_time")
+
+            teacher, batch, subject, classroom = await _resolve_lookups(
+                session,
+                branch_id,
+                str(row.get("teacher_email", "")),
+                str(row.get("batch_code", "")),
+                str(row.get("subject_code", "")),
+                (str(row.get("classroom_code")) if row.get("classroom_code") else None),
+            )
+
+            if not await teacher_repository.teacher_teaches_subject(
+                session, teacher.id, subject.id
+            ):
+                raise ValueError(
+                    f"{teacher.first_name} {teacher.last_name} isn't assigned to "
+                    f"subject '{subject.code}'"
+                )
+            if await teacher_repository.teacher_on_leave(
+                session, teacher.id, date_part.date()
+            ):
+                raise ValueError("teacher is on leave that day")
+            if await lecture_repository.check_teacher_conflict(
+                session, teacher.id, scheduled_start, scheduled_end, None
+            ):
+                raise ValueError("teacher already has a lecture at this time")
+            if await lecture_repository.check_batch_conflict(
+                session, batch.id, scheduled_start, scheduled_end, None
+            ):
+                raise ValueError("batch already has a lecture at this time")
+            if classroom and await lecture_repository.check_classroom_conflict(
+                session, classroom.id, scheduled_start, scheduled_end, None
+            ):
+                raise ValueError("classroom already booked at this time")
+
+            result["message"] = (
+                f"{batch.name} · {subject.name} · "
+                f"{teacher.first_name} {teacher.last_name}"
+            )
+            ok_count += 1
+        except Exception as exc:  # noqa: BLE001
+            result["status"] = "error"
+            result["message"] = str(exc)
+            error_count += 1
+        out_rows.append(result)
+
+    return {"rows": out_rows, "ok_count": ok_count, "error_count": error_count}
 
 
 async def import_schedule(

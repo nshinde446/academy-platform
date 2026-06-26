@@ -22,6 +22,24 @@ interface ImportScheduleSummary {
   errors: string[];
 }
 
+interface ImportPreviewRow {
+  row_number: number;
+  date: string;
+  start_time: string;
+  end_time: string;
+  teacher: string;
+  batch: string;
+  subject: string;
+  status: string;
+  message: string;
+}
+
+interface ImportSchedulePreview {
+  rows: ImportPreviewRow[];
+  ok_count: number;
+  error_count: number;
+}
+
 // Per-row INPUT columns the lecture importer reads (see
 // backend/app/modules/lectures/services/import_service.py). Derived
 // values (status, conducted_at, etc.) don't belong in the template.
@@ -80,10 +98,52 @@ interface ImportScheduleDialogProps {
 export function ImportScheduleDialog({ branchId }: ImportScheduleDialogProps) {
   const [open, setOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState("");
+  const [preview, setPreview] = useState<ImportSchedulePreview | null>(null);
   const [summary, setSummary] = useState<ImportScheduleSummary | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+
+  function resetState() {
+    setError("");
+    setPreview(null);
+    setSummary(null);
+  }
+
+  async function handlePreview() {
+    if (!branchId) {
+      setError("No branch selected.");
+      return;
+    }
+    const file = fileRef.current?.files?.[0];
+    if (!file) {
+      setError("Please select a file.");
+      return;
+    }
+    setPreviewing(true);
+    setError("");
+    setSummary(null);
+    setPreview(null);
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await apiClient.post<ImportSchedulePreview>(
+        `/api/v1/lectures/import/preview?branch_id=${branchId}`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      );
+      setPreview(res.data);
+    } catch (err: any) {
+      setError(
+        err.response?.data?.error?.message ||
+          err.response?.data?.detail ||
+          "Preview failed",
+      );
+    } finally {
+      setPreviewing(false);
+    }
+  }
 
   async function handleUpload() {
     if (!branchId) {
@@ -127,10 +187,7 @@ export function ImportScheduleDialog({ branchId }: ImportScheduleDialogProps) {
       open={open}
       onOpenChange={(isOpen) => {
         setOpen(isOpen);
-        if (!isOpen) {
-          setError("");
-          setSummary(null);
-        }
+        if (!isOpen) resetState();
       }}
     >
       <DialogTrigger
@@ -186,11 +243,67 @@ export function ImportScheduleDialog({ branchId }: ImportScheduleDialogProps) {
               )}
             </div>
           )}
-          <Input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" />
+          {!summary && (
+            <Input
+              ref={fileRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              onChange={() => setPreview(null)}
+            />
+          )}
           <p className="text-[11px] text-muted-foreground">
             Date format: YYYY-MM-DD. Times in 24h HH:MM. Teachers matched by
             their account email; batches and subjects matched by code.
           </p>
+
+          {/* Dry-run preview grid (S6) */}
+          {preview && !summary && (
+            <div className="flex flex-col gap-2">
+              <p className="text-sm">
+                <span className="font-medium text-[var(--success)]">
+                  {preview.ok_count} ready
+                </span>
+                {preview.error_count > 0 && (
+                  <>
+                    {" · "}
+                    <span className="font-medium text-destructive">
+                      {preview.error_count} with problems
+                    </span>{" "}
+                    (these rows will be skipped)
+                  </>
+                )}
+              </p>
+              <div className="max-h-64 overflow-auto rounded-lg border ring-1 ring-foreground/10 divide-y divide-border">
+                {preview.rows.map((r) => (
+                  <div
+                    key={r.row_number}
+                    className="flex items-start gap-2 px-3 py-1.5 text-xs"
+                  >
+                    <span
+                      className={
+                        "mt-0.5 inline-block h-2 w-2 shrink-0 rounded-full " +
+                        (r.status === "ok" ? "bg-emerald-500" : "bg-destructive")
+                      }
+                      aria-hidden
+                    />
+                    <span className="w-28 shrink-0 tabular-nums text-muted-foreground">
+                      {r.date} {r.start_time}
+                    </span>
+                    <span className="flex-1">
+                      {r.status === "ok" ? (
+                        r.message
+                      ) : (
+                        <span className="text-destructive">
+                          Row {r.row_number}: {r.message}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-end gap-2">
             <DialogClose
               render={
@@ -199,10 +312,29 @@ export function ImportScheduleDialog({ branchId }: ImportScheduleDialogProps) {
                 </Button>
               }
             />
-            {!summary && (
-              <Button onClick={handleUpload} disabled={uploading}>
-                {uploading ? "Uploading…" : "Upload"}
+            {!summary && !preview && (
+              <Button onClick={handlePreview} disabled={previewing}>
+                {previewing ? "Checking…" : "Preview"}
               </Button>
+            )}
+            {!summary && preview && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPreview(null)}
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={handleUpload}
+                  disabled={uploading || preview.ok_count === 0}
+                >
+                  {uploading
+                    ? "Importing…"
+                    : `Import ${preview.ok_count} row(s)`}
+                </Button>
+              </>
             )}
           </div>
         </div>
