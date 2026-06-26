@@ -29,6 +29,11 @@ export const lectureKeys = {
   list: (branchId: string) => [...lectureKeys.all, "list", branchId] as const,
 };
 
+export const pendingActualsKeys = {
+  all: ["lectures-pending-actuals"] as const,
+  list: (branchId: string) => [...pendingActualsKeys.all, branchId] as const,
+};
+
 export const sessionKeys = {
   all: ["lecture-sessions"] as const,
   list: (branchId: string) => [...sessionKeys.all, "list", branchId] as const,
@@ -118,6 +123,20 @@ export function useLectures(branchId: string | undefined) {
   });
 }
 
+export function usePendingActuals(branchId: string | undefined) {
+  return useQuery<LectureResponse[]>({
+    queryKey: pendingActualsKeys.list(branchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<LectureResponse[]>(
+        "/api/v1/lectures/pending-actuals",
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    enabled: !!branchId,
+  });
+}
+
 export function useCreateLecture(branchId: string | undefined) {
   const queryClient = useQueryClient();
 
@@ -176,6 +195,9 @@ export function useCompleteLecture(branchId: string | undefined) {
         queryClient.invalidateQueries({
           queryKey: lectureKeys.list(branchId),
         });
+        queryClient.invalidateQueries({
+          queryKey: pendingActualsKeys.list(branchId),
+        });
       }
     },
   });
@@ -202,6 +224,9 @@ export function useMarkNoShow(branchId: string | undefined) {
       if (branchId) {
         queryClient.invalidateQueries({
           queryKey: lectureKeys.list(branchId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: pendingActualsKeys.list(branchId),
         });
       }
     },
@@ -243,6 +268,9 @@ export function useCancelLecture(branchId: string | undefined) {
       if (branchId) {
         queryClient.invalidateQueries({
           queryKey: lectureKeys.list(branchId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: pendingActualsKeys.list(branchId),
         });
       }
     },
@@ -331,6 +359,9 @@ export function useUpdateActuals(branchId: string | undefined) {
       if (branchId) {
         queryClient.invalidateQueries({ queryKey: lectureKeys.list(branchId) });
         queryClient.invalidateQueries({ queryKey: productivityKeys.all });
+        queryClient.invalidateQueries({
+          queryKey: pendingActualsKeys.list(branchId),
+        });
       }
     },
   });

@@ -469,6 +469,19 @@ async def list_eligible_substitutes(
     )
 
 
+@router.get("/pending-actuals", response_model=list[LectureResponse])
+async def list_pending_actuals(
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])
+    ),
+    session: AsyncSession = Depends(get_db),
+):
+    """End-of-day worklist: past lectures whose scheduled end has elapsed but
+    that were never closed out (still scheduled/started/paused), oldest first."""
+    return await lecture_service.get_pending_actuals(session, branch_id)
+
+
 @router.get("/{lecture_id}", response_model=LectureResponse)
 async def get_lecture(
     lecture_id: uuid.UUID,

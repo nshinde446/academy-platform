@@ -138,6 +138,29 @@ async def list_by_branch(
     return list(result.scalars().all())
 
 
+async def list_pending_actuals(
+    session: AsyncSession, branch_id: uuid.UUID, now: datetime, limit: int = 100
+) -> list[Lecture]:
+    """Lectures whose scheduled end has passed but that were never closed out —
+    still scheduled/started/paused with no recorded outcome. These need an
+    end-of-day update (record actuals, or mark cancelled/no-show). Oldest first
+    so the longest-overdue surface at the top."""
+    result = await session.execute(
+        select(Lecture)
+        .where(
+            Lecture.branch_id == branch_id,
+            Lecture.is_deleted == False,
+            Lecture.lecture_status.in_(
+                ["scheduled", "rescheduled", "started", "paused"]
+            ),
+            Lecture.scheduled_end < now,
+        )
+        .order_by(Lecture.scheduled_start.asc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 async def update(session: AsyncSession, lecture: Lecture, **kwargs) -> Lecture:
     for key, value in kwargs.items():
         if value is not None:

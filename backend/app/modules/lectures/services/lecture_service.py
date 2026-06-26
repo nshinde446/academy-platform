@@ -237,6 +237,13 @@ async def list_lectures(session: AsyncSession, branch_id: uuid.UUID, offset: int
     return await lecture_repository.list_by_branch(session, branch_id, offset, limit)
 
 
+async def get_pending_actuals(session: AsyncSession, branch_id: uuid.UUID):
+    """The end-of-day worklist: past lectures (scheduled end already elapsed)
+    that were never closed out, so nothing silently slips through."""
+    now = datetime.now(timezone.utc)
+    return await lecture_repository.list_pending_actuals(session, branch_id, now)
+
+
 async def start_lecture(
     session: AsyncSession,
     lecture_id: uuid.UUID,

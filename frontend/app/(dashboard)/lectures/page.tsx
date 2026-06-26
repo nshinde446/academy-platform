@@ -25,6 +25,7 @@ import {
   useLectureSessions,
   useMarkNoShow,
   useMarkSubstitute,
+  usePendingActuals,
   useStartLecture,
   useUpdateActuals,
   useClassrooms,
@@ -61,6 +62,7 @@ import { SessionList } from "./_components/session-list";
 import { downloadScheduleCsv } from "./_lib/export-schedule";
 import { TimetableDialog } from "./_components/timetable-dialog";
 import { HolidaysDialog } from "./_components/holidays-dialog";
+import { PendingActualsPanel } from "./_components/pending-actuals-panel";
 import { TeacherLeaveDialog } from "./_components/teacher-leave-dialog";
 
 const SELECT_CLASS =
@@ -207,6 +209,7 @@ function LecturesPageBody() {
   const [copyTargetDate, setCopyTargetDate] = useState("");
 
   const lecturesQuery = useLectures(branchId);
+  const pendingActualsQuery = usePendingActuals(branchId);
   const sessionsQuery = useLectureSessions(branchId);
   const batchesQuery = useBatchesForLectures(branchId);
   const teachersQuery = useTeachers(branchId);
@@ -227,6 +230,7 @@ function LecturesPageBody() {
   const teachers = teachersQuery.data ?? [];
   const classrooms = classroomsQuery.data ?? [];
   const lectures = lecturesQuery.data ?? [];
+  const pendingActuals = pendingActualsQuery.data ?? [];
   const sessions = sessionsQuery.data ?? [];
 
   // Resolve all subjects/topics referenced by the visible lectures so the
@@ -669,6 +673,15 @@ function LecturesPageBody() {
         </>
       ) : (
         <>
+          {/* End-of-day worklist — past lectures not yet closed out */}
+          <PendingActualsPanel
+            lectures={pendingActuals}
+            batches={batches}
+            teachers={teachers}
+            subjects={allSubjects}
+            onActuals={handleActuals}
+          />
+
           {/* Filters */}
           <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
             <Input
