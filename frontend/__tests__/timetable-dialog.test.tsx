@@ -35,6 +35,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   (apiClient.get as ReturnType<typeof vi.fn>).mockImplementation(
     (url: string) => {
+      // Subject→Teacher lock: teachers come from the by-subject endpoint.
+      if (url.includes("/teachers/by-subject"))
+        return Promise.resolve({ data: TEACHERS });
       if (url.includes("/timetable")) return Promise.resolve({ data: [] });
       if (url.includes("/subjects"))
         return Promise.resolve({
@@ -91,8 +94,10 @@ describe("TimetableDialog", () => {
     await user.selectOptions(batchSelect, "b1");
     await user.click(screen.getByRole("button", { name: "+ Add slot" }));
 
-    // Fill subject + teacher so the slot is complete.
+    // Pick subject → the teacher dropdown loads only that subject's teachers.
     await user.selectOptions(screen.getByLabelText("Subject for slot 1"), "s1");
+    // Wait for the subject-scoped teacher option to arrive before selecting.
+    await screen.findByRole("option", { name: /Asha Kulkarni/ });
     await user.selectOptions(screen.getByLabelText("Teacher for slot 1"), "t1");
 
     await user.click(screen.getByRole("button", { name: "Save timetable" }));
@@ -104,5 +109,24 @@ describe("TimetableDialog", () => {
         { params: { branch_id: "br1", batch_id: "b1" } }
       );
     });
+  });
+
+  it("disables the teacher dropdown until a subject is chosen (Subject→Teacher lock)", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole("button", { name: "Weekly Timetable" }));
+    await user.selectOptions(await screen.findByLabelText("Batch *"), "b1");
+    await user.click(screen.getByRole("button", { name: "+ Add slot" }));
+
+    // No subject yet → teacher dropdown is disabled, no teacher options.
+    expect(screen.getByLabelText("Teacher for slot 1")).toBeDisabled();
+    expect(
+      screen.queryByRole("option", { name: /Asha Kulkarni/ })
+    ).toBeNull();
+
+    // Pick subject → teacher dropdown enables and lists the subject's teachers.
+    await user.selectOptions(screen.getByLabelText("Subject for slot 1"), "s1");
+    await screen.findByRole("option", { name: /Asha Kulkarni/ });
+    expect(screen.getByLabelText("Teacher for slot 1")).not.toBeDisabled();
   });
 });

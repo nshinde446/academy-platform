@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
+import apiClient from "@/services/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +15,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import {
+  teacherKeys,
   useBatchTimetable,
   useGenerateSchedule,
   useSetBatchTimetable,
@@ -75,7 +78,6 @@ function emptySlot(): TimetableSlot {
 export function TimetableDialog({
   branchId,
   batches,
-  teachers,
   classrooms,
 }: TimetableDialogProps) {
   const [open, setOpen] = useState(false);
@@ -96,6 +98,37 @@ export function TimetableDialog({
   const genMutation = useGenerateSchedule(branchId);
 
   const subjects = subjectsQuery.data ?? [];
+
+  // Subject→Teacher lock: each slot's teacher dropdown must list only teachers
+  // assigned to that slot's subject (not every branch teacher). Fetch the
+  // by-subject teacher set for each distinct subject referenced by the slots.
+  const distinctSubjectIds = useMemo(
+    () =>
+      Array.from(
+        new Set(slots.map((s) => s.subject_id).filter(Boolean))
+      ) as string[],
+    [slots]
+  );
+  const teacherQueries = useQueries({
+    queries: distinctSubjectIds.map((sid) => ({
+      queryKey: teacherKeys.bySubject(branchId ?? "", sid),
+      queryFn: async () => {
+        const res = await apiClient.get<TeacherSummary[]>(
+          "/api/v1/teachers/by-subject",
+          { params: { branch_id: branchId, subject_id: sid } }
+        );
+        return res.data;
+      },
+      enabled: !!branchId && !!sid,
+    })),
+  });
+  const teachersBySubject = useMemo(() => {
+    const map = new Map<string, TeacherSummary[]>();
+    distinctSubjectIds.forEach((sid, i) => {
+      map.set(sid, (teacherQueries[i]?.data as TeacherSummary[] | undefined) ?? []);
+    });
+    return map;
+  }, [distinctSubjectIds, teacherQueries]);
 
   // Load the saved slots whenever a batch's timetable arrives.
   useEffect(() => {
@@ -238,102 +271,121 @@ export function TimetableDialog({
                   </p>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {slots.map((s, i) => (
-                      <div
-                        key={i}
-                        className="grid grid-cols-2 gap-2 rounded-lg border p-2 sm:grid-cols-7 sm:items-center"
-                        data-testid="timetable-slot"
-                      >
-                        <select
-                          aria-label={`Day for slot ${i + 1}`}
-                          value={s.day_of_week}
-                          onChange={(e) =>
-                            update(i, { day_of_week: Number(e.target.value) })
-                          }
-                          className={SELECT_CLASS}
+                    {slots.map((s, i) => {
+                      // Teacher options are scoped to the slot's subject
+                      // (Subject→Teacher lock) — never the full teacher list.
+                      const slotTeachers = s.subject_id
+                        ? teachersBySubject.get(s.subject_id) ?? []
+                        : [];
+                      const teacherPlaceholder = !s.subject_id
+                        ? "Pick subject first"
+                        : slotTeachers.length
+                          ? "Teacher…"
+                          : "No teacher for this subject";
+                      return (
+                        <div
+                          key={i}
+                          className="flex flex-wrap items-center gap-2 rounded-lg border p-2"
+                          data-testid="timetable-slot"
                         >
-                          {DAYS.map((d) => (
-                            <option key={d.value} value={d.value}>
-                              {d.label}
-                            </option>
-                          ))}
-                        </select>
-                        <Input
-                          aria-label={`Start for slot ${i + 1}`}
-                          type="time"
-                          value={s.start_time}
-                          onChange={(e) =>
-                            update(i, { start_time: e.target.value })
-                          }
-                          className="h-9"
-                        />
-                        <Input
-                          aria-label={`End for slot ${i + 1}`}
-                          type="time"
-                          value={s.end_time}
-                          onChange={(e) =>
-                            update(i, { end_time: e.target.value })
-                          }
-                          className="h-9"
-                        />
-                        <select
-                          aria-label={`Subject for slot ${i + 1}`}
-                          value={s.subject_id ?? ""}
-                          onChange={(e) =>
-                            update(i, { subject_id: e.target.value || null })
-                          }
-                          className={SELECT_CLASS}
-                        >
-                          <option value="">Subject…</option>
-                          {subjects.map((sub) => (
-                            <option key={sub.id} value={sub.id}>
-                              {sub.name}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          aria-label={`Teacher for slot ${i + 1}`}
-                          value={s.teacher_id ?? ""}
-                          onChange={(e) =>
-                            update(i, { teacher_id: e.target.value || null })
-                          }
-                          className={SELECT_CLASS}
-                        >
-                          <option value="">Teacher…</option>
-                          {teachers.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.first_name} {t.last_name}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          aria-label={`Classroom for slot ${i + 1}`}
-                          value={s.classroom_id ?? ""}
-                          onChange={(e) =>
-                            update(i, { classroom_id: e.target.value || null })
-                          }
-                          className={SELECT_CLASS}
-                        >
-                          <option value="">Room…</option>
-                          {classrooms.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          onClick={() =>
-                            setSlots((p) => p.filter((_, idx) => idx !== i))
-                          }
-                          aria-label={`Remove slot ${i + 1}`}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    ))}
+                          <select
+                            aria-label={`Day for slot ${i + 1}`}
+                            value={s.day_of_week}
+                            onChange={(e) =>
+                              update(i, { day_of_week: Number(e.target.value) })
+                            }
+                            className={`${SELECT_CLASS} w-[88px] shrink-0`}
+                          >
+                            {DAYS.map((d) => (
+                              <option key={d.value} value={d.value}>
+                                {d.label}
+                              </option>
+                            ))}
+                          </select>
+                          <Input
+                            aria-label={`Start for slot ${i + 1}`}
+                            type="time"
+                            value={s.start_time}
+                            onChange={(e) =>
+                              update(i, { start_time: e.target.value })
+                            }
+                            className="h-9 w-[116px] shrink-0"
+                          />
+                          <Input
+                            aria-label={`End for slot ${i + 1}`}
+                            type="time"
+                            value={s.end_time}
+                            onChange={(e) =>
+                              update(i, { end_time: e.target.value })
+                            }
+                            className="h-9 w-[116px] shrink-0"
+                          />
+                          <select
+                            aria-label={`Subject for slot ${i + 1}`}
+                            value={s.subject_id ?? ""}
+                            onChange={(e) =>
+                              // Changing subject invalidates the picked teacher —
+                              // clear it so only a valid teacher can be re-picked.
+                              update(i, {
+                                subject_id: e.target.value || null,
+                                teacher_id: null,
+                              })
+                            }
+                            className={`${SELECT_CLASS} min-w-[140px] flex-1`}
+                          >
+                            <option value="">Subject…</option>
+                            {subjects.map((sub) => (
+                              <option key={sub.id} value={sub.id}>
+                                {sub.name}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            aria-label={`Teacher for slot ${i + 1}`}
+                            value={s.teacher_id ?? ""}
+                            disabled={!s.subject_id}
+                            onChange={(e) =>
+                              update(i, { teacher_id: e.target.value || null })
+                            }
+                            className={`${SELECT_CLASS} min-w-[140px] flex-1 disabled:opacity-60`}
+                          >
+                            <option value="">{teacherPlaceholder}</option>
+                            {slotTeachers.map((t) => (
+                              <option key={t.id} value={t.id}>
+                                {t.first_name} {t.last_name}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            aria-label={`Classroom for slot ${i + 1}`}
+                            value={s.classroom_id ?? ""}
+                            onChange={(e) =>
+                              update(i, { classroom_id: e.target.value || null })
+                            }
+                            className={`${SELECT_CLASS} min-w-[140px] flex-1`}
+                          >
+                            <option value="">Room…</option>
+                            {classrooms.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            onClick={() =>
+                              setSlots((p) => p.filter((_, idx) => idx !== i))
+                            }
+                            aria-label={`Remove slot ${i + 1}`}
+                            className="shrink-0"
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 
