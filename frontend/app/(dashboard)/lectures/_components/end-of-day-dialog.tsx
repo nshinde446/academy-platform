@@ -45,6 +45,18 @@ function localToIso(local: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+/** A lecture on a calendar day after today hasn't happened yet — the dialog
+ * opens in topic-only "plan" mode for it (no actuals, no completion). */
+function isFutureDay(iso: string): boolean {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(d);
+  day.setHours(0, 0, 0, 0);
+  return day.getTime() > today.getTime();
+}
+
 export function EndOfDayDialog({
   branchId,
   lecture,
@@ -60,6 +72,10 @@ export function EndOfDayDialog({
 
   const topicsQuery = useTopicsBySubject(branchId, lecture?.subject_id);
   const topics = topicsQuery.data ?? [];
+
+  // Future-dated lecture → plan mode: set the planned topic only. Actuals and
+  // completion are blocked (server-enforced) until the lecture's day.
+  const isFuture = lecture ? isFutureDay(lecture.scheduled_start) : false;
 
   // Seed the form from the lecture: prefer any actuals already recorded, else
   // default to the scheduled times so the admin only nudges the minutes.
@@ -95,6 +111,20 @@ export function EndOfDayDialog({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!lecture) return;
+    // Plan mode: topic only, no actual times (server rejects future actuals).
+    if (isFuture) {
+      try {
+        await onSubmit(lecture.id, { topic_id: topicId || null });
+        onOpenChange(false);
+      } catch (err: any) {
+        setError(
+          err?.response?.data?.error?.message ||
+            err?.response?.data?.detail ||
+            "Failed to save plan"
+        );
+      }
+      return;
+    }
     const startIso = localToIso(actualStart);
     if (!startIso) {
       setError("Actual start time is required");
@@ -124,36 +154,41 @@ export function EndOfDayDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup className="max-w-lg">
-        <DialogTitle>End-of-Day Update</DialogTitle>
+        <DialogTitle>{isFuture ? "Plan Lecture Topic" : "End-of-Day Update"}</DialogTitle>
         <DialogDescription>
-          Record what actually happened — start, end, and topic taught. Setting
-          an end time completes the lecture; the late-start flag and teaching
-          duration are computed for you.
+          {isFuture
+            ? "This lecture is scheduled for a future date — set the topic you " +
+              "plan to cover. Actual start/end and completion unlock on the day."
+            : "Record what actually happened — start, end, and topic taught. " +
+              "Setting an end time completes the lecture; the late-start flag " +
+              "and teaching duration are computed for you."}
         </DialogDescription>
         <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
           {error && <p className="text-sm text-destructive">{error}</p>}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="eod_start">Actual Start *</Label>
-              <Input
-                id="eod_start"
-                type="datetime-local"
-                value={actualStart}
-                onChange={(e) => setActualStart(e.target.value)}
-                required
-              />
+          {!isFuture && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="eod_start">Actual Start *</Label>
+                <Input
+                  id="eod_start"
+                  type="datetime-local"
+                  value={actualStart}
+                  onChange={(e) => setActualStart(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="eod_end">Actual End</Label>
+                <Input
+                  id="eod_end"
+                  type="datetime-local"
+                  value={actualEnd}
+                  onChange={(e) => setActualEnd(e.target.value)}
+                />
+              </div>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="eod_end">Actual End</Label>
-              <Input
-                id="eod_end"
-                type="datetime-local"
-                value={actualEnd}
-                onChange={(e) => setActualEnd(e.target.value)}
-              />
-            </div>
-          </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="eod_topic">Topic Taught</Label>
@@ -179,7 +214,7 @@ export function EndOfDayDialog({
             </select>
           </div>
 
-          {preview && (
+          {!isFuture && preview && (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-xs">
               {preview.isLate ? (
                 <Badge variant="destructive">
@@ -206,7 +241,11 @@ export function EndOfDayDialog({
               }
             />
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : "Save actuals"}
+              {isPending
+                ? "Saving..."
+                : isFuture
+                  ? "Save plan"
+                  : "Save actuals"}
             </Button>
           </div>
         </form>

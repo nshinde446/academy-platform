@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Table,
@@ -179,6 +180,38 @@ function teacherName(t: TeacherSummary | undefined): string {
   return [t.first_name, t.last_name].filter(Boolean).join(" ") || "—";
 }
 
+type SortKey =
+  | "batch"
+  | "teacher"
+  | "subject"
+  | "scheduled"
+  | "duration"
+  | "status";
+type SortDir = "asc" | "desc";
+
+function sortValue(
+  l: LectureResponse,
+  key: SortKey,
+  batches: BatchSummary[],
+  teachers: TeacherSummary[],
+  subjects: SubjectSummary[],
+): string | number {
+  switch (key) {
+    case "batch":
+      return (lookup(batches, l.batch_id)?.name ?? "").toLowerCase();
+    case "teacher":
+      return teacherName(lookup(teachers, l.teacher_id)).toLowerCase();
+    case "subject":
+      return (lookup(subjects, l.subject_id)?.name ?? "").toLowerCase();
+    case "scheduled":
+      return new Date(l.scheduled_start).getTime() || 0;
+    case "duration":
+      return l.actual_duration_min ?? -1; // un-timed rows sort last (asc)
+    case "status":
+      return l.lecture_status;
+  }
+}
+
 export function LectureTable({
   lectures,
   batches,
@@ -202,6 +235,57 @@ export function LectureTable({
     selectable &&
     lectures.length > 0 &&
     lectures.every((l) => selectedIds!.has(l.id));
+
+  // Column sort — defaults to scheduled time, newest first (the backend order).
+  const [sortKey, setSortKey] = useState<SortKey>("scheduled");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+  const sorted = useMemo(() => {
+    const arr = [...lectures];
+    arr.sort((a, b) => {
+      const va = sortValue(a, sortKey, batches, teachers, subjects);
+      const vb = sortValue(b, sortKey, batches, teachers, subjects);
+      let c = 0;
+      if (typeof va === "number" && typeof vb === "number") c = va - vb;
+      else c = String(va).localeCompare(String(vb));
+      return sortDir === "asc" ? c : -c;
+    });
+    return arr;
+  }, [lectures, sortKey, sortDir, batches, teachers, subjects]);
+
+  function SortHead({
+    label,
+    sortKey: key,
+    className,
+  }: {
+    label: string;
+    sortKey: SortKey;
+    className?: string;
+  }) {
+    const active = sortKey === key;
+    return (
+      <TableHead className={className}>
+        <button
+          type="button"
+          onClick={() => toggleSort(key)}
+          className="inline-flex items-center gap-1 font-medium hover:text-foreground"
+          aria-label={`Sort by ${label}`}
+        >
+          {label}
+          <span className="text-[10px] text-muted-foreground">
+            {active ? (sortDir === "asc" ? "▲" : "▼") : "↕"}
+          </span>
+        </button>
+      </TableHead>
+    );
+  }
+
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
       <Table>
@@ -218,21 +302,31 @@ export function LectureTable({
                 />
               </TableHead>
             )}
-            <TableHead>Batch</TableHead>
-            <TableHead className="hidden sm:table-cell">Teacher</TableHead>
-            <TableHead className="hidden md:table-cell">Subject</TableHead>
+            <SortHead label="Batch" sortKey="batch" />
+            <SortHead
+              label="Teacher"
+              sortKey="teacher"
+              className="hidden sm:table-cell"
+            />
+            <SortHead
+              label="Subject"
+              sortKey="subject"
+              className="hidden md:table-cell"
+            />
             <TableHead className="hidden lg:table-cell">Topic</TableHead>
-            <TableHead>Scheduled</TableHead>
+            <SortHead label="Scheduled" sortKey="scheduled" />
             <TableHead className="hidden lg:table-cell">Actual</TableHead>
-            <TableHead className="hidden xl:table-cell text-right">
-              Duration
-            </TableHead>
-            <TableHead>Status</TableHead>
+            <SortHead
+              label="Duration"
+              sortKey="duration"
+              className="hidden xl:table-cell text-right"
+            />
+            <SortHead label="Status" sortKey="status" />
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {lectures.map((l) => {
+          {sorted.map((l) => {
             const batch = lookup(batches, l.batch_id);
             const teacher = lookup(teachers, l.teacher_id);
             const actualTeacher = lookup(teachers, l.actual_teacher_id);
@@ -255,13 +349,14 @@ export function LectureTable({
             const canSubstitute =
               l.lecture_status !== "cancelled" &&
               l.lecture_status !== "no_show";
-            // End-of-day actuals: only once the class day has arrived. A
-            // future-scheduled lecture hasn't happened, so it can't have
-            // actuals (mirrors the backend guard).
+            // The actuals/plan action is available on any non-terminal lecture.
+            // For a future-scheduled lecture it opens in topic-only "plan" mode
+            // (set what will be taught); actuals/completion stay blocked until
+            // the day (mirrors the backend guard).
             const canActuals =
               l.lecture_status !== "cancelled" &&
-              l.lecture_status !== "no_show" &&
-              !isFutureDay(l.scheduled_start);
+              l.lecture_status !== "no_show";
+            const isFuture = isFutureDay(l.scheduled_start);
             const duration = formatDuration(l.actual_duration_min);
 
             return (
@@ -405,9 +500,17 @@ export function LectureTable({
                         size="sm"
                         variant="outline"
                         onClick={() => onActuals(l)}
-                        aria-label={`Record end-of-day actuals for lecture ${l.id}`}
+                        aria-label={
+                          isFuture
+                            ? `Plan topic for lecture ${l.id}`
+                            : `Record end-of-day actuals for lecture ${l.id}`
+                        }
                       >
-                        {l.actual_start ? "Edit Actuals" : "End of Day"}
+                        {isFuture
+                          ? "Plan Topic"
+                          : l.actual_start
+                            ? "Edit Actuals"
+                            : "End of Day"}
                       </Button>
                     )}
                     <Link

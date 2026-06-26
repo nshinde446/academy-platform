@@ -230,7 +230,7 @@ describe("LectureTable", () => {
     expect(onToggleSelect).toHaveBeenCalledWith("l1");
   });
 
-  it("hides End of Day / Edit Actuals for a future-dated lecture", () => {
+  it("shows Plan Topic (not End-of-Day) for a future-dated lecture", () => {
     const future = new Date();
     future.setFullYear(future.getFullYear() + 1);
     const iso = future.toISOString();
@@ -241,6 +241,10 @@ describe("LectureTable", () => {
         lecture_status: "scheduled",
       }),
     ]);
+    // Future → topic-only "plan" action, never the end-of-day actuals one.
+    expect(
+      screen.getByRole("button", { name: /plan topic/i })
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /end-of-day actuals/i })
     ).toBeNull();
@@ -257,6 +261,39 @@ describe("LectureTable", () => {
     expect(
       screen.getByRole("button", { name: /end-of-day actuals/i })
     ).toBeInTheDocument();
+  });
+
+  it("sorts rows when a column header is clicked", async () => {
+    const user = userEvent.setup();
+    const batches = [
+      { id: "bz", name: "Zeta", code: "Z", course_id: "c1" },
+      { id: "ba", name: "Alpha", code: "A", course_id: "c1" },
+    ];
+    const l1 = makeLecture({
+      id: "l1",
+      batch_id: "bz",
+      scheduled_start: "2026-05-21T10:00:00Z",
+    });
+    const l2 = makeLecture({
+      id: "l2",
+      batch_id: "ba",
+      scheduled_start: "2026-05-20T10:00:00Z",
+    });
+    render(
+      <LectureTable
+        lectures={[l1, l2]}
+        batches={batches}
+        teachers={TEACHERS}
+        subjects={SUBJECTS}
+        topics={TOPICS}
+        {...handlers}
+      />
+    );
+    // Default sort is scheduled desc → 05-21 (Zeta) row first.
+    expect(screen.getAllByRole("row")[1]).toHaveTextContent("Zeta");
+    // Click Batch → ascending by name → Alpha first.
+    await user.click(screen.getByRole("button", { name: /sort by batch/i }));
+    expect(screen.getAllByRole("row")[1]).toHaveTextContent("Alpha");
   });
 
   it("renders no checkbox column when selection props are omitted", () => {
