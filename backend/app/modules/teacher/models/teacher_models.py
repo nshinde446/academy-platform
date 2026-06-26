@@ -1,6 +1,7 @@
 import uuid
+from datetime import date
 
-from sqlalchemy import ForeignKey, Integer, String, Uuid
+from sqlalchemy import Date, ForeignKey, Integer, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database.base import BaseModel
@@ -36,6 +37,25 @@ class TeacherSubjectMapping(BaseModel):
     branch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=False
     )
+
+
+class TeacherLeave(BaseModel):
+    """A teacher's planned unavailability (inclusive start_date … end_date).
+
+    Scheduling rejects a lecture that lands on a teacher's leave, and the
+    substitute suggester excludes teachers who are on leave (S5)."""
+
+    __tablename__ = "teacher_leaves"
+
+    teacher_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("teachers.id"), nullable=False
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
+    )
+    start_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class TeacherBatchMapping(BaseModel):

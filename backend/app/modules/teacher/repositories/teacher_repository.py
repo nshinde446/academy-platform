@@ -4,7 +4,11 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.teacher.models.teacher_models import Teacher, TeacherSubjectMapping
+from app.modules.teacher.models.teacher_models import (
+    Teacher,
+    TeacherLeave,
+    TeacherSubjectMapping,
+)
 
 
 async def create(session: AsyncSession, **kwargs) -> Teacher:
@@ -19,6 +23,59 @@ async def get_by_id(session: AsyncSession, teacher_id: uuid.UUID) -> Teacher | N
         select(Teacher).where(Teacher.id == teacher_id, Teacher.is_deleted == False)
     )
     return result.scalar_one_or_none()
+
+
+# --- Teacher leave (S5) -----------------------------------------------------
+
+async def list_leaves(
+    session: AsyncSession, branch_id: uuid.UUID, teacher_id: uuid.UUID | None = None
+) -> list[TeacherLeave]:
+    query = select(TeacherLeave).where(
+        TeacherLeave.branch_id == branch_id,
+        TeacherLeave.is_deleted == False,
+    )
+    if teacher_id is not None:
+        query = query.where(TeacherLeave.teacher_id == teacher_id)
+    result = await session.execute(query.order_by(TeacherLeave.start_date))
+    return list(result.scalars().all())
+
+
+async def get_leave_by_id(
+    session: AsyncSession, leave_id: uuid.UUID
+) -> TeacherLeave | None:
+    result = await session.execute(
+        select(TeacherLeave).where(
+            TeacherLeave.id == leave_id, TeacherLeave.is_deleted == False
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_leave(session: AsyncSession, **kwargs) -> TeacherLeave:
+    leave = TeacherLeave(**kwargs)
+    session.add(leave)
+    await session.flush()
+    return leave
+
+
+async def soft_delete_leave(session: AsyncSession, leave: TeacherLeave) -> None:
+    leave.is_deleted = True
+    await session.flush()
+
+
+async def teacher_on_leave(
+    session: AsyncSession, teacher_id: uuid.UUID, on_date
+) -> bool:
+    """Whether the teacher has an active leave covering ``on_date`` (inclusive)."""
+    result = await session.execute(
+        select(TeacherLeave.id).where(
+            TeacherLeave.teacher_id == teacher_id,
+            TeacherLeave.is_deleted == False,
+            TeacherLeave.start_date <= on_date,
+            TeacherLeave.end_date >= on_date,
+        )
+    )
+    return result.first() is not None
 
 
 async def list_by_branch(

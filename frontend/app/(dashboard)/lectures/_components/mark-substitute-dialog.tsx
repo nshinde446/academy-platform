@@ -11,6 +11,7 @@ import {
   DialogDescription,
   DialogClose,
 } from "@/components/ui/dialog";
+import { useEligibleSubstitutes } from "../_hooks/use-lectures";
 import type {
   ChangeReason,
   LectureResponse,
@@ -24,6 +25,9 @@ interface MarkSubstituteDialogProps {
   /** Optional: pass all branch lectures to enable smart substitute
    * suggestions (subject experience, topic experience, free slot). */
   allLectures?: LectureResponse[];
+  /** Branch — enables the backend eligible-substitutes filter (qualified for
+   * the subject, free at this time, not on leave). */
+  branchId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (data: LectureSubstitute) => Promise<void> | void;
@@ -134,6 +138,7 @@ export function MarkSubstituteDialog({
   lecture,
   teachers,
   allLectures,
+  branchId,
   open,
   onOpenChange,
   onSubmit,
@@ -143,6 +148,15 @@ export function MarkSubstituteDialog({
   const [reason, setReason] = useState<ChangeReason>("SUBSTITUTE");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
+
+  // Backend authority on who can actually cover this lecture: qualified for the
+  // subject, free at this time, and not on leave. The picker is restricted to
+  // these so an admin can't choose someone the API would 422 on.
+  const eligibleQuery = useEligibleSubstitutes(branchId, lecture?.id, open);
+  const eligibleIds = useMemo(
+    () => new Set((eligibleQuery.data ?? []).map((e) => e.teacher_id)),
+    [eligibleQuery.data]
+  );
 
   useEffect(() => {
     if (open) {
@@ -162,14 +176,21 @@ export function MarkSubstituteDialog({
   // rest so the dropdown order itself encodes the recommendation.
   const ranked = useMemo<RankedTeacher[]>(() => {
     if (!lecture) return [];
-    const candidates = teachers.filter((t) => t.id !== lecture.teacher_id);
+    let candidates = teachers.filter((t) => t.id !== lecture.teacher_id);
+    // Restrict to the backend-eligible set when we have it (keep the current
+    // substitute selectable so an existing pick can be reviewed/cleared).
+    if (branchId && eligibleQuery.isSuccess) {
+      candidates = candidates.filter(
+        (t) => eligibleIds.has(t.id) || t.id === lecture.actual_teacher_id,
+      );
+    }
     if (!allLectures || allLectures.length === 0) {
       return candidates.map((t) => ({ teacher: t, score: 0, reasons: [] }));
     }
     return rankCandidates(lecture, candidates, allLectures).sort(
       (a, b) => b.score - a.score,
     );
-  }, [lecture, teachers, allLectures]);
+  }, [lecture, teachers, allLectures, branchId, eligibleQuery.isSuccess, eligibleIds]);
 
   const suggested = ranked.filter((r) => r.score > 0);
   const others = ranked.filter((r) => r.score <= 0);
@@ -243,6 +264,12 @@ export function MarkSubstituteDialog({
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="sub_teacher">Actual teacher *</Label>
+            {branchId && eligibleQuery.isSuccess && ranked.length === 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                No eligible substitute — everyone qualified is busy at this time
+                or on leave.
+              </p>
+            )}
             <select
               id="sub_teacher"
               value={actualTeacherId}
