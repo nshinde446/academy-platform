@@ -74,6 +74,55 @@ export interface CopyScheduleSummary {
   errors: string[];
 }
 
+// S3 — recurring weekly timetable. day_of_week: Mon=0 … Sun=6.
+export interface TimetableSlot {
+  day_of_week: number;
+  start_time: string; // HH:MM
+  end_time: string; // HH:MM
+  subject_id: string | null;
+  teacher_id: string | null;
+  classroom_id: string | null;
+  delivery_mode: string;
+}
+
+export interface TimetableSlotResponse extends TimetableSlot {
+  id: string;
+  batch_id: string;
+}
+
+export interface GenerateScheduleSummary {
+  from_date: string;
+  to_date: string;
+  generated: number;
+  skipped: number;
+  errors: string[];
+}
+
+// S4 — holiday calendar (non-teaching days the scheduler skips).
+export interface HolidayResponse {
+  id: string;
+  branch_id: string;
+  holiday_date: string; // YYYY-MM-DD
+  name: string;
+}
+
+// S5 — a teacher who can actually cover a lecture (qualified, free, not on leave).
+export interface EligibleSubstitute {
+  teacher_id: string;
+  first_name: string;
+  last_name: string;
+}
+
+// S5 — a teacher's planned unavailability (inclusive date range).
+export interface TeacherLeaveResponse {
+  id: string;
+  teacher_id: string;
+  branch_id: string;
+  start_date: string; // YYYY-MM-DD
+  end_date: string; // YYYY-MM-DD
+  reason: string | null;
+}
+
 export interface ProductivityTeacherRow {
   teacher_id: string;
   first_name: string;

@@ -15,6 +15,12 @@ import type {
   SubjectSummary,
   TeacherSummary,
   TopicSummary,
+  TimetableSlot,
+  TimetableSlotResponse,
+  GenerateScheduleSummary,
+  HolidayResponse,
+  EligibleSubstitute,
+  TeacherLeaveResponse,
 } from "../_schemas/lecture";
 
 export const lectureKeys = {
@@ -60,6 +66,28 @@ export const batchKeys = {
 export const classroomKeys = {
   all: ["classrooms"] as const,
   list: (branchId: string) => [...classroomKeys.all, "list", branchId] as const,
+};
+
+export const timetableKeys = {
+  all: ["batch-timetable"] as const,
+  byBatch: (branchId: string, batchId: string) =>
+    [...timetableKeys.all, branchId, batchId] as const,
+};
+
+export const holidayKeys = {
+  all: ["holidays"] as const,
+  list: (branchId: string) => [...holidayKeys.all, branchId] as const,
+};
+
+export const leaveKeys = {
+  all: ["teacher-leaves"] as const,
+  list: (branchId: string) => [...leaveKeys.all, branchId] as const,
+};
+
+export const substituteKeys = {
+  all: ["eligible-substitutes"] as const,
+  forLecture: (branchId: string, lectureId: string) =>
+    [...substituteKeys.all, branchId, lectureId] as const,
 };
 
 export function useClassrooms(branchId: string | undefined) {
@@ -333,6 +361,205 @@ export function useCopyToNextDay(branchId: string | undefined) {
     onSuccess: () => {
       if (branchId) {
         queryClient.invalidateQueries({ queryKey: lectureKeys.list(branchId) });
+      }
+    },
+  });
+}
+
+export function useBatchTimetable(
+  branchId: string | undefined,
+  batchId: string | undefined
+) {
+  return useQuery<TimetableSlotResponse[]>({
+    queryKey: timetableKeys.byBatch(branchId!, batchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<TimetableSlotResponse[]>(
+        "/api/v1/lectures/timetable",
+        { params: { branch_id: branchId, batch_id: batchId } }
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!batchId,
+  });
+}
+
+export function useSetBatchTimetable(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      batchId,
+      slots,
+    }: {
+      batchId: string;
+      slots: TimetableSlot[];
+    }) => {
+      const res = await apiClient.put<TimetableSlotResponse[]>(
+        "/api/v1/lectures/timetable",
+        { slots },
+        { params: { branch_id: branchId, batch_id: batchId } }
+      );
+      return res.data;
+    },
+    onSuccess: (_data, { batchId }) => {
+      if (branchId) {
+        queryClient.invalidateQueries({
+          queryKey: timetableKeys.byBatch(branchId, batchId),
+        });
+      }
+    },
+  });
+}
+
+export function useGenerateSchedule(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      fromDate,
+      toDate,
+      batchId,
+    }: {
+      fromDate: string;
+      toDate: string;
+      batchId?: string;
+    }) => {
+      const res = await apiClient.post<GenerateScheduleSummary>(
+        "/api/v1/lectures/timetable/generate",
+        null,
+        {
+          params: {
+            branch_id: branchId,
+            from_date: fromDate,
+            to_date: toDate,
+            ...(batchId ? { batch_id: batchId } : {}),
+          },
+        }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: lectureKeys.list(branchId) });
+      }
+    },
+  });
+}
+
+export function useHolidays(branchId: string | undefined) {
+  return useQuery<HolidayResponse[]>({
+    queryKey: holidayKeys.list(branchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<HolidayResponse[]>(
+        "/api/v1/lectures/holidays",
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    enabled: !!branchId,
+  });
+}
+
+export function useAddHoliday(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ date, name }: { date: string; name: string }) => {
+      const res = await apiClient.post<HolidayResponse>(
+        "/api/v1/lectures/holidays",
+        { holiday_date: date, name },
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: holidayKeys.list(branchId) });
+      }
+    },
+  });
+}
+
+export function useDeleteHoliday(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (holidayId: string) => {
+      await apiClient.delete(`/api/v1/lectures/holidays/${holidayId}`, {
+        params: { branch_id: branchId },
+      });
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: holidayKeys.list(branchId) });
+      }
+    },
+  });
+}
+
+export function useEligibleSubstitutes(
+  branchId: string | undefined,
+  lectureId: string | undefined,
+  enabled: boolean
+) {
+  return useQuery<EligibleSubstitute[]>({
+    queryKey: substituteKeys.forLecture(branchId!, lectureId!),
+    queryFn: async () => {
+      const res = await apiClient.get<EligibleSubstitute[]>(
+        `/api/v1/lectures/${lectureId}/eligible-substitutes`,
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    enabled: enabled && !!branchId && !!lectureId,
+  });
+}
+
+export function useTeacherLeaves(branchId: string | undefined) {
+  return useQuery<TeacherLeaveResponse[]>({
+    queryKey: leaveKeys.list(branchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<TeacherLeaveResponse[]>(
+        "/api/v1/lectures/teacher-leaves",
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    enabled: !!branchId,
+  });
+}
+
+export function useAddTeacherLeave(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: {
+      teacher_id: string;
+      start_date: string;
+      end_date: string;
+      reason?: string | null;
+    }) => {
+      const res = await apiClient.post<TeacherLeaveResponse>(
+        "/api/v1/lectures/teacher-leaves",
+        body,
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: leaveKeys.list(branchId) });
+      }
+    },
+  });
+}
+
+export function useDeleteTeacherLeave(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (leaveId: string) => {
+      await apiClient.delete(`/api/v1/lectures/teacher-leaves/${leaveId}`, {
+        params: { branch_id: branchId },
+      });
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: leaveKeys.list(branchId) });
       }
     },
   });

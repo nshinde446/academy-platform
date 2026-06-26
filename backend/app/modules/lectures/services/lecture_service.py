@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -14,6 +14,7 @@ from app.modules.teacher.models.teacher_models import Teacher
 from app.modules.teacher.repositories import teacher_repository
 from app.modules.lectures.schemas.lecture_schemas import (
     AttendanceMark,
+    BatchTimetableUpdate,
     LectureActuals,
     LectureCreate,
     LectureNoShow,
@@ -184,6 +185,15 @@ async def schedule_lecture(
     )
 
     await _validate_teacher_subject(session, data.teacher_id, data.subject_id)
+
+    # Teacher availability (S5): a teacher on leave can't be scheduled.
+    if await teacher_repository.teacher_on_leave(
+        session, data.teacher_id, data.scheduled_start.date()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Teacher is on leave that day. Pick another teacher or date.",
+        )
 
     lecture = await lecture_repository.create(
         session,
@@ -557,9 +567,27 @@ async def copy_to_next_day(
     skipped = 0
     errors: list[str] = []
     created_ids: list[uuid.UUID] = []
+
+    # Don't copy onto a non-teaching day (S4): skip the whole batch and say why.
+    target_holidays = await _holiday_set(session, branch_id, target_date, target_date)
+    if target_date in target_holidays:
+        return {
+            "source_date": source_date.isoformat(),
+            "target_date": target_date.isoformat(),
+            "copied": 0,
+            "skipped": len(sources),
+            "errors": [f"{target_date.isoformat()} is a holiday — nothing copied"],
+        }
     for src in sources:
         new_start = src.scheduled_start + delta
         new_end = src.scheduled_end + delta
+        # Don't copy onto a day the teacher is on leave (S5).
+        if await teacher_repository.teacher_on_leave(
+            session, src.teacher_id, target_date
+        ):
+            skipped += 1
+            errors.append(f"{new_start.strftime('%H:%M')} {src.id}: teacher on leave")
+            continue
         try:
             await _check_conflicts(
                 session,
@@ -615,6 +643,504 @@ async def copy_to_next_day(
         "source_date": source_date.isoformat(),
         "target_date": target_date.isoformat(),
         "copied": copied,
+        "skipped": skipped,
+        "errors": errors,
+    }
+
+
+# --- Holiday calendar (S4) --------------------------------------------------
+
+async def list_holidays(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_date: date | None = None,
+    to_date: date | None = None,
+) -> list[dict]:
+    rows = await lecture_repository.list_holidays(
+        session, branch_id, from_date, to_date
+    )
+    return [
+        {
+            "id": h.id,
+            "branch_id": h.branch_id,
+            "holiday_date": h.holiday_date,
+            "name": h.name,
+        }
+        for h in rows
+    ]
+
+
+async def add_holiday(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    holiday_date: date,
+    name: str,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    # Reject a duplicate date so the calendar stays one-row-per-day.
+    existing = await lecture_repository.list_holidays(
+        session, branch_id, holiday_date, holiday_date
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{holiday_date.isoformat()} is already a holiday",
+        )
+    holiday = await lecture_repository.create_holiday(
+        session,
+        branch_id=branch_id,
+        holiday_date=holiday_date,
+        name=name,
+    )
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="CREATE",
+        table_name="holidays",
+        record_id=holiday.id,
+        new_values={"holiday_date": holiday_date.isoformat(), "name": name},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return {
+        "id": holiday.id,
+        "branch_id": holiday.branch_id,
+        "holiday_date": holiday.holiday_date,
+        "name": holiday.name,
+    }
+
+
+async def delete_holiday(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    holiday_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> None:
+    holiday = await lecture_repository.get_holiday_by_id(session, holiday_id)
+    if not holiday or holiday.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Holiday not found")
+    await lecture_repository.soft_delete_holiday(session, holiday)
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="DELETE",
+        table_name="holidays",
+        record_id=holiday.id,
+        old_values={"holiday_date": holiday.holiday_date.isoformat()},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+
+
+async def _holiday_set(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_date: date,
+    to_date: date,
+) -> set[date]:
+    rows = await lecture_repository.list_holidays(
+        session, branch_id, from_date, to_date
+    )
+    return {h.holiday_date for h in rows}
+
+
+# --- Substitute auto-suggest (S5) -------------------------------------------
+
+async def list_eligible_substitutes(
+    session: AsyncSession,
+    lecture_id: uuid.UUID,
+    branch_id: uuid.UUID,
+) -> list[dict]:
+    """Teachers who could actually cover this lecture: they teach the subject
+    (Subject→Teacher lock), they're free at the lecture's time (no conflict),
+    and they're not on leave that day. Excludes the originally-scheduled teacher.
+    This is what the substitute picker should show — so an admin can't choose a
+    teacher the backend would then reject with a 422.
+    """
+    lecture = await lecture_repository.get_by_id(session, lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture not found")
+    if lecture.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    qualified = await teacher_repository.list_for_subject(
+        session, branch_id, lecture.subject_id
+    )
+    on_date = _aware(lecture.scheduled_start).date()
+
+    out: list[dict] = []
+    for t in qualified:
+        if t.id == lecture.teacher_id:
+            continue
+        if await lecture_repository.check_teacher_conflict(
+            session,
+            t.id,
+            lecture.scheduled_start,
+            lecture.scheduled_end,
+            exclude_lecture_id=lecture.id,
+        ):
+            continue
+        if await teacher_repository.teacher_on_leave(session, t.id, on_date):
+            continue
+        out.append(
+            {"teacher_id": t.id, "first_name": t.first_name, "last_name": t.last_name}
+        )
+    return out
+
+
+# --- Teacher leave (S5) -----------------------------------------------------
+
+async def list_teacher_leaves(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    teacher_id: uuid.UUID | None = None,
+) -> list[dict]:
+    rows = await teacher_repository.list_leaves(session, branch_id, teacher_id)
+    return [
+        {
+            "id": l.id,
+            "teacher_id": l.teacher_id,
+            "branch_id": l.branch_id,
+            "start_date": l.start_date,
+            "end_date": l.end_date,
+            "reason": l.reason,
+        }
+        for l in rows
+    ]
+
+
+async def add_teacher_leave(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    start_date: date,
+    end_date: date,
+    reason: str | None,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    if end_date < start_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="end_date must not be before start_date",
+        )
+    teacher = await teacher_repository.get_by_id(session, teacher_id)
+    if not teacher or teacher.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
+    leave = await teacher_repository.create_leave(
+        session,
+        teacher_id=teacher_id,
+        branch_id=branch_id,
+        start_date=start_date,
+        end_date=end_date,
+        reason=reason,
+    )
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="CREATE",
+        table_name="teacher_leaves",
+        record_id=leave.id,
+        new_values={
+            "teacher_id": str(teacher_id),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+        },
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return {
+        "id": leave.id,
+        "teacher_id": leave.teacher_id,
+        "branch_id": leave.branch_id,
+        "start_date": leave.start_date,
+        "end_date": leave.end_date,
+        "reason": leave.reason,
+    }
+
+
+async def delete_teacher_leave(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    leave_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> None:
+    leave = await teacher_repository.get_leave_by_id(session, leave_id)
+    if not leave or leave.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Leave not found")
+    await teacher_repository.soft_delete_leave(session, leave)
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="DELETE",
+        table_name="teacher_leaves",
+        record_id=leave.id,
+        old_values={"teacher_id": str(leave.teacher_id)},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+
+
+# --- Weekly timetable (S3) --------------------------------------------------
+
+# Max span a single generate call may cover, so one click can't spawn years of
+# lectures. A full academic year fits comfortably.
+MAX_GENERATE_DAYS = 366
+
+
+def _parse_hhmm(value: str) -> time:
+    """Parse 'HH:MM' (24h). Raises ValueError on anything else."""
+    return datetime.strptime(value.strip(), "%H:%M").time()
+
+
+async def _slot_to_dict(slot) -> dict:
+    return {
+        "id": slot.id,
+        "batch_id": slot.batch_id,
+        "day_of_week": slot.day_of_week,
+        "start_time": slot.start_time,
+        "end_time": slot.end_time,
+        "subject_id": slot.subject_id,
+        "teacher_id": slot.teacher_id,
+        "classroom_id": slot.classroom_id,
+        "delivery_mode": slot.delivery_mode,
+    }
+
+
+async def get_batch_timetable(
+    session: AsyncSession, branch_id: uuid.UUID, batch_id: uuid.UUID
+) -> list[dict]:
+    batch = await batch_repository.get_by_id(session, batch_id)
+    if not batch or batch.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+    slots = await lecture_repository.list_batch_schedule(session, batch_id)
+    return [await _slot_to_dict(s) for s in slots]
+
+
+async def set_batch_timetable(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    data: BatchTimetableUpdate,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> list[dict]:
+    """Replace a batch's whole weekly pattern with the given slots.
+
+    Validates each slot (day, times, delivery) and — when both subject and
+    teacher are set — the Subject→Teacher lock, so a saved timetable can never
+    generate an invalid lecture. Slots may omit subject/teacher while drafting;
+    the generator skips incomplete slots rather than the save rejecting them.
+    """
+    batch = await batch_repository.get_by_id(session, batch_id)
+    if not batch or batch.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+
+    for i, slot in enumerate(data.slots):
+        if slot.day_of_week < 0 or slot.day_of_week > 6:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Slot {i}: day_of_week must be 0 (Mon) … 6 (Sun)",
+            )
+        try:
+            start_t = _parse_hhmm(slot.start_time)
+            end_t = _parse_hhmm(slot.end_time)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Slot {i}: start_time/end_time must be HH:MM (24h)",
+            )
+        if end_t <= start_t:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Slot {i}: end_time must be after start_time",
+            )
+        if slot.delivery_mode not in VALID_DELIVERY_MODES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Slot {i}: invalid delivery mode '{slot.delivery_mode}'",
+            )
+        # Subject→Teacher lock applies the moment both are pinned.
+        if slot.subject_id is not None and slot.teacher_id is not None:
+            await _validate_teacher_subject(
+                session, slot.teacher_id, slot.subject_id
+            )
+
+    await lecture_repository.delete_batch_schedule(session, batch_id)
+    for slot in data.slots:
+        await lecture_repository.create_schedule_slot(
+            session,
+            batch_id=batch_id,
+            branch_id=branch_id,
+            day_of_week=slot.day_of_week,
+            start_time=slot.start_time,
+            end_time=slot.end_time,
+            subject_id=slot.subject_id,
+            teacher_id=slot.teacher_id,
+            classroom_id=slot.classroom_id,
+            delivery_mode=slot.delivery_mode,
+        )
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="UPDATE",
+        table_name="batch_schedules",
+        record_id=batch_id,
+        new_values={"slot_count": len(data.slots)},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return await get_batch_timetable(session, branch_id, batch_id)
+
+
+async def generate_from_timetable(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    batch_id: uuid.UUID | None,
+    from_date: date,
+    to_date: date,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    """Generate scheduled lectures from a weekly timetable across a date range.
+
+    For each date in [from_date, to_date] whose weekday matches a slot, create a
+    'scheduled' lecture (topic left blank — entered fresh at EOD). Conflict-aware
+    and idempotent like copy-to-next-day: a slot that would collide on a given
+    day is skipped and reported, so re-running doesn't double-book. Incomplete
+    slots (missing subject or teacher) are skipped with an error. Dates on the
+    branch holiday calendar (S4) are skipped entirely.
+    """
+    if to_date < from_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="to_date must not be before from_date",
+        )
+    if (to_date - from_date).days > MAX_GENERATE_DAYS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Range too large (max {MAX_GENERATE_DAYS} days)",
+        )
+
+    if batch_id is not None:
+        batch = await batch_repository.get_by_id(session, batch_id)
+        if not batch or batch.branch_id != branch_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+        slots = await lecture_repository.list_batch_schedule(session, batch_id)
+    else:
+        slots = await lecture_repository.list_branch_schedule(session, branch_id)
+
+    # Cache batch lookups so we don't refetch per slot per day.
+    batch_cache: dict[uuid.UUID, object] = {}
+
+    async def _get_batch(bid: uuid.UUID):
+        if bid not in batch_cache:
+            batch_cache[bid] = await batch_repository.get_by_id(session, bid)
+        return batch_cache[bid]
+
+    holidays = await _holiday_set(session, branch_id, from_date, to_date)
+
+    generated = 0
+    skipped = 0
+    errors: list[str] = []
+    created_ids: list[uuid.UUID] = []
+
+    day = from_date
+    while day <= to_date:
+        if day in holidays:
+            day += timedelta(days=1)
+            continue
+        for slot in slots:
+            if slot.day_of_week != day.weekday():
+                continue
+            label = f"{day.isoformat()} {slot.start_time}"
+            if slot.subject_id is None or slot.teacher_id is None:
+                skipped += 1
+                errors.append(f"{label}: slot missing subject or teacher")
+                continue
+            batch = await _get_batch(slot.batch_id)
+            if batch is None:
+                skipped += 1
+                errors.append(f"{label}: batch not found")
+                continue
+            try:
+                start_t = _parse_hhmm(slot.start_time)
+                end_t = _parse_hhmm(slot.end_time)
+            except ValueError:
+                skipped += 1
+                errors.append(f"{label}: bad slot time")
+                continue
+            scheduled_start = datetime.combine(day, start_t, tzinfo=timezone.utc)
+            scheduled_end = datetime.combine(day, end_t, tzinfo=timezone.utc)
+
+            if await teacher_repository.teacher_on_leave(
+                session, slot.teacher_id, day
+            ):
+                skipped += 1
+                errors.append(f"{label}: teacher on leave")
+                continue
+
+            try:
+                await _validate_teacher_subject(
+                    session, slot.teacher_id, slot.subject_id
+                )
+                await _check_conflicts(
+                    session,
+                    slot.teacher_id,
+                    slot.batch_id,
+                    slot.classroom_id,
+                    scheduled_start,
+                    scheduled_end,
+                )
+            except HTTPException as exc:
+                skipped += 1
+                errors.append(f"{label}: {exc.detail}")
+                continue
+
+            new_lecture = await lecture_repository.create(
+                session,
+                teacher_id=slot.teacher_id,
+                batch_id=slot.batch_id,
+                classroom_id=slot.classroom_id,
+                subject_id=slot.subject_id,
+                topic_id=None,
+                scheduled_start=scheduled_start,
+                scheduled_end=scheduled_end,
+                delivery_mode=slot.delivery_mode,
+                lecture_status="scheduled",
+                notes=None,
+                branch_id=branch_id,
+                academic_year_id=batch.start_academic_year_id,
+            )
+            created_ids.append(new_lecture.id)
+            generated += 1
+        day += timedelta(days=1)
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="CREATE",
+        table_name="lectures",
+        record_id=created_ids[0] if created_ids else uuid.uuid4(),
+        new_values={
+            "operation": "generate_from_timetable",
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "generated": generated,
+            "skipped": skipped,
+        },
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+
+    return {
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "generated": generated,
         "skipped": skipped,
         "errors": errors,
     }
@@ -698,11 +1224,19 @@ async def mark_substitute(
         )
 
     # The substitute must also be qualified for the lecture's subject
-    # (Subject→Teacher lock applies to whoever actually delivers it).
+    # (Subject→Teacher lock applies to whoever actually delivers it) and not be
+    # on leave themselves that day (S5).
     if data.actual_teacher_id is not None:
         await _validate_teacher_subject(
             session, data.actual_teacher_id, lecture.subject_id
         )
+        if await teacher_repository.teacher_on_leave(
+            session, data.actual_teacher_id, _aware(lecture.scheduled_start).date()
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Substitute is on leave that day. Pick another teacher.",
+            )
 
     reason = data.change_reason
     if data.actual_teacher_id is None:

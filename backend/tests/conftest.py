@@ -30,10 +30,10 @@ from app.modules.student.models.student_models import (  # noqa: F401
     Parent, Student, StudentBatchMapping, StudentIdentity,
 )
 from app.modules.teacher.models.teacher_models import (  # noqa: F401
-    Teacher, TeacherBatchMapping, TeacherSubjectMapping,
+    Teacher, TeacherBatchMapping, TeacherLeave, TeacherSubjectMapping,
 )
 from app.modules.lectures.models.lecture_models import (  # noqa: F401
-    Lecture, LectureAttendanceMapping, LectureTopicMapping,
+    Holiday, Lecture, LectureAttendanceMapping, LectureTopicMapping,
 )
 from app.modules.attendance.models.attendance_models import (  # noqa: F401
     AttendanceException, AttendanceRecord, RawPunchLog,

@@ -58,6 +58,9 @@ import { EndOfDayDialog } from "./_components/end-of-day-dialog";
 import { TeacherProductivityPanel } from "./_components/teacher-productivity-panel";
 import { SessionList } from "./_components/session-list";
 import { downloadScheduleCsv } from "./_lib/export-schedule";
+import { TimetableDialog } from "./_components/timetable-dialog";
+import { HolidaysDialog } from "./_components/holidays-dialog";
+import { TeacherLeaveDialog } from "./_components/teacher-leave-dialog";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
@@ -466,6 +469,14 @@ function LecturesPageBody() {
 
   const headerActions = (
     <div className="flex flex-wrap gap-2">
+      <TimetableDialog
+        branchId={branchId}
+        batches={batches}
+        teachers={teachers}
+        classrooms={classrooms}
+      />
+      <HolidaysDialog branchId={branchId} />
+      <TeacherLeaveDialog branchId={branchId} teachers={teachers} />
       <ImportScheduleDialog branchId={branchId} />
       <CopyScheduleDialog branchId={branchId} />
       <Button
@@ -770,6 +781,7 @@ function LecturesPageBody() {
         lecture={substituteTarget}
         teachers={teachers}
         allLectures={lectures}
+        branchId={branchId}
         open={substituteOpen}
         onOpenChange={(o) => {
           setSubstituteOpen(o);

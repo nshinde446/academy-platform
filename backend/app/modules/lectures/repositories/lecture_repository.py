@@ -5,9 +5,14 @@ from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.academic.models.academic_models import AcademicYear, Chapter, Topic, Subject
-from app.modules.batch.models.batch_models import Batch, BatchSubjectMapping
+from app.modules.batch.models.batch_models import (
+    Batch,
+    BatchSchedule,
+    BatchSubjectMapping,
+)
 from app.modules.tests.models.test_models import StudentMark, Test
 from app.modules.lectures.models.lecture_models import (
+    Holiday,
     Lecture,
     LectureAttendanceMapping,
     LectureSession,
@@ -29,6 +34,95 @@ async def get_by_id(session: AsyncSession, lecture_id: uuid.UUID) -> Lecture | N
         select(Lecture).where(Lecture.id == lecture_id, Lecture.is_deleted == False)
     )
     return result.scalar_one_or_none()
+
+
+# --- Weekly timetable (batch_schedules) -------------------------------------
+
+async def list_batch_schedule(
+    session: AsyncSession, batch_id: uuid.UUID
+) -> list[BatchSchedule]:
+    result = await session.execute(
+        select(BatchSchedule)
+        .where(
+            BatchSchedule.batch_id == batch_id,
+            BatchSchedule.is_deleted == False,
+        )
+        .order_by(BatchSchedule.day_of_week, BatchSchedule.start_time)
+    )
+    return list(result.scalars().all())
+
+
+async def list_branch_schedule(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> list[BatchSchedule]:
+    result = await session.execute(
+        select(BatchSchedule)
+        .where(
+            BatchSchedule.branch_id == branch_id,
+            BatchSchedule.is_deleted == False,
+        )
+        .order_by(BatchSchedule.day_of_week, BatchSchedule.start_time)
+    )
+    return list(result.scalars().all())
+
+
+async def delete_batch_schedule(session: AsyncSession, batch_id: uuid.UUID) -> None:
+    """Soft-delete every existing slot for a batch — used to replace the whole
+    weekly pattern in one shot (set_batch_timetable)."""
+    existing = await list_batch_schedule(session, batch_id)
+    for slot in existing:
+        slot.is_deleted = True
+    await session.flush()
+
+
+async def create_schedule_slot(session: AsyncSession, **kwargs) -> BatchSchedule:
+    slot = BatchSchedule(**kwargs)
+    session.add(slot)
+    await session.flush()
+    return slot
+
+
+# --- Holiday calendar (S4) --------------------------------------------------
+
+async def list_holidays(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_date=None,
+    to_date=None,
+) -> list[Holiday]:
+    query = select(Holiday).where(
+        Holiday.branch_id == branch_id,
+        Holiday.is_deleted == False,
+    )
+    if from_date is not None:
+        query = query.where(Holiday.holiday_date >= from_date)
+    if to_date is not None:
+        query = query.where(Holiday.holiday_date <= to_date)
+    result = await session.execute(query.order_by(Holiday.holiday_date))
+    return list(result.scalars().all())
+
+
+async def get_holiday_by_id(
+    session: AsyncSession, holiday_id: uuid.UUID
+) -> Holiday | None:
+    result = await session.execute(
+        select(Holiday).where(
+            Holiday.id == holiday_id, Holiday.is_deleted == False
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def create_holiday(session: AsyncSession, **kwargs) -> Holiday:
+    holiday = Holiday(**kwargs)
+    session.add(holiday)
+    await session.flush()
+    return holiday
+
+
+async def soft_delete_holiday(session: AsyncSession, holiday: Holiday) -> None:
+    holiday.is_deleted = True
+    await session.flush()
 
 
 async def list_by_branch(

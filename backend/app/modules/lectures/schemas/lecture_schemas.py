@@ -22,6 +22,26 @@ class ImportScheduleSummary(BaseModel):
     errors: list[str] = []
 
 
+class ImportPreviewRow(BaseModel):
+    """One row's dry-run validation result for the schedule importer."""
+
+    row_number: int
+    date: str
+    start_time: str
+    end_time: str
+    teacher: str
+    batch: str
+    subject: str
+    status: str  # "ok" | "error"
+    message: str
+
+
+class ImportSchedulePreview(BaseModel):
+    rows: list[ImportPreviewRow] = []
+    ok_count: int
+    error_count: int
+
+
 class LectureUpdate(BaseModel):
     topic_id: uuid.UUID | None = None
     notes: str | None = None
@@ -47,6 +67,84 @@ class CopyScheduleSummary(BaseModel):
     copied: int
     skipped: int
     errors: list[str] = []
+
+
+class TimetableSlot(BaseModel):
+    """One recurring weekly class in a batch's timetable.
+
+    day_of_week follows Python's date.weekday(): Monday=0 … Sunday=6.
+    start_time/end_time are 'HH:MM' (24h). subject_id + teacher_id are needed
+    before a slot can generate lectures, but may be omitted while drafting.
+    """
+
+    day_of_week: int
+    start_time: str
+    end_time: str
+    subject_id: uuid.UUID | None = None
+    teacher_id: uuid.UUID | None = None
+    classroom_id: uuid.UUID | None = None
+    delivery_mode: str = "offline"
+
+
+class TimetableSlotResponse(TimetableSlot):
+    id: uuid.UUID
+    batch_id: uuid.UUID
+
+
+class BatchTimetableUpdate(BaseModel):
+    """Replace a batch's entire weekly pattern with these slots."""
+
+    slots: list[TimetableSlot] = []
+
+
+class GenerateScheduleSummary(BaseModel):
+    """Result of generating lectures from a weekly timetable over a date range."""
+
+    from_date: str
+    to_date: str
+    generated: int
+    skipped: int
+    errors: list[str] = []
+
+
+class HolidayCreate(BaseModel):
+    """A non-teaching day the scheduler must skip."""
+
+    holiday_date: date
+    name: str
+
+
+class HolidayResponse(BaseModel):
+    id: uuid.UUID
+    branch_id: uuid.UUID
+    holiday_date: date
+    name: str
+
+
+class EligibleSubstitute(BaseModel):
+    """A teacher who can actually cover a lecture (qualified, free, not on leave)."""
+
+    teacher_id: uuid.UUID
+    first_name: str
+    last_name: str
+
+
+class TeacherLeaveCreate(BaseModel):
+    """A teacher's planned unavailability (inclusive date range)."""
+
+    teacher_id: uuid.UUID
+    start_date: date
+    end_date: date
+    reason: str | None = None
+
+
+class TeacherLeaveResponse(BaseModel):
+    id: uuid.UUID
+    teacher_id: uuid.UUID
+    branch_id: uuid.UUID
+    start_date: date
+    end_date: date
+    reason: str | None = None
 
 
 class LectureReschedule(BaseModel):

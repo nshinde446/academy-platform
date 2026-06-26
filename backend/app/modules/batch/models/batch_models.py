@@ -52,6 +52,15 @@ class BatchSubjectMapping(BaseModel):
 
 
 class BatchSchedule(BaseModel):
+    """A batch's recurring weekly timetable slot (one row = one weekly class).
+
+    day_of_week follows Python's date.weekday(): Monday=0 … Sunday=6.
+    subject/teacher/classroom are nullable so a slot can be roughed out and
+    filled in later, but a slot needs both subject_id and teacher_id before it
+    can generate concrete lectures (the generator skips and reports incomplete
+    slots). The Subject→Teacher lock is validated when the timetable is saved.
+    """
+
     __tablename__ = "batch_schedules"
 
     batch_id: Mapped[uuid.UUID] = mapped_column(
@@ -63,3 +72,15 @@ class BatchSchedule(BaseModel):
     day_of_week: Mapped[int] = mapped_column(Integer, nullable=False)
     start_time: Mapped[str] = mapped_column(String(10), nullable=False)
     end_time: Mapped[str] = mapped_column(String(10), nullable=False)
+    subject_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("subjects.id"), nullable=True
+    )
+    teacher_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("teachers.id"), nullable=True
+    )
+    classroom_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("classrooms.id"), nullable=True
+    )
+    delivery_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="offline"
+    )
