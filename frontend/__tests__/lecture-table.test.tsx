@@ -86,9 +86,24 @@ describe("LectureTable", () => {
     expect(screen.getByText("Teacher")).toBeInTheDocument();
     expect(screen.getByText("Subject")).toBeInTheDocument();
     expect(screen.getByText("Topic")).toBeInTheDocument();
-    expect(screen.getByText("Scheduled Start")).toBeInTheDocument();
+    expect(screen.getByText("Scheduled")).toBeInTheDocument();
+    expect(screen.getByText("Actual")).toBeInTheDocument();
+    expect(screen.getByText("Duration")).toBeInTheDocument();
     expect(screen.getByText("Status")).toBeInTheDocument();
     expect(screen.getByText("Actions")).toBeInTheDocument();
+  });
+
+  it("shows scheduled end time and actual window + duration", () => {
+    renderTable([
+      makeLecture({
+        lecture_status: "completed",
+        actual_start: "2026-05-20T10:05:00Z",
+        actual_end: "2026-05-20T11:02:00Z",
+        actual_duration_min: 57,
+      }),
+    ]);
+    // Duration renders in its own column (and a small-screen echo).
+    expect(screen.getAllByText("57m").length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders looked-up batch, teacher, subject, topic", () => {

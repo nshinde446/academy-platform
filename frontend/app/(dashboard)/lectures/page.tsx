@@ -57,6 +57,7 @@ import { CopyScheduleDialog } from "./_components/copy-schedule-dialog";
 import { EndOfDayDialog } from "./_components/end-of-day-dialog";
 import { TeacherProductivityPanel } from "./_components/teacher-productivity-panel";
 import { SessionList } from "./_components/session-list";
+import { downloadScheduleCsv } from "./_lib/export-schedule";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
@@ -451,10 +452,31 @@ function LecturesPageBody() {
     toDate
   );
 
+  // CSV of whatever the admin is currently looking at (filters/search applied).
+  const visibleLectures = isMsa ? msaFiltered : filtered;
+  function handleDownloadCsv() {
+    downloadScheduleCsv(visibleLectures, {
+      batches,
+      teachers,
+      subjects: allSubjects,
+      topics: allTopics,
+      classrooms,
+    });
+  }
+
   const headerActions = (
     <div className="flex flex-wrap gap-2">
       <ImportScheduleDialog branchId={branchId} />
       <CopyScheduleDialog branchId={branchId} />
+      <Button
+        type="button"
+        variant="outline"
+        onClick={handleDownloadCsv}
+        disabled={visibleLectures.length === 0}
+        aria-label="Download schedule as CSV"
+      >
+        Download CSV
+      </Button>
       <Button
         type="button"
         variant="outline"

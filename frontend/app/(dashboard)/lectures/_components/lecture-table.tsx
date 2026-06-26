@@ -131,6 +131,32 @@ function formatDateTime(iso: string): string {
   });
 }
 
+function formatTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** A scheduled/actual window rendered as "start – end" where the date sits on
+ * the start and only the time shows for the end (same-day is the norm). */
+function Window({ start, end }: { start: string | null; end: string | null }) {
+  if (!start) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="flex flex-col leading-tight">
+      <span className="whitespace-nowrap text-sm">{formatDateTime(start)}</span>
+      {end && (
+        <span className="whitespace-nowrap text-xs text-muted-foreground">
+          → {formatTime(end)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function teacherName(t: TeacherSummary | undefined): string {
   if (!t) return "—";
   return [t.first_name, t.last_name].filter(Boolean).join(" ") || "—";
@@ -160,7 +186,11 @@ export function LectureTable({
             <TableHead className="hidden sm:table-cell">Teacher</TableHead>
             <TableHead className="hidden md:table-cell">Subject</TableHead>
             <TableHead className="hidden lg:table-cell">Topic</TableHead>
-            <TableHead>Scheduled Start</TableHead>
+            <TableHead>Scheduled</TableHead>
+            <TableHead className="hidden lg:table-cell">Actual</TableHead>
+            <TableHead className="hidden xl:table-cell text-right">
+              Duration
+            </TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -224,7 +254,15 @@ export function LectureTable({
                 <TableCell className="hidden lg:table-cell text-muted-foreground">
                   {topic ? topic.name : "—"}
                 </TableCell>
-                <TableCell>{formatDateTime(l.scheduled_start)}</TableCell>
+                <TableCell>
+                  <Window start={l.scheduled_start} end={l.scheduled_end} />
+                </TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  <Window start={l.actual_start} end={l.actual_end} />
+                </TableCell>
+                <TableCell className="hidden xl:table-cell text-right tabular-nums text-muted-foreground">
+                  {duration ?? "—"}
+                </TableCell>
                 <TableCell>
                   {(() => {
                     const s = deriveStatus(
@@ -244,8 +282,10 @@ export function LectureTable({
                             started late
                           </span>
                         )}
+                        {/* Duration shows in its own column (xl); repeat it
+                            here on smaller screens where that column is hidden. */}
                         {duration && (
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-[10px] text-muted-foreground xl:hidden">
                             {duration}
                           </span>
                         )}
