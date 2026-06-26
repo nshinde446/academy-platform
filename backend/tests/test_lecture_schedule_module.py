@@ -83,7 +83,7 @@ async def test_actuals_backfill_completes_and_times(client: AsyncClient, seed_da
     duration, marks completed, and is on time (<10 min late)."""
     await _login_admin(client)
     now = datetime.now(timezone.utc)
-    start = now + timedelta(hours=30)
+    start = now - timedelta(hours=30)  # past: the lecture has happened
     resp = await client.post(
         "/api/v1/lectures", json=_payload(start, start + timedelta(hours=1))
     )
@@ -108,7 +108,7 @@ async def test_actuals_backfill_completes_and_times(client: AsyncClient, seed_da
 async def test_actuals_late_flag(client: AsyncClient, seed_data):
     await _login_admin(client)
     now = datetime.now(timezone.utc)
-    start = now + timedelta(hours=32)
+    start = now - timedelta(hours=32)  # past: the lecture has happened
     resp = await client.post(
         "/api/v1/lectures", json=_payload(start, start + timedelta(hours=1))
     )
@@ -178,7 +178,7 @@ async def test_copy_to_next_day_idempotent(client: AsyncClient, seed_data):
 async def test_productivity_after_completion(client: AsyncClient, seed_data):
     await _login_admin(client)
     now = datetime.now(timezone.utc)
-    start = now + timedelta(hours=40)
+    start = now - timedelta(hours=40)  # past: the lecture has happened
     lecture = (await client.post(
         "/api/v1/lectures", json=_payload(start, start + timedelta(hours=1))
     )).json()

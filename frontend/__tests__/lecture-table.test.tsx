@@ -230,6 +230,35 @@ describe("LectureTable", () => {
     expect(onToggleSelect).toHaveBeenCalledWith("l1");
   });
 
+  it("hides End of Day / Edit Actuals for a future-dated lecture", () => {
+    const future = new Date();
+    future.setFullYear(future.getFullYear() + 1);
+    const iso = future.toISOString();
+    renderTable([
+      makeLecture({
+        scheduled_start: iso,
+        scheduled_end: iso,
+        lecture_status: "scheduled",
+      }),
+    ]);
+    expect(
+      screen.queryByRole("button", { name: /end-of-day actuals/i })
+    ).toBeNull();
+  });
+
+  it("shows End of Day for a past-dated lecture", () => {
+    renderTable([
+      makeLecture({
+        scheduled_start: "2020-01-01T09:00:00Z",
+        scheduled_end: "2020-01-01T10:00:00Z",
+        lecture_status: "scheduled",
+      }),
+    ]);
+    expect(
+      screen.getByRole("button", { name: /end-of-day actuals/i })
+    ).toBeInTheDocument();
+  });
+
   it("renders no checkbox column when selection props are omitted", () => {
     renderTable([makeLecture()]);
     expect(

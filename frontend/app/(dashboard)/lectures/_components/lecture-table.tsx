@@ -136,6 +136,18 @@ function formatDateTime(iso: string): string {
   });
 }
 
+/** True when the ISO timestamp falls on a calendar day after today (local) —
+ * used to hide "end of day" actuals on lectures that haven't happened yet. */
+function isFutureDay(iso: string): boolean {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(d);
+  day.setHours(0, 0, 0, 0);
+  return day.getTime() > today.getTime();
+}
+
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -243,11 +255,13 @@ export function LectureTable({
             const canSubstitute =
               l.lecture_status !== "cancelled" &&
               l.lecture_status !== "no_show";
-            // End-of-day actuals can be recorded/edited anytime the class
-            // happened or is still expected to (mirrors the backend guard).
+            // End-of-day actuals: only once the class day has arrived. A
+            // future-scheduled lecture hasn't happened, so it can't have
+            // actuals (mirrors the backend guard).
             const canActuals =
               l.lecture_status !== "cancelled" &&
-              l.lecture_status !== "no_show";
+              l.lecture_status !== "no_show" &&
+              !isFutureDay(l.scheduled_start);
             const duration = formatDuration(l.actual_duration_min);
 
             return (

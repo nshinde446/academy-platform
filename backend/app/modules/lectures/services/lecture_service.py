@@ -456,6 +456,19 @@ async def update_actuals(
             ),
         )
 
+    # A lecture scheduled for a future day hasn't happened yet, so you can't
+    # have taught it — block recording actuals / completing it. Today and past
+    # are fine: end-of-day (or next-morning) backfill is the point of this path.
+    today = datetime.now(timezone.utc).date()
+    if _aware(lecture.scheduled_start).date() > today:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "This lecture is scheduled for a future date — you can't record "
+                "actuals until the day it happens."
+            ),
+        )
+
     # Resolve effective timestamps (incoming value wins, else what's stored).
     actual_start = data.actual_start if data.actual_start is not None else lecture.actual_start
     actual_end = data.actual_end if data.actual_end is not None else lecture.actual_end
