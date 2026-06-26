@@ -228,6 +228,24 @@ async def get_upcoming_tests(
     return await student_repository.get_upcoming_tests(session, student_id, branch_id)
 
 
+async def get_attendance_report(
+    session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
+):
+    # Ownership check — surfaces 404 the same way get_student does.
+    await get_student(session, student_id, branch_id)
+    return await student_repository.get_attendance_report(
+        session, student_id, branch_id
+    )
+
+
+async def get_topics_missed(
+    session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
+):
+    # Ownership check — surfaces 404 the same way get_student does.
+    await get_student(session, student_id, branch_id)
+    return await student_repository.get_topics_missed(session, student_id, branch_id)
+
+
 async def delete_all_students(
     session: AsyncSession,
     branch_id: uuid.UUID,

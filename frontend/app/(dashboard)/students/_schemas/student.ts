@@ -148,6 +148,33 @@ export interface StudentTopicMastery {
   accuracy_pct: number;
 }
 
+// S2 — attendance report shown on /students/[id].
+export interface StudentAttendanceSubject {
+  subject_id: string;
+  subject_name: string;
+  held: number;
+  present: number;
+  attendance_pct: number;
+}
+
+export interface StudentAttendanceReport {
+  held: number;
+  present: number;
+  attendance_pct: number;
+  by_subject: StudentAttendanceSubject[];
+}
+
+// S2 — a topic taught while the student was absent (the catch-up list).
+export interface StudentMissedTopic {
+  lecture_id: string;
+  topic_id: string;
+  topic_name: string;
+  subject_id: string;
+  subject_name: string;
+  scheduled_start: string | null;
+  attendance_status: string;
+}
+
 // One row per test the student has taken — powers /students/[id].
 export interface StudentTestHistoryRow {
   test_id: string;

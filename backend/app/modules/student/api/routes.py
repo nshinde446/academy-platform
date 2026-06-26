@@ -29,7 +29,9 @@ from app.modules.student.schemas.student_schemas import (
     ImportPreview,
     ImportSummary,
     ImportUndoSummary,
+    StudentAttendanceReport,
     StudentCreate,
+    StudentMissedTopic,
     StudentResponse,
     StudentStatsPage,
     StudentSyllabus,
@@ -164,6 +166,38 @@ async def get_student_upcoming_tests(
     """Future-scheduled tests for the student's batch they haven't taken yet
     (soonest first) — the Tier 13 'upcoming tests' section."""
     return await student_service.get_upcoming_tests(session, student_id, branch_id)
+
+
+@router.get(
+    "/{student_id}/attendance-report",
+    response_model=StudentAttendanceReport,
+)
+async def get_student_attendance_report(
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """A student's attendance report — overall headline (matching the roster
+    card) plus a per-subject breakdown, worst subject first."""
+    return await student_service.get_attendance_report(
+        session, student_id, branch_id
+    )
+
+
+@router.get(
+    "/{student_id}/topics-missed",
+    response_model=list[StudentMissedTopic],
+)
+async def get_student_topics_missed(
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Topics taught while the student was absent — the catch-up list,
+    most recent first."""
+    return await student_service.get_topics_missed(session, student_id, branch_id)
 
 
 @router.post("/delete-all", response_model=BulkDeleteSummary)

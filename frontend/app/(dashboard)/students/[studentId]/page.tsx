@@ -15,12 +15,15 @@ import {
 } from "@/components/ui/table";
 import {
   useStudent,
+  useStudentAttendanceReport,
   useStudentTestHistory,
   useStudentTopicMastery,
+  useStudentTopicsMissed,
   useStudentUpcomingTests,
   useStudentsWithStats,
 } from "../_hooks/use-students";
 import type {
+  StudentMissedTopic,
   StudentTestHistoryRow,
   StudentTopicMastery,
   StudentUpcomingTest,
@@ -76,6 +79,8 @@ export default function StudentDetailPage({
   const historyQuery = useStudentTestHistory(branchId, studentId);
   const masteryQuery = useStudentTopicMastery(branchId, studentId);
   const upcomingQuery = useStudentUpcomingTests(branchId, studentId);
+  const attendanceQuery = useStudentAttendanceReport(branchId, studentId);
+  const missedQuery = useStudentTopicsMissed(branchId, studentId);
   // Pulled for batch / attendance / current-batch-rank from the same
   // payload that backs /students — keeps numbers consistent.
   const statsQuery = useStudentsWithStats(branchId);
@@ -88,6 +93,8 @@ export default function StudentDetailPage({
   const history: StudentTestHistoryRow[] = historyQuery.data ?? [];
   const mastery: StudentTopicMastery[] = masteryQuery.data ?? [];
   const upcoming: StudentUpcomingTest[] = upcomingQuery.data ?? [];
+  const attendance = attendanceQuery.data;
+  const missed: StudentMissedTopic[] = missedQuery.data ?? [];
 
   const presentRows = history.filter((r) => !r.is_absent);
   const avgPct =
@@ -178,6 +185,78 @@ export default function StudentDetailPage({
           </div>
         </CardContent>
       </Card>
+
+      {attendance && attendance.held > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-lg font-semibold">Attendance report</h3>
+          <p className="text-sm text-muted-foreground">
+            Share of completed lectures this student was present for — overall
+            and per subject, weakest subject first. {attendance.present} of{" "}
+            {attendance.held} lectures attended.
+          </p>
+          <div className="rounded-xl border ring-1 ring-foreground/10 divide-y divide-border">
+            {attendance.by_subject.map((s) => (
+              <div
+                key={s.subject_id}
+                className="flex items-center gap-3 px-3 py-2 text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{s.subject_name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {s.present}/{s.held} present
+                  </div>
+                </div>
+                <div className="hidden w-32 sm:block">
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={`h-full ${masteryBar(s.attendance_pct)}`}
+                      style={{ width: `${Math.max(s.attendance_pct, 3)}%` }}
+                    />
+                  </div>
+                </div>
+                <div
+                  className={`w-12 text-right font-semibold tabular-nums ${masteryText(s.attendance_pct)}`}
+                >
+                  {s.attendance_pct.toFixed(0)}%
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {missed.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-lg font-semibold">Topics missed</h3>
+          <p className="text-sm text-muted-foreground">
+            Topics taught while this student was absent — the catch-up list,
+            most recent first. Hand these over for self-study or a makeup.
+          </p>
+          <div className="rounded-xl border ring-1 ring-foreground/10 divide-y divide-border">
+            {missed.map((m) => (
+              <div
+                key={m.lecture_id}
+                className="flex items-center gap-3 px-3 py-2 text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{m.topic_name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {m.subject_name} · {formatScheduled(m.scheduled_start)}
+                  </div>
+                </div>
+                <Badge
+                  variant={
+                    m.attendance_status === "ABSENT" ? "destructive" : "secondary"
+                  }
+                  className="text-[10px]"
+                >
+                  {m.attendance_status === "ABSENT" ? "absent" : "excused"}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {upcoming.length > 0 && (
         <div className="flex flex-col gap-2">

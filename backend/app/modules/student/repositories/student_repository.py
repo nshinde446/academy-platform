@@ -259,6 +259,138 @@ async def get_topic_mastery(
     return out
 
 
+async def get_attendance_report(
+    session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
+) -> dict:
+    """A student's attendance report: overall + per-subject breakdown.
+
+    Population is the lectures the student has an attendance record for, on
+    completed lectures only — the same basis as the roster's `attendance_pct`
+    card, so the headline number here matches the one on /students. The
+    headline % is PRESENT / held (kept identical to the roster definition);
+    the per-subject rows add the same split so revision can target the subject
+    a student is skipping.
+    """
+    from app.modules.academic.models.academic_models import Subject
+    from app.modules.lectures.models.lecture_models import (
+        Lecture,
+        LectureAttendanceMapping,
+    )
+
+    student = await get_by_id(session, student_id)
+    if student is None or student.branch_id != branch_id:
+        return {"held": 0, "present": 0, "attendance_pct": 0.0, "by_subject": []}
+
+    rows = (
+        await session.execute(
+            select(
+                Subject.id,
+                Subject.name,
+                func.count(LectureAttendanceMapping.id),
+                func.count().filter(
+                    LectureAttendanceMapping.attendance_status == "PRESENT"
+                ),
+            )
+            .join(Lecture, Lecture.id == LectureAttendanceMapping.lecture_id)
+            .join(Subject, Subject.id == Lecture.subject_id)
+            .where(
+                LectureAttendanceMapping.student_id == student_id,
+                LectureAttendanceMapping.is_deleted == False,  # noqa: E712
+                Lecture.lecture_status == "completed",
+            )
+            .group_by(Subject.id, Subject.name)
+        )
+    ).all()
+
+    by_subject: list[dict] = []
+    total_held = 0
+    total_present = 0
+    for r in rows:
+        held = int(r[2] or 0)
+        present = int(r[3] or 0)
+        total_held += held
+        total_present += present
+        by_subject.append(
+            {
+                "subject_id": r[0],
+                "subject_name": r[1],
+                "held": held,
+                "present": present,
+                "attendance_pct": round(100.0 * present / held, 1) if held else 0.0,
+            }
+        )
+    # Worst attendance first — that's where intervention is needed.
+    by_subject.sort(key=lambda x: x["attendance_pct"])
+    return {
+        "held": total_held,
+        "present": total_present,
+        "attendance_pct": (
+            round(100.0 * total_present / total_held, 1) if total_held else 0.0
+        ),
+        "by_subject": by_subject,
+    }
+
+
+async def get_topics_missed(
+    session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
+) -> list[dict]:
+    """Topics taught while the student was absent — the catch-up list.
+
+    A completed lecture that carries a topic, for which the student's
+    attendance record is ABSENT or EXCUSED. LATE/PARTIAL count as attended
+    (they were in the room for the topic), so they're excluded. Most recent
+    first so the freshest gaps lead.
+    """
+    from app.modules.academic.models.academic_models import Subject, Topic
+    from app.modules.lectures.models.lecture_models import (
+        Lecture,
+        LectureAttendanceMapping,
+    )
+
+    student = await get_by_id(session, student_id)
+    if student is None or student.branch_id != branch_id:
+        return []
+
+    rows = (
+        await session.execute(
+            select(
+                Lecture.id,
+                Topic.id,
+                Topic.name,
+                Subject.id,
+                Subject.name,
+                Lecture.scheduled_start,
+                LectureAttendanceMapping.attendance_status,
+            )
+            .join(Lecture, Lecture.id == LectureAttendanceMapping.lecture_id)
+            .join(Topic, Topic.id == Lecture.topic_id)
+            .join(Subject, Subject.id == Lecture.subject_id)
+            .where(
+                LectureAttendanceMapping.student_id == student_id,
+                LectureAttendanceMapping.is_deleted == False,  # noqa: E712
+                Lecture.lecture_status == "completed",
+                LectureAttendanceMapping.attendance_status.in_(
+                    ("ABSENT", "EXCUSED")
+                ),
+            )
+            .order_by(Lecture.scheduled_start.desc())
+        )
+    ).all()
+
+    return [
+        {
+            "lecture_id": r[0],
+            "topic_id": r[1],
+            "topic_name": r[2],
+            "subject_id": r[3],
+            "subject_name": r[4],
+            "scheduled_start": r[5],
+            "attendance_status": r[6],
+        }
+        for r in rows
+    ]
+
+
 async def get_upcoming_tests(
     session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID
 ) -> list[dict]:

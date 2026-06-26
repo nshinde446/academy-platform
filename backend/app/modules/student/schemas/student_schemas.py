@@ -313,3 +313,35 @@ class StudentTestHistoryRow(BaseModel):
     batch_size: int = 0
     institute_rank: int | None = None
     institute_size: int = 0
+
+
+class StudentAttendanceSubject(BaseModel):
+    """One subject's slice of a student's attendance report."""
+
+    subject_id: uuid.UUID
+    subject_name: str
+    held: int
+    present: int
+    attendance_pct: float
+
+
+class StudentAttendanceReport(BaseModel):
+    """A student's attendance report — overall headline (matching the roster
+    card) plus a per-subject breakdown, worst subject first."""
+
+    held: int
+    present: int
+    attendance_pct: float
+    by_subject: list[StudentAttendanceSubject] = []
+
+
+class StudentMissedTopic(BaseModel):
+    """A topic taught while the student was absent — the catch-up list."""
+
+    lecture_id: uuid.UUID
+    topic_id: uuid.UUID
+    topic_name: str
+    subject_id: uuid.UUID
+    subject_name: str
+    scheduled_start: datetime | None = None
+    attendance_status: str

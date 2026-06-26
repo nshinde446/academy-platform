@@ -14,6 +14,8 @@ import type {
   StudentTestHistoryRow,
   StudentTopicMastery,
   StudentUpcomingTest,
+  StudentAttendanceReport,
+  StudentMissedTopic,
   ImportJob,
   AcademicYearResponse,
 } from "../_schemas/student";
@@ -45,6 +47,10 @@ export const studentKeys = {
     [...studentKeys.all, "topic-mastery", branchId, id] as const,
   upcomingTests: (branchId: string, id: string) =>
     [...studentKeys.all, "upcoming-tests", branchId, id] as const,
+  attendanceReport: (branchId: string, id: string) =>
+    [...studentKeys.all, "attendance-report", branchId, id] as const,
+  topicsMissed: (branchId: string, id: string) =>
+    [...studentKeys.all, "topics-missed", branchId, id] as const,
 };
 
 export const academicYearKeys = {
@@ -361,6 +367,40 @@ export function useStudentUpcomingTests(
     queryFn: async () => {
       const res = await apiClient.get<StudentUpcomingTest[]>(
         `/api/v1/students/${studentId}/upcoming-tests`,
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!studentId,
+  });
+}
+
+export function useStudentAttendanceReport(
+  branchId: string | undefined,
+  studentId: string,
+) {
+  return useQuery<StudentAttendanceReport>({
+    queryKey: studentKeys.attendanceReport(branchId!, studentId),
+    queryFn: async () => {
+      const res = await apiClient.get<StudentAttendanceReport>(
+        `/api/v1/students/${studentId}/attendance-report`,
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!studentId,
+  });
+}
+
+export function useStudentTopicsMissed(
+  branchId: string | undefined,
+  studentId: string,
+) {
+  return useQuery<StudentMissedTopic[]>({
+    queryKey: studentKeys.topicsMissed(branchId!, studentId),
+    queryFn: async () => {
+      const res = await apiClient.get<StudentMissedTopic[]>(
+        `/api/v1/students/${studentId}/topics-missed`,
         { params: { branch_id: branchId } },
       );
       return res.data;
