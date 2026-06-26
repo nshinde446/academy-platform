@@ -1,10 +1,33 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database.base import BaseModel
+
+
+class Holiday(BaseModel):
+    """A non-teaching day for a branch. The timetable generator and
+    copy-to-next-day skip any date that has a holiday so a one-click bulk plan
+    never schedules classes on Diwali, exam-board offs, etc."""
+
+    __tablename__ = "holidays"
+
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
+    )
+    holiday_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
 class Lecture(BaseModel):
