@@ -17,6 +17,7 @@ import {
   useBatchesForLectures,
   useCancelLecture,
   useCompleteLecture,
+  useCopySelected,
   useCreateLecture,
   useCreateLectureSession,
   useDeleteLecture,
@@ -126,6 +127,13 @@ const MSA_GROUPS: { value: MsaStatusGroup | "all"; label: string }[] = [
   { value: "no_show", label: "No-show" },
 ];
 
+function tomorrowIso(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const shifted = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+  return shifted.toISOString().slice(0, 10);
+}
+
 function isToday(iso: string): boolean {
   const d = new Date(iso);
   const now = new Date();
@@ -194,6 +202,10 @@ function LecturesPageBody() {
   const [actualsOpen, setActualsOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
+  // Row selection for "copy selected to date" — explicit, no by-date guess.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [copyTargetDate, setCopyTargetDate] = useState("");
+
   const lecturesQuery = useLectures(branchId);
   const sessionsQuery = useLectureSessions(branchId);
   const batchesQuery = useBatchesForLectures(branchId);
@@ -209,6 +221,7 @@ function LecturesPageBody() {
   const noShowMutation = useMarkNoShow(branchId);
   const sessionMutation = useCreateLectureSession(branchId);
   const actualsMutation = useUpdateActuals(branchId);
+  const copySelectedMutation = useCopySelected(branchId);
 
   const batches = batchesQuery.data ?? [];
   const teachers = teachersQuery.data ?? [];
@@ -444,6 +457,44 @@ function LecturesPageBody() {
   }
   async function handleActualsSubmit(lectureId: string, data: LectureActuals) {
     await actualsMutation.mutateAsync({ lectureId, data });
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleAllVisible(checked: boolean) {
+    setSelectedIds(checked ? new Set(filtered.map((l) => l.id)) : new Set());
+  }
+  async function handleCopySelected() {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    const target = copyTargetDate || tomorrowIso();
+    try {
+      const res = await copySelectedMutation.mutateAsync({
+        lectureIds: ids,
+        targetDate: target,
+      });
+      setSelectedIds(new Set());
+      setCopyTargetDate("");
+      const lines = [
+        `Copied ${res.copied} lecture(s) to ${res.target_date}` +
+          (res.skipped ? ` · ${res.skipped} skipped` : "") +
+          ".",
+        ...res.errors.slice(0, 6),
+      ];
+      setAlertMessage(lines.join("\n"));
+    } catch (err: any) {
+      setAlertMessage(
+        err?.response?.data?.error?.message ||
+          err?.response?.data?.detail ||
+          "Copy failed"
+      );
+    }
   }
 
   const hasFilter = !!(
@@ -684,6 +735,43 @@ function LecturesPageBody() {
             </span>
           </div>
 
+          {/* Selection action bar — copy the ticked lectures to a chosen date */}
+          {selectedIds.size > 0 && (
+            <div className="flex flex-col gap-3 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2 sm:flex-row sm:items-center">
+              <span className="text-sm font-medium">
+                {selectedIds.size} selected
+              </span>
+              <span className="flex-1" />
+              <label className="flex items-center gap-2 text-sm">
+                Copy to
+                <Input
+                  type="date"
+                  value={copyTargetDate}
+                  onChange={(e) => setCopyTargetDate(e.target.value)}
+                  className="w-40"
+                  aria-label="Copy selected to date"
+                  placeholder={tomorrowIso()}
+                />
+              </label>
+              <Button
+                type="button"
+                onClick={handleCopySelected}
+                disabled={copySelectedMutation.isPending}
+              >
+                {copySelectedMutation.isPending
+                  ? "Copying…"
+                  : `Copy ${selectedIds.size} to ${copyTargetDate || "tomorrow"}`}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Clear
+              </Button>
+            </div>
+          )}
+
           {/* Content */}
           {lecturesQuery.isLoading ? (
             <p className="text-muted-foreground text-sm">Loading lectures...</p>
@@ -701,6 +789,9 @@ function LecturesPageBody() {
               subjects={allSubjects}
               topics={allTopics}
               coveredLectureIds={coveredLectureIds}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelect}
+              onToggleAll={toggleAllVisible}
               onStart={handleStart}
               onComplete={handleComplete}
               onCancel={handleCancel}

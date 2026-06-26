@@ -74,6 +74,14 @@ export interface CopyScheduleSummary {
   errors: string[];
 }
 
+// Copy a hand-picked set of lectures (selected via row checkboxes) to a date.
+export interface CopySelectedSummary {
+  target_date: string;
+  copied: number;
+  skipped: number;
+  errors: string[];
+}
+
 // S3 — recurring weekly timetable. day_of_week: Mon=0 … Sun=6.
 export interface TimetableSlot {
   day_of_week: number;

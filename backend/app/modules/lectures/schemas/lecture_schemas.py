@@ -69,6 +69,20 @@ class CopyScheduleSummary(BaseModel):
     errors: list[str] = []
 
 
+class CopySelectedRequest(BaseModel):
+    """Copy a hand-picked set of lectures (not a whole date) onto target_date."""
+
+    lecture_ids: list[uuid.UUID]
+    target_date: date
+
+
+class CopySelectedSummary(BaseModel):
+    target_date: str
+    copied: int
+    skipped: int
+    errors: list[str] = []
+
+
 class TimetableSlot(BaseModel):
     """One recurring weekly class in a batch's timetable.
 

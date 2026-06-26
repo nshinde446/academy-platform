@@ -207,4 +207,33 @@ describe("LectureTable", () => {
     const rows = container.querySelectorAll("tbody tr");
     expect(rows).toHaveLength(0);
   });
+
+  it("renders selection checkboxes and toggles a row when selectable", async () => {
+    const user = userEvent.setup();
+    const onToggleSelect = vi.fn();
+    const l = makeLecture();
+    render(
+      <LectureTable
+        lectures={[l]}
+        batches={BATCHES}
+        teachers={TEACHERS}
+        subjects={SUBJECTS}
+        topics={TOPICS}
+        selectedIds={new Set()}
+        onToggleSelect={onToggleSelect}
+        onToggleAll={vi.fn()}
+        {...handlers}
+      />
+    );
+    const rowCb = screen.getByRole("checkbox", { name: /select lecture l1/i });
+    await user.click(rowCb);
+    expect(onToggleSelect).toHaveBeenCalledWith("l1");
+  });
+
+  it("renders no checkbox column when selection props are omitted", () => {
+    renderTable([makeLecture()]);
+    expect(
+      screen.queryByRole("checkbox", { name: /select all lectures/i })
+    ).toBeNull();
+  });
 });

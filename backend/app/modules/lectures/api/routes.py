@@ -12,6 +12,8 @@ from app.modules.lectures.schemas.lecture_schemas import (
     AttendanceResponse,
     BatchTimetableUpdate,
     CopyScheduleSummary,
+    CopySelectedRequest,
+    CopySelectedSummary,
     EligibleSubstitute,
     GenerateScheduleSummary,
     HolidayCreate,
@@ -241,6 +243,27 @@ async def copy_to_next_day(
     tgt = _parse("target_date", target_date) if target_date else None
     return await lecture_service.copy_to_next_day(
         session, branch_id, src, tgt, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.post("/copy-selected", response_model=CopySelectedSummary)
+async def copy_selected(
+    body: CopySelectedRequest,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "academic_head"])
+    ),
+    session: AsyncSession = Depends(get_db),
+):
+    """Copy an explicitly-selected set of lectures onto a target date — the
+    admin ticks the rows, no blind by-date assumption. Each clone keeps its
+    time-of-day, resets actuals/topic/late/substitute, and is conflict-,
+    holiday-, and leave-aware (colliding/blocked rows are skipped + reported)."""
+    return await lecture_service.copy_selected_to_date(
+        session, branch_id, body.lecture_ids, body.target_date,
+        current_user["user_id"],
         request.client.host if request.client else None,
     )
 

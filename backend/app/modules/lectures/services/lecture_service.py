@@ -648,6 +648,117 @@ async def copy_to_next_day(
     }
 
 
+async def copy_selected_to_date(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    lecture_ids: list[uuid.UUID],
+    target_date: date,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    """Clone an explicitly-selected set of lectures onto target_date.
+
+    Unlike copy_to_next_day (which clones a whole day's plan by date — a blind
+    by-date assumption), this acts only on the lecture_ids the admin ticked.
+    Each clone keeps its time-of-day but lands on target_date; actuals / topic /
+    late flag / substitute are reset to a fresh 'scheduled' lecture. Conflict-,
+    holiday-, and leave-aware: colliding or blocked rows are skipped and
+    reported, so re-running never double-books.
+    """
+    if not lecture_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Select at least one lecture to copy",
+        )
+
+    holidays = await _holiday_set(session, branch_id, target_date, target_date)
+    is_holiday = target_date in holidays
+
+    copied = 0
+    skipped = 0
+    errors: list[str] = []
+    created_ids: list[uuid.UUID] = []
+
+    for lid in lecture_ids:
+        src = await lecture_repository.get_by_id(session, lid)
+        if not src or src.branch_id != branch_id:
+            skipped += 1
+            errors.append(f"{lid}: lecture not found in this branch")
+            continue
+
+        ss = _aware(src.scheduled_start)
+        se = _aware(src.scheduled_end)
+        new_start = datetime.combine(target_date, ss.timetz())
+        new_end = datetime.combine(target_date, se.timetz())
+        label = f"{new_start.strftime('%H:%M')} {src.id}"
+
+        if is_holiday:
+            skipped += 1
+            errors.append(f"{label}: {target_date.isoformat()} is a holiday")
+            continue
+        if await teacher_repository.teacher_on_leave(
+            session, src.teacher_id, target_date
+        ):
+            skipped += 1
+            errors.append(f"{label}: teacher on leave")
+            continue
+        try:
+            await _check_conflicts(
+                session,
+                src.teacher_id,
+                src.batch_id,
+                src.classroom_id,
+                new_start,
+                new_end,
+            )
+        except HTTPException as exc:
+            skipped += 1
+            errors.append(f"{label}: {exc.detail}")
+            continue
+
+        new_lecture = await lecture_repository.create(
+            session,
+            teacher_id=src.teacher_id,
+            batch_id=src.batch_id,
+            classroom_id=src.classroom_id,
+            subject_id=src.subject_id,
+            topic_id=None,  # topic is taught fresh — entered at the new EOD
+            scheduled_start=new_start,
+            scheduled_end=new_end,
+            delivery_mode=src.delivery_mode,
+            lecture_status="scheduled",
+            notes=src.notes,
+            branch_id=src.branch_id,
+            academic_year_id=src.academic_year_id,
+        )
+        created_ids.append(new_lecture.id)
+        copied += 1
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="CREATE",
+        table_name="lectures",
+        record_id=created_ids[0] if created_ids else uuid.uuid4(),
+        new_values={
+            "operation": "copy_selected_to_date",
+            "target_date": target_date.isoformat(),
+            "selected": len(lecture_ids),
+            "copied": copied,
+            "skipped": skipped,
+        },
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+
+    return {
+        "target_date": target_date.isoformat(),
+        "copied": copied,
+        "skipped": skipped,
+        "errors": errors,
+    }
+
+
 # --- Holiday calendar (S4) --------------------------------------------------
 
 async def list_holidays(

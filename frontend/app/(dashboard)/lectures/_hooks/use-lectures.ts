@@ -4,6 +4,7 @@ import type {
   BatchSummary,
   ClassroomSummary,
   CopyScheduleSummary,
+  CopySelectedSummary,
   LectureActuals,
   LectureCreate,
   LectureNoShow,
@@ -560,6 +561,31 @@ export function useDeleteTeacherLeave(branchId: string | undefined) {
     onSuccess: () => {
       if (branchId) {
         queryClient.invalidateQueries({ queryKey: leaveKeys.list(branchId) });
+      }
+    },
+  });
+}
+
+export function useCopySelected(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      lectureIds,
+      targetDate,
+    }: {
+      lectureIds: string[];
+      targetDate: string;
+    }) => {
+      const res = await apiClient.post<CopySelectedSummary>(
+        "/api/v1/lectures/copy-selected",
+        { lecture_ids: lectureIds, target_date: targetDate },
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: lectureKeys.list(branchId) });
       }
     },
   });

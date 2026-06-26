@@ -28,6 +28,11 @@ interface LectureTableProps {
   /** Lecture IDs that have at least one linked LectureSession — drives
    * the "MADE UP" chip on no-show rows that were later covered. */
   coveredLectureIds?: Set<string>;
+  /** Row selection (for "copy selected to date"). When provided, a checkbox
+   * column is rendered. */
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleAll?: (checked: boolean) => void;
   onStart: (lecture: LectureResponse) => void;
   onComplete: (lecture: LectureResponse) => void;
   onCancel: (lecture: LectureResponse) => void;
@@ -169,6 +174,9 @@ export function LectureTable({
   subjects,
   topics,
   coveredLectureIds,
+  selectedIds,
+  onToggleSelect,
+  onToggleAll,
   onStart,
   onComplete,
   onCancel,
@@ -177,11 +185,27 @@ export function LectureTable({
   onNoShow,
   onActuals,
 }: LectureTableProps) {
+  const selectable = !!selectedIds && !!onToggleSelect;
+  const allSelected =
+    selectable &&
+    lectures.length > 0 &&
+    lectures.every((l) => selectedIds!.has(l.id));
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>
+            {selectable && (
+              <TableHead className="w-10">
+                <input
+                  type="checkbox"
+                  aria-label="Select all lectures"
+                  checked={allSelected}
+                  onChange={(e) => onToggleAll?.(e.target.checked)}
+                  className="h-4 w-4 rounded border-input"
+                />
+              </TableHead>
+            )}
             <TableHead>Batch</TableHead>
             <TableHead className="hidden sm:table-cell">Teacher</TableHead>
             <TableHead className="hidden md:table-cell">Subject</TableHead>
@@ -228,6 +252,17 @@ export function LectureTable({
 
             return (
               <TableRow key={l.id}>
+                {selectable && (
+                  <TableCell className="w-10">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select lecture ${l.id}`}
+                      checked={selectedIds!.has(l.id)}
+                      onChange={() => onToggleSelect!(l.id)}
+                      className="h-4 w-4 rounded border-input"
+                    />
+                  </TableCell>
+                )}
                 <TableCell className="font-medium">
                   {batch ? batch.name : "—"}
                 </TableCell>
