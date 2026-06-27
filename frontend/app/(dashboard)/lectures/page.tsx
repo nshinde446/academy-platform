@@ -558,6 +558,15 @@ function LecturesPageBody() {
     toDate
   );
 
+  function clearFilters() {
+    setSearch("");
+    setFilterBatchId("");
+    setFilterTeacherId("");
+    setFilterStatus("");
+    setFromDate("");
+    setToDate("");
+  }
+
   // CSV of whatever the admin is currently looking at (filters/search applied).
   const visibleLectures = isMsa ? msaFiltered : filtered;
   function handleDownloadCsv() {
@@ -571,43 +580,51 @@ function LecturesPageBody() {
   }
 
   const headerActions = (
-    <div className="flex flex-wrap gap-2">
-      <TimetableDialog
-        branchId={branchId}
-        batches={batches}
-        teachers={teachers}
-        classrooms={classrooms}
-      />
-      <HolidaysDialog branchId={branchId} />
-      <TeacherLeaveDialog branchId={branchId} teachers={teachers} />
-      <ImportScheduleDialog branchId={branchId} />
-      <CopyScheduleDialog branchId={branchId} />
-      <Button
-        type="button"
-        variant="outline"
-        onClick={handleDownloadCsv}
-        disabled={visibleLectures.length === 0}
-        aria-label="Download schedule as CSV"
-      >
-        Download CSV
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={() => {
-          setMakeupPrefillId(null);
-          setMakeupOpen(true);
-        }}
-      >
-        Record Makeup
-      </Button>
-      <CreateLectureDialog
-        branchId={branchId}
-        batches={batches}
-        classrooms={classrooms}
-        onSubmit={handleCreate}
-        isPending={createMutation.isPending}
-      />
+    <div className="flex flex-wrap items-center gap-2">
+      {/* Setup / management tools — used occasionally, kept visually lighter. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <TimetableDialog
+          branchId={branchId}
+          batches={batches}
+          teachers={teachers}
+          classrooms={classrooms}
+        />
+        <HolidaysDialog branchId={branchId} />
+        <TeacherLeaveDialog branchId={branchId} teachers={teachers} />
+        <CopyScheduleDialog branchId={branchId} />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleDownloadCsv}
+          disabled={visibleLectures.length === 0}
+          aria-label="Download schedule as CSV"
+        >
+          Download CSV
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setMakeupPrefillId(null);
+            setMakeupOpen(true);
+          }}
+        >
+          Record Makeup
+        </Button>
+      </div>
+      {/* Divider between occasional tools and the two everyday actions. */}
+      <span className="hidden h-6 w-px bg-border sm:block" aria-hidden />
+      {/* Primary actions */}
+      <div className="flex flex-wrap items-center gap-2">
+        <ImportScheduleDialog branchId={branchId} />
+        <CreateLectureDialog
+          branchId={branchId}
+          batches={batches}
+          classrooms={classrooms}
+          onSubmit={handleCreate}
+          isPending={createMutation.isPending}
+        />
+      </div>
     </div>
   );
 
@@ -748,6 +765,35 @@ function LecturesPageBody() {
         </>
       ) : (
         <>
+          {/* At-a-glance strip — week context + the two triage queues that the
+              worklists below let you act on. Queue tiles glow when non-empty. */}
+          <Card size="sm">
+            <div className="grid grid-cols-2 gap-3 px-3 sm:grid-cols-3 lg:grid-cols-5">
+              <Kpi label="This week" value={String(msaKpis.thisWeek)} />
+              <Kpi
+                label="Completed"
+                value={String(msaKpis.completed)}
+                hint="this week"
+                tone="success"
+              />
+              <Kpi
+                label="Live now"
+                value={String(msaKpis.live)}
+                tone={msaKpis.live > 0 ? "primary" : "default"}
+              />
+              <Kpi
+                label="Pending close-out"
+                value={String(pendingActuals.length)}
+                tone={pendingActuals.length > 0 ? "warning" : "default"}
+              />
+              <Kpi
+                label="Makeup queue"
+                value={String(pendingMakeups.length)}
+                tone={pendingMakeups.length > 0 ? "warning" : "default"}
+              />
+            </div>
+          </Card>
+
           {/* End-of-day worklist — past lectures not yet closed out */}
           <PendingActualsPanel
             lectures={pendingActuals}
@@ -766,71 +812,85 @@ function LecturesPageBody() {
             onRecordMakeup={handleRecordMakeup}
           />
 
-          {/* Filters */}
-          <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
-            <Input
-              placeholder="Search by batch or teacher..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full lg:max-w-xs"
-            />
-            <select
-              value={filterBatchId}
-              onChange={(e) => setFilterBatchId(e.target.value)}
-              className={SELECT_CLASS}
-              aria-label="Filter by batch"
-            >
-              <option value="">All batches</option>
-              {batches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={filterTeacherId}
-              onChange={(e) => setFilterTeacherId(e.target.value)}
-              className={SELECT_CLASS}
-              aria-label="Filter by teacher"
-            >
-              <option value="">All teachers</option>
-              {teachers.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.first_name} {t.last_name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className={SELECT_CLASS}
-              aria-label="Filter by status"
-            >
-              <option value="">All statuses</option>
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            <Input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="w-full lg:w-40"
-              aria-label="From date"
-            />
-            <Input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="w-full lg:w-40"
-              aria-label="To date"
-            />
-            <span className="text-sm text-muted-foreground">
-              {filtered.length} lecture{filtered.length !== 1 ? "s" : ""}
-            </span>
-          </div>
+          {/* Filters toolbar */}
+          <Card size="sm">
+            <div className="flex flex-col gap-3 px-3 lg:flex-row lg:flex-wrap lg:items-center">
+              <Input
+                placeholder="Search by batch or teacher..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full lg:max-w-xs"
+              />
+              <select
+                value={filterBatchId}
+                onChange={(e) => setFilterBatchId(e.target.value)}
+                className={SELECT_CLASS}
+                aria-label="Filter by batch"
+              >
+                <option value="">All batches</option>
+                {batches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={filterTeacherId}
+                onChange={(e) => setFilterTeacherId(e.target.value)}
+                className={SELECT_CLASS}
+                aria-label="Filter by teacher"
+              >
+                <option value="">All teachers</option>
+                {teachers.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.first_name} {t.last_name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className={SELECT_CLASS}
+                aria-label="Filter by status"
+              >
+                <option value="">All statuses</option>
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <Input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="w-full lg:w-40"
+                aria-label="From date"
+              />
+              <Input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="w-full lg:w-40"
+                aria-label="To date"
+              />
+              <span className="flex-1" />
+              {hasFilter && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearFilters}
+                  className="text-muted-foreground"
+                >
+                  Clear filters
+                </Button>
+              )}
+              <span className="text-sm text-muted-foreground tabular-nums">
+                {filtered.length} lecture{filtered.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+          </Card>
 
           {/* Selection action bar — copy the ticked lectures to a chosen date */}
           {selectedIds.size > 0 && (
@@ -1022,11 +1082,31 @@ function LecturesPageBody() {
   );
 }
 
-function Kpi({ label, value }: { label: string; value: string }) {
+const KPI_VALUE_TONE: Record<string, string> = {
+  default: "text-foreground",
+  success: "text-emerald-600 dark:text-emerald-400",
+  primary: "text-primary",
+  warning: "text-amber-600 dark:text-amber-500",
+};
+
+function Kpi({
+  label,
+  value,
+  hint,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: "default" | "success" | "primary" | "warning";
+}) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="text-xl font-semibold tabular-nums">{value}</span>
+      <span className={`text-xl font-semibold tabular-nums ${KPI_VALUE_TONE[tone]}`}>
+        {value}
+      </span>
+      {hint && <span className="text-[10px] text-muted-foreground">{hint}</span>}
     </div>
   );
 }
