@@ -34,6 +34,11 @@ export const pendingActualsKeys = {
   list: (branchId: string) => [...pendingActualsKeys.all, branchId] as const,
 };
 
+export const makeupQueueKeys = {
+  all: ["lectures-pending-makeups"] as const,
+  list: (branchId: string) => [...makeupQueueKeys.all, branchId] as const,
+};
+
 export const sessionKeys = {
   all: ["lecture-sessions"] as const,
   list: (branchId: string) => [...sessionKeys.all, "list", branchId] as const,
@@ -137,6 +142,20 @@ export function usePendingActuals(branchId: string | undefined) {
   });
 }
 
+export function usePendingMakeups(branchId: string | undefined) {
+  return useQuery<LectureResponse[]>({
+    queryKey: makeupQueueKeys.list(branchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<LectureResponse[]>(
+        "/api/v1/lectures/pending-makeups",
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    enabled: !!branchId,
+  });
+}
+
 export function useCreateLecture(branchId: string | undefined) {
   const queryClient = useQueryClient();
 
@@ -228,6 +247,9 @@ export function useMarkNoShow(branchId: string | undefined) {
         queryClient.invalidateQueries({
           queryKey: pendingActualsKeys.list(branchId),
         });
+        queryClient.invalidateQueries({
+          queryKey: makeupQueueKeys.list(branchId),
+        });
       }
     },
   });
@@ -255,6 +277,10 @@ export function useMarkSubstitute(branchId: string | undefined) {
         queryClient.invalidateQueries({
           queryKey: lectureKeys.list(branchId),
         });
+        // A substitute on a no-show flips it to completed → leaves the queue.
+        queryClient.invalidateQueries({
+          queryKey: makeupQueueKeys.list(branchId),
+        });
       }
     },
   });
@@ -271,6 +297,9 @@ export function useCancelLecture(branchId: string | undefined) {
         });
         queryClient.invalidateQueries({
           queryKey: pendingActualsKeys.list(branchId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: makeupQueueKeys.list(branchId),
         });
       }
     },
@@ -695,6 +724,10 @@ export function useCreateLectureSession(branchId: string | undefined) {
         });
         queryClient.invalidateQueries({
           queryKey: lectureKeys.list(branchId),
+        });
+        // A makeup session linked to a lecture clears it from the makeup queue.
+        queryClient.invalidateQueries({
+          queryKey: makeupQueueKeys.list(branchId),
         });
       }
     },

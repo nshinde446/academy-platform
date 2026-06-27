@@ -26,6 +26,7 @@ import {
   useMarkNoShow,
   useMarkSubstitute,
   usePendingActuals,
+  usePendingMakeups,
   useStartLecture,
   useUpdateActuals,
   useClassrooms,
@@ -63,6 +64,7 @@ import { downloadScheduleCsv } from "./_lib/export-schedule";
 import { TimetableDialog } from "./_components/timetable-dialog";
 import { HolidaysDialog } from "./_components/holidays-dialog";
 import { PendingActualsPanel } from "./_components/pending-actuals-panel";
+import { MakeupQueuePanel } from "./_components/makeup-queue-panel";
 import { TeacherLeaveDialog } from "./_components/teacher-leave-dialog";
 
 const SELECT_CLASS =
@@ -210,6 +212,7 @@ function LecturesPageBody() {
 
   const lecturesQuery = useLectures(branchId);
   const pendingActualsQuery = usePendingActuals(branchId);
+  const pendingMakeupsQuery = usePendingMakeups(branchId);
   const sessionsQuery = useLectureSessions(branchId);
   const batchesQuery = useBatchesForLectures(branchId);
   const teachersQuery = useTeachers(branchId);
@@ -231,6 +234,7 @@ function LecturesPageBody() {
   const classrooms = classroomsQuery.data ?? [];
   const lectures = lecturesQuery.data ?? [];
   const pendingActuals = pendingActualsQuery.data ?? [];
+  const pendingMakeups = pendingMakeupsQuery.data ?? [];
   const sessions = sessionsQuery.data ?? [];
 
   // Resolve all subjects/topics referenced by the visible lectures so the
@@ -680,6 +684,15 @@ function LecturesPageBody() {
             teachers={teachers}
             subjects={allSubjects}
             onActuals={handleActuals}
+          />
+
+          {/* Makeup queue — cancelled / no-show lectures not yet rescheduled */}
+          <MakeupQueuePanel
+            lectures={pendingMakeups}
+            batches={batches}
+            teachers={teachers}
+            subjects={allSubjects}
+            onRecordMakeup={handleRecordMakeup}
           />
 
           {/* Filters */}

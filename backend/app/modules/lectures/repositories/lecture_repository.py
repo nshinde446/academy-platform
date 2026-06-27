@@ -161,6 +161,29 @@ async def list_pending_actuals(
     return list(result.scalars().all())
 
 
+async def list_pending_makeups(
+    session: AsyncSession, branch_id: uuid.UUID, limit: int = 100
+) -> list[Lecture]:
+    """Cancelled / no-show lectures that haven't been made up yet — i.e. no
+    LectureSession is linked to them. The missed topic is owed a makeup until
+    one is recorded. Oldest first."""
+    covered = select(LectureSessionPlan.lecture_id).where(
+        LectureSessionPlan.is_deleted == False
+    )
+    result = await session.execute(
+        select(Lecture)
+        .where(
+            Lecture.branch_id == branch_id,
+            Lecture.is_deleted == False,
+            Lecture.lecture_status.in_(["cancelled", "no_show"]),
+            Lecture.id.not_in(covered),
+        )
+        .order_by(Lecture.scheduled_start.asc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 async def update(session: AsyncSession, lecture: Lecture, **kwargs) -> Lecture:
     for key, value in kwargs.items():
         if value is not None:

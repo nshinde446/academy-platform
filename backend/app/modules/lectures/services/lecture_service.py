@@ -244,6 +244,12 @@ async def get_pending_actuals(session: AsyncSession, branch_id: uuid.UUID):
     return await lecture_repository.list_pending_actuals(session, branch_id, now)
 
 
+async def get_pending_makeups(session: AsyncSession, branch_id: uuid.UUID):
+    """The makeup queue: cancelled / no-show lectures not yet made up (no linked
+    session), so a missed topic is never silently dropped."""
+    return await lecture_repository.list_pending_makeups(session, branch_id)
+
+
 async def start_lecture(
     session: AsyncSession,
     lecture_id: uuid.UUID,

@@ -482,6 +482,19 @@ async def list_pending_actuals(
     return await lecture_service.get_pending_actuals(session, branch_id)
 
 
+@router.get("/pending-makeups", response_model=list[LectureResponse])
+async def list_pending_makeups(
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])
+    ),
+    session: AsyncSession = Depends(get_db),
+):
+    """Makeup queue: cancelled / no-show lectures with no linked makeup session
+    yet, oldest first — so a missed topic is never silently dropped."""
+    return await lecture_service.get_pending_makeups(session, branch_id)
+
+
 @router.get("/{lecture_id}", response_model=LectureResponse)
 async def get_lecture(
     lecture_id: uuid.UUID,
