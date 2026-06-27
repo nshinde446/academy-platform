@@ -227,6 +227,7 @@ function LecturesPageBody() {
   // Row selection for "copy selected to date" — explicit, no by-date guess.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [copyTargetDate, setCopyTargetDate] = useState("");
+  const [deleteSelectedOpen, setDeleteSelectedOpen] = useState(false);
 
   // Calendar week view — the Monday of the week currently shown.
   const [weekStart, setWeekStart] = useState<Date>(() =>
@@ -535,6 +536,17 @@ function LecturesPageBody() {
           "Copy failed"
       );
     }
+  }
+  async function handleDeleteSelectedConfirm() {
+    const ids = Array.from(selectedIds);
+    for (const id of ids) {
+      try {
+        await deleteMutation.mutateAsync(id);
+      } catch {
+        // keep going — partial delete is better than aborting mid-way
+      }
+    }
+    setSelectedIds(new Set());
   }
 
   const hasFilter = !!(
@@ -849,6 +861,14 @@ function LecturesPageBody() {
               </Button>
               <Button
                 type="button"
+                variant="destructive"
+                onClick={() => setDeleteSelectedOpen(true)}
+                disabled={deleteMutation.isPending}
+              >
+                Delete {selectedIds.size}
+              </Button>
+              <Button
+                type="button"
                 variant="outline"
                 onClick={() => setSelectedIds(new Set())}
               >
@@ -975,6 +995,16 @@ function LecturesPageBody() {
         confirmLabel="Delete"
         destructive
         onConfirm={handleDeleteConfirm}
+      />
+
+      <ConfirmDialog
+        open={deleteSelectedOpen}
+        onOpenChange={setDeleteSelectedOpen}
+        title={`Delete ${selectedIds.size} selected lecture(s)?`}
+        description="This soft-deletes the selected lectures. Attendance records remain in the database."
+        confirmLabel={`Delete ${selectedIds.size}`}
+        destructive
+        onConfirm={handleDeleteSelectedConfirm}
       />
 
       <ConfirmDialog

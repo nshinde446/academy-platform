@@ -115,73 +115,72 @@ describe("LectureTable", () => {
     expect(screen.getByText("Newton's Laws")).toBeInTheDocument();
   });
 
-  it("scheduled status shows Start + Cancel + Delete + Attendance, not Complete", () => {
+  async function openMenu(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(
+      screen.getByRole("button", { name: /actions for lecture/i })
+    );
+    // The Base UI menu mounts asynchronously — wait for the popup to appear.
+    await screen.findByRole("menu");
+  }
+
+  it("scheduled: menu has Start + Cancel + Attendance (not Complete); Delete separate", async () => {
+    const user = userEvent.setup();
     renderTable([makeLecture({ lecture_status: "scheduled" })]);
-
-    expect(
-      screen.getByRole("button", { name: /start lecture/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /cancel lecture/i })
-    ).toBeInTheDocument();
+    // Delete lives outside the actions menu, on its own.
     expect(
       screen.getByRole("button", { name: /delete lecture/i })
     ).toBeInTheDocument();
+    await openMenu(user);
+    expect(screen.getByRole("menuitem", { name: "Start" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Cancel" })).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: /view attendance/i })
+      screen.getByRole("menuitem", { name: "Attendance" })
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /complete lecture/i })
-    ).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Complete" })).toBeNull();
   });
 
-  it("started status shows Complete + Cancel, not Start", () => {
+  it("started: menu has Complete + Cancel, not Start", async () => {
+    const user = userEvent.setup();
     renderTable([makeLecture({ lecture_status: "started" })]);
-
+    await openMenu(user);
+    expect(screen.queryByRole("menuitem", { name: "Start" })).toBeNull();
     expect(
-      screen.queryByRole("button", { name: /^start lecture/i })
-    ).toBeNull();
-    expect(
-      screen.getByRole("button", { name: /complete lecture/i })
+      screen.getByRole("menuitem", { name: "Complete" })
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /cancel lecture/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Cancel" })).toBeInTheDocument();
   });
 
-  it("completed status shows only Delete + Attendance", () => {
+  it("completed: no Start/Complete/Cancel in the menu; Delete still separate", async () => {
+    const user = userEvent.setup();
     renderTable([makeLecture({ lecture_status: "completed" })]);
-
-    expect(
-      screen.queryByRole("button", { name: /start lecture/i })
-    ).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: /complete lecture/i })
-    ).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: /cancel lecture/i })
-    ).toBeNull();
     expect(
       screen.getByRole("button", { name: /delete lecture/i })
     ).toBeInTheDocument();
+    await openMenu(user);
+    expect(screen.queryByRole("menuitem", { name: "Start" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Complete" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Cancel" })).toBeNull();
   });
 
-  it("Attendance link uses /attendance?lecture_id={id}", () => {
+  it("Attendance menuitem links to /attendance?lecture_id={id}", async () => {
+    const user = userEvent.setup();
     renderTable([makeLecture()]);
-
-    const link = screen.getByRole("link", { name: /view attendance/i });
-    expect(link.getAttribute("href")).toBe("/attendance?lecture_id=l1");
+    await openMenu(user);
+    const item = screen.getByRole("menuitem", { name: "Attendance" });
+    expect(item.getAttribute("href")).toBe("/attendance?lecture_id=l1");
   });
 
-  it("invokes onStart/onCancel/onDelete with the row's lecture", async () => {
+  it("invokes onStart/onCancel from the menu and onDelete from the button", async () => {
     const user = userEvent.setup();
     const l = makeLecture({ lecture_status: "scheduled" });
     renderTable([l]);
 
-    await user.click(screen.getByRole("button", { name: /start lecture/i }));
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Start" }));
     expect(handlers.onStart).toHaveBeenCalledWith(l);
 
-    await user.click(screen.getByRole("button", { name: /cancel lecture/i }));
+    await openMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Cancel" }));
     expect(handlers.onCancel).toHaveBeenCalledWith(l);
 
     await user.click(screen.getByRole("button", { name: /delete lecture/i }));
@@ -230,7 +229,8 @@ describe("LectureTable", () => {
     expect(onToggleSelect).toHaveBeenCalledWith("l1");
   });
 
-  it("shows Plan Topic (not End-of-Day) for a future-dated lecture", () => {
+  it("future-dated lecture: menu offers Plan topic, not End of day", async () => {
+    const user = userEvent.setup();
     const future = new Date();
     future.setFullYear(future.getFullYear() + 1);
     const iso = future.toISOString();
@@ -241,16 +241,15 @@ describe("LectureTable", () => {
         lecture_status: "scheduled",
       }),
     ]);
-    // Future → topic-only "plan" action, never the end-of-day actuals one.
+    await openMenu(user);
     expect(
-      screen.getByRole("button", { name: /plan topic/i })
+      screen.getByRole("menuitem", { name: "Plan topic" })
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /end-of-day actuals/i })
-    ).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "End of day" })).toBeNull();
   });
 
-  it("shows End of Day for a past-dated lecture", () => {
+  it("past-dated lecture: menu offers End of day", async () => {
+    const user = userEvent.setup();
     renderTable([
       makeLecture({
         scheduled_start: "2020-01-01T09:00:00Z",
@@ -258,8 +257,9 @@ describe("LectureTable", () => {
         lecture_status: "scheduled",
       }),
     ]);
+    await openMenu(user);
     expect(
-      screen.getByRole("button", { name: /end-of-day actuals/i })
+      screen.getByRole("menuitem", { name: "End of day" })
     ).toBeInTheDocument();
   });
 

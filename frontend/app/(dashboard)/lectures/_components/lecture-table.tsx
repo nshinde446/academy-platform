@@ -12,6 +12,13 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import type {
   BatchSummary,
   LectureResponse,
@@ -438,94 +445,73 @@ export function LectureTable({
                   })()}
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex flex-wrap justify-end gap-1">
-                    {canStart && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onStart(l)}
-                        aria-label={`Start lecture ${l.id}`}
-                      >
-                        Start
-                      </Button>
-                    )}
-                    {canComplete && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onComplete(l)}
-                        aria-label={`Complete lecture ${l.id}`}
-                      >
-                        Complete
-                      </Button>
-                    )}
-                    {canCancel && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onCancel(l)}
-                        aria-label={`Cancel lecture ${l.id}`}
-                      >
-                        Cancel
-                      </Button>
-                    )}
-                    {canNoShow && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onNoShow(l)}
-                        aria-label={`Mark no-show for lecture ${l.id}`}
-                      >
-                        No-Show
-                      </Button>
-                    )}
-                    {canSubstitute && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onSubstitute(l)}
-                        aria-label={`Mark substitute for lecture ${l.id}`}
-                      >
-                        {l.actual_teacher_id ? "Edit Sub" : "Substitute"}
-                      </Button>
-                    )}
-                    {canActuals && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onActuals(l)}
-                        aria-label={
-                          isFuture
-                            ? `Plan topic for lecture ${l.id}`
-                            : `Record end-of-day actuals for lecture ${l.id}`
+                  <div className="flex items-center justify-end gap-1">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            aria-label={`Actions for lecture ${l.id}`}
+                            className="px-2"
+                          >
+                            <span aria-hidden className="text-base leading-none">
+                              ⋯
+                            </span>
+                          </Button>
                         }
-                      >
-                        {isFuture
-                          ? "Plan Topic"
-                          : l.actual_start
-                            ? "Edit Actuals"
-                            : "End of Day"}
-                      </Button>
-                    )}
-                    <Link
-                      href={`/attendance?lecture_id=${l.id}`}
-                      className="inline-flex h-8 items-center rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent"
-                      aria-label={`View attendance for lecture ${l.id}`}
-                    >
-                      Attendance
-                    </Link>
+                      />
+                      <DropdownMenuContent>
+                        {canStart && (
+                          <DropdownMenuItem onClick={() => onStart(l)}>
+                            Start
+                          </DropdownMenuItem>
+                        )}
+                        {canComplete && (
+                          <DropdownMenuItem onClick={() => onComplete(l)}>
+                            Complete
+                          </DropdownMenuItem>
+                        )}
+                        {canActuals && (
+                          <DropdownMenuItem onClick={() => onActuals(l)}>
+                            {isFuture
+                              ? "Plan topic"
+                              : l.actual_start
+                                ? "Edit actuals"
+                                : "End of day"}
+                          </DropdownMenuItem>
+                        )}
+                        {canSubstitute && (
+                          <DropdownMenuItem onClick={() => onSubstitute(l)}>
+                            {l.actual_teacher_id ? "Edit substitute" : "Substitute"}
+                          </DropdownMenuItem>
+                        )}
+                        {canNoShow && (
+                          <DropdownMenuItem onClick={() => onNoShow(l)}>
+                            Mark no-show
+                          </DropdownMenuItem>
+                        )}
+                        {canCancel && (
+                          <DropdownMenuItem onClick={() => onCancel(l)}>
+                            Cancel
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          render={<Link href={`/attendance?lecture_id=${l.id}`} />}
+                        >
+                          Attendance
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button
                       type="button"
                       size="sm"
-                      variant="destructive"
+                      variant="ghost"
                       onClick={() => onDelete(l)}
                       aria-label={`Delete lecture ${l.id}`}
+                      className="px-2 text-destructive hover:bg-destructive/10 hover:text-destructive"
                     >
                       Delete
                     </Button>
