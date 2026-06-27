@@ -87,6 +87,7 @@ export function TimetableDialog({
   const [saved, setSaved] = useState(false);
   const [fromDate, setFromDate] = useState(todayIso());
   const [toDate, setToDate] = useState(addDaysIso(todayIso(), 6));
+  const [genAllBatches, setGenAllBatches] = useState(false);
   const [genResult, setGenResult] = useState<GenerateScheduleSummary | null>(
     null
   );
@@ -180,7 +181,9 @@ export function TimetableDialog({
       const summary = await genMutation.mutateAsync({
         fromDate,
         toDate,
-        batchId: batchId || undefined,
+        // "All batches" omits batch scope so the backend generates from every
+        // batch's saved timetable in one run.
+        batchId: genAllBatches ? undefined : batchId || undefined,
       });
       setGenResult(summary);
     } catch (err: any) {
@@ -439,7 +442,21 @@ export function TimetableDialog({
                   >
                     {genMutation.isPending ? "Generating…" : "Generate"}
                   </Button>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={genAllBatches}
+                      onChange={(e) => setGenAllBatches(e.target.checked)}
+                      className="h-4 w-4 rounded border-input"
+                    />
+                    All batches
+                  </label>
                 </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {genAllBatches
+                    ? "Generates from every batch's saved timetable across the date range."
+                    : "Generates from this batch's timetable. Tick “All batches” to run the whole branch."}
+                </p>
 
                 {genResult && (
                   <div

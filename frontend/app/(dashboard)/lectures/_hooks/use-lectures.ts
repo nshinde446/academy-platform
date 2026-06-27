@@ -39,6 +39,12 @@ export const makeupQueueKeys = {
   list: (branchId: string) => [...makeupQueueKeys.all, branchId] as const,
 };
 
+export const calendarKeys = {
+  all: ["lectures-in-range"] as const,
+  range: (branchId: string, from: string, to: string) =>
+    [...calendarKeys.all, branchId, from, to] as const,
+};
+
 export const sessionKeys = {
   all: ["lecture-sessions"] as const,
   list: (branchId: string) => [...sessionKeys.all, "list", branchId] as const,
@@ -139,6 +145,24 @@ export function usePendingActuals(branchId: string | undefined) {
       return res.data;
     },
     enabled: !!branchId,
+  });
+}
+
+export function useLecturesInRange(
+  branchId: string | undefined,
+  fromIso: string,
+  toIso: string
+) {
+  return useQuery<LectureResponse[]>({
+    queryKey: calendarKeys.range(branchId!, fromIso, toIso),
+    queryFn: async () => {
+      const res = await apiClient.get<LectureResponse[]>(
+        "/api/v1/lectures/in-range",
+        { params: { branch_id: branchId, from_date: fromIso, to_date: toIso } }
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!fromIso && !!toIso,
   });
 }
 
@@ -500,6 +524,8 @@ export function useGenerateSchedule(branchId: string | undefined) {
     onSuccess: () => {
       if (branchId) {
         queryClient.invalidateQueries({ queryKey: lectureKeys.list(branchId) });
+        // Refresh the week/calendar grid with the freshly generated lectures.
+        queryClient.invalidateQueries({ queryKey: calendarKeys.all });
       }
     },
   });

@@ -375,6 +375,29 @@ async def list_session_batches_for_sessions(
     return list(result.scalars().all())
 
 
+async def list_in_range(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime,
+    to_dt: datetime,
+    limit: int = 500,
+) -> list[Lecture]:
+    """All lectures whose scheduled_start falls in [from_dt, to_dt) — powers the
+    week/calendar view. Ascending so the grid fills chronologically."""
+    result = await session.execute(
+        select(Lecture)
+        .where(
+            Lecture.branch_id == branch_id,
+            Lecture.is_deleted == False,
+            Lecture.scheduled_start >= from_dt,
+            Lecture.scheduled_start < to_dt,
+        )
+        .order_by(Lecture.scheduled_start.asc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 async def list_lectures_for_day(
     session: AsyncSession,
     branch_id: uuid.UUID,

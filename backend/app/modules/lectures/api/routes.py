@@ -482,6 +482,23 @@ async def list_pending_actuals(
     return await lecture_service.get_pending_actuals(session, branch_id)
 
 
+@router.get("/in-range", response_model=list[LectureResponse])
+async def list_lectures_in_range(
+    branch_id: uuid.UUID = Query(...),
+    from_date: datetime = Query(..., description="ISO datetime, inclusive"),
+    to_date: datetime = Query(..., description="ISO datetime, exclusive"),
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])
+    ),
+    session: AsyncSession = Depends(get_db),
+):
+    """Lectures scheduled in [from_date, to_date) — powers the week/calendar
+    grid (one week at a time)."""
+    return await lecture_service.list_lectures_in_range(
+        session, branch_id, from_date, to_date
+    )
+
+
 @router.get("/pending-makeups", response_model=list[LectureResponse])
 async def list_pending_makeups(
     branch_id: uuid.UUID = Query(...),

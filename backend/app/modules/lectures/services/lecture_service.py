@@ -250,6 +250,18 @@ async def get_pending_makeups(session: AsyncSession, branch_id: uuid.UUID):
     return await lecture_repository.list_pending_makeups(session, branch_id)
 
 
+async def list_lectures_in_range(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime,
+    to_dt: datetime,
+):
+    """Lectures scheduled in [from_dt, to_dt) — powers the week/calendar grid."""
+    return await lecture_repository.list_in_range(
+        session, branch_id, from_dt, to_dt
+    )
+
+
 async def start_lecture(
     session: AsyncSession,
     lecture_id: uuid.UUID,

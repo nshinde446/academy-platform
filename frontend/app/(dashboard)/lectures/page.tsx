@@ -23,6 +23,7 @@ import {
   useDeleteLecture,
   useLectures,
   useLectureSessions,
+  useLecturesInRange,
   useMarkNoShow,
   useMarkSubstitute,
   usePendingActuals,
@@ -65,6 +66,7 @@ import { TimetableDialog } from "./_components/timetable-dialog";
 import { HolidaysDialog } from "./_components/holidays-dialog";
 import { PendingActualsPanel } from "./_components/pending-actuals-panel";
 import { MakeupQueuePanel } from "./_components/makeup-queue-panel";
+import { CalendarWeekView } from "./_components/calendar-week-view";
 import { TeacherLeaveDialog } from "./_components/teacher-leave-dialog";
 
 const SELECT_CLASS =
@@ -131,6 +133,20 @@ const MSA_GROUPS: { value: MsaStatusGroup | "all"; label: string }[] = [
   { value: "no_show", label: "No-show" },
 ];
 
+function startOfWeekMonday(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  const day = x.getDay(); // 0 Sun … 6 Sat
+  x.setDate(x.getDate() + (day === 0 ? -6 : 1 - day)); // back to Monday
+  return x;
+}
+
+function addDaysDate(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
 function tomorrowIso(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
@@ -175,7 +191,9 @@ function LecturesPageBody() {
   const branchId = user?.branch_roles?.[0]?.branch_id;
 
   const searchParams = useSearchParams();
-  const isMsa = searchParams.get("view") === "msa";
+  const view = searchParams.get("view");
+  const isMsa = view === "msa";
+  const isCalendar = view === "calendar";
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
@@ -210,6 +228,18 @@ function LecturesPageBody() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [copyTargetDate, setCopyTargetDate] = useState("");
 
+  // Calendar week view — the Monday of the week currently shown.
+  const [weekStart, setWeekStart] = useState<Date>(() =>
+    startOfWeekMonday(new Date()),
+  );
+  const calFrom = weekStart.toISOString();
+  const calTo = addDaysDate(weekStart, 7).toISOString();
+  const calendarQuery = useLecturesInRange(
+    branchId,
+    isCalendar ? calFrom : "",
+    isCalendar ? calTo : "",
+  );
+
   const lecturesQuery = useLectures(branchId);
   const pendingActualsQuery = usePendingActuals(branchId);
   const pendingMakeupsQuery = usePendingMakeups(branchId);
@@ -241,9 +271,10 @@ function LecturesPageBody() {
   // table can render their names. Group lectures by the (batch.course_id,
   // subject_id) they reference, then load. To keep this dashboard simple,
   // we fetch subjects per unique course on-page and topics per unique subject.
+  const calendarLectures = calendarQuery.data ?? [];
   const uniqueCourseIds = useMemo(() => {
     const set = new Set<string>();
-    for (const l of lectures) {
+    for (const l of [...lectures, ...calendarLectures]) {
       const b = batches.find((x) => x.id === l.batch_id);
       if (b) set.add(b.course_id);
     }
@@ -254,14 +285,15 @@ function LecturesPageBody() {
       }
     }
     return Array.from(set);
-  }, [lectures, sessions, batches]);
+  }, [lectures, calendarLectures, sessions, batches]);
 
   const uniqueSubjectIds = useMemo(() => {
     const set = new Set<string>();
     for (const l of lectures) set.add(l.subject_id);
+    for (const l of calendarLectures) set.add(l.subject_id);
     for (const s of sessions) set.add(s.subject_id);
     return Array.from(set);
-  }, [lectures, sessions]);
+  }, [lectures, calendarLectures, sessions]);
 
   // useQueries lets the count vary with the data without breaking the
   // Rules of Hooks. React Query dedupes by queryKey across the page.
@@ -574,32 +606,59 @@ function LecturesPageBody() {
         <div>
           <h2 className="text-2xl font-semibold">Lectures</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            {isMsa
-              ? "Schedule, attendance, and one-click DPP generation off completed lectures."
-              : "Schedule, run, and track lectures. Backend rejects teacher/batch/classroom conflicts at create time."}
+            {isCalendar
+              ? "Week-at-a-glance grid of every batch's scheduled lectures."
+              : isMsa
+                ? "Schedule, attendance, and one-click DPP generation off completed lectures."
+                : "Schedule, run, and track lectures. Backend rejects teacher/batch/classroom conflicts at create time."}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            {isMsa ? (
-              <>
-                Simplified view ·{" "}
-                <Link href="/lectures" className="underline">
-                  switch to full view
-                </Link>
-              </>
-            ) : (
-              <>
-                Full view ·{" "}
-                <Link href="/lectures?view=msa" className="underline">
-                  try the simplified view
-                </Link>
-              </>
-            )}
+            {[
+              { key: "full", label: "Full", href: "/lectures" },
+              { key: "msa", label: "Simplified", href: "/lectures?view=msa" },
+              {
+                key: "calendar",
+                label: "Calendar",
+                href: "/lectures?view=calendar",
+              },
+            ].map((v, i) => {
+              const active =
+                (v.key === "full" && !isMsa && !isCalendar) ||
+                (v.key === "msa" && isMsa) ||
+                (v.key === "calendar" && isCalendar);
+              return (
+                <span key={v.key}>
+                  {i > 0 && " · "}
+                  {active ? (
+                    <span className="font-medium text-foreground">
+                      {v.label}
+                    </span>
+                  ) : (
+                    <Link href={v.href} className="underline">
+                      {v.label}
+                    </Link>
+                  )}
+                </span>
+              );
+            })}
           </p>
         </div>
         {headerActions}
       </div>
 
-      {isMsa ? (
+      {isCalendar ? (
+        <CalendarWeekView
+          lectures={calendarQuery.data ?? []}
+          batches={batches}
+          teachers={teachers}
+          subjects={allSubjects}
+          weekStart={weekStart}
+          onPrev={() => setWeekStart((w) => addDaysDate(w, -7))}
+          onNext={() => setWeekStart((w) => addDaysDate(w, 7))}
+          onToday={() => setWeekStart(startOfWeekMonday(new Date()))}
+          isLoading={calendarQuery.isLoading}
+        />
+      ) : isMsa ? (
         <>
           {/* MSA KPI strip */}
           <Card size="sm">
