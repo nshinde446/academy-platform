@@ -124,7 +124,7 @@ async def test_partial_accept_reports_each_failure(
     for needle in [
         "no teacher",
         "unknown batch_code",
-        "isn't mapped",
+        "is not in batch",
         "unknown classroom_code",
         "bad date",
         "bad time",
@@ -222,6 +222,31 @@ async def test_header_case_and_spaces_normalized(
     csv = header + "2026-06-01,09:00,10:00,teacher@test.com,BATCH-A,PHY,R101,offline,ok\n"
     body = (await _import_csv(client, csv)).json()
     assert body["imported"] == 1, body
+
+
+# ── Resolution: subject by course, teacher by name ──────────────────────────
+
+@pytest.mark.asyncio
+async def test_subject_resolves_by_course_without_mapping(
+    client: AsyncClient, seed_data
+):
+    """No BatchSubjectMapping needed — PHY resolves because it belongs to the
+    batch's course (there's no UI to create those mappings)."""
+    await _login_admin(client)
+    # NOTE: deliberately NOT calling _map_subject.
+    csv = HEADER + "2026-06-01,09:00,10:00,teacher@test.com,BATCH-A,PHY,R101,offline,\n"
+    body = (await _import_csv(client, csv)).json()
+    assert body["imported"] == 1 and body["skipped"] == 0, body
+
+
+@pytest.mark.asyncio
+async def test_teacher_matched_by_full_name(client: AsyncClient, seed_data):
+    """The teacher column accepts a full name, not just an email."""
+    await _login_admin(client)
+    # Seed teacher 060 is "Teacher User"; match by name instead of email.
+    csv = HEADER + "2026-06-01,09:00,10:00,Teacher User,BATCH-A,PHY,R101,offline,\n"
+    body = (await _import_csv(client, csv)).json()
+    assert body["imported"] == 1 and body["skipped"] == 0, body
 
 
 # ── Holiday awareness ────────────────────────────────────────────────────────

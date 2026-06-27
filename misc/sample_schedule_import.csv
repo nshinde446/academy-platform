@@ -1,0 +1,13 @@
+date,start_time,end_time,teacher_email,batch_code,subject_code,classroom_code,delivery_mode,notes
+2026-08-03,09:00,10:00,SURAJ SHINDE,JEE-Main-12-B,PHY,101,offline,VALID offline lecture
+2026-08-03,10:15,11:15,SURAJ SHINDE,JEE-Main-12-B,PHY,,online,VALID online (no room needed)
+2026-08-03,12:00,13:00,Ghost Teacher,JEE-Main-12-B,PHY,101,offline,UNKNOWN teacher name
+2026-08-04,09:00,10:00,SURAJ SHINDE,FAKE-BATCH,PHY,101,offline,UNKNOWN batch code
+2026-08-04,11:00,12:00,SURAJ SHINDE,JEE-Main-12-B,ZZZ,101,offline,subject not in batch course
+2026-08-05,09:00,10:00,SURAJ SHINDE,JEE-Main-12-B,PHY,999,offline,UNKNOWN classroom code
+2026-13-40,09:00,10:00,SURAJ SHINDE,JEE-Main-12-B,PHY,101,offline,BAD date format
+2026-08-06,25:99,10:00,SURAJ SHINDE,JEE-Main-12-B,PHY,101,offline,BAD time format
+2026-08-06,10:00,09:00,SURAJ SHINDE,JEE-Main-12-B,PHY,101,offline,end before start
+2026-08-07,09:00,10:00,SURAJ SHINDE,JEE-Main-12-B,PHY,,offline,OFFLINE with no classroom
+2026-07-06,09:00,10:00,SURAJ SHINDE,JEE-Main-12-B,PHY,101,offline,CONFLICT with an existing lecture
+2026-08-15,09:00,10:00,SURAJ SHINDE,JEE-Main-12-B,PHY,101,offline,date on a HOLIDAY (add 2026-08-15 as a holiday to see)

@@ -35,7 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.academic.models.academic_models import Subject
 from app.modules.audit.services import audit_service
 from app.modules.auth.models.auth_models import User
-from app.modules.batch.models.batch_models import Batch, BatchSubjectMapping
+from app.modules.batch.models.batch_models import Batch
 from app.modules.classroom.models.classroom_models import Classroom
 from app.modules.lectures.repositories import lecture_repository
 from app.modules.lectures.schemas.lecture_schemas import LectureCreate
@@ -56,6 +56,12 @@ REQUIRED_COLUMNS = (
 
 def _normalize(header: str) -> str:
     return header.strip().lower().replace(" ", "_")
+
+
+def _norm_name(value: str) -> str:
+    """Lowercase + collapse internal whitespace, so 'SURAJ  SHINDE' and
+    'Suraj Shinde' compare equal when matching a teacher by name."""
+    return " ".join(str(value).lower().split())
 
 
 def _parse_csv(content: bytes) -> list[dict[str, Any]]:
@@ -157,6 +163,29 @@ async def _resolve_lookups(
             )
         ).scalar_one_or_none()
     if teacher is None:
+        # Email isn't always recorded, so also match by full name (first last).
+        wanted = _norm_name(teacher_email)
+        candidates = (
+            await session.execute(
+                select(Teacher).where(
+                    Teacher.branch_id == branch_id,
+                    Teacher.is_deleted == False,
+                )
+            )
+        ).scalars().all()
+        matches = [
+            t
+            for t in candidates
+            if _norm_name(f"{t.first_name} {t.last_name}") == wanted
+        ]
+        if len(matches) == 1:
+            teacher = matches[0]
+        elif len(matches) > 1:
+            raise ValueError(
+                f"more than one teacher named '{teacher_email}' — "
+                f"use a unique name or email"
+            )
+    if teacher is None:
         raise ValueError(f"no teacher in this branch matches: {teacher_email}")
 
     batch = (
@@ -171,27 +200,23 @@ async def _resolve_lookups(
     if not batch:
         raise ValueError(f"unknown batch_code: {batch_code}")
 
-    # Subject.code isn't globally unique. Scope to the subjects mapped
-    # to this batch via batch_subject_mappings — that's the
-    # authoritative "subjects this batch actually studies" set.
+    # Subject.code isn't globally unique (JEE Physics vs NEET Physics), so we
+    # disambiguate by the batch's course — the subjects the batch actually
+    # studies. (This used to require a BatchSubjectMapping row, but there's no
+    # UI/endpoint to create those, so course scoping is both simpler and always
+    # available.)
     subject = (
         await session.execute(
-            select(Subject)
-            .join(
-                BatchSubjectMapping,
-                BatchSubjectMapping.subject_id == Subject.id,
-            )
-            .where(
+            select(Subject).where(
                 Subject.code == subject_code.strip(),
-                BatchSubjectMapping.batch_id == batch.id,
-                BatchSubjectMapping.is_deleted == False,
+                Subject.course_id == batch.course_id,
                 Subject.is_deleted == False,
             )
         )
     ).scalar_one_or_none()
     if not subject:
         raise ValueError(
-            f"subject '{subject_code}' isn't mapped to batch '{batch.code}'"
+            f"subject '{subject_code}' is not in batch '{batch.code}' course"
         )
 
     classroom = None

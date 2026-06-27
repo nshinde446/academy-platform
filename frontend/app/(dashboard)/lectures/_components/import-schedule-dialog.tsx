@@ -252,8 +252,9 @@ export function ImportScheduleDialog({ branchId }: ImportScheduleDialogProps) {
             />
           )}
           <p className="text-[11px] text-muted-foreground">
-            Date format: YYYY-MM-DD. Times in 24h HH:MM. Teachers matched by
-            their account email; batches and subjects matched by code.
+            Date format: YYYY-MM-DD. Times in 24h HH:MM. Teacher matched by full
+            name or account email; batch by code; subject by code within the
+            batch&apos;s course.
           </p>
 
           {/* Dry-run preview grid (S6) */}
