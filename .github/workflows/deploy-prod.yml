@@ -20,13 +20,17 @@ env:
 jobs:
   # Re-run the test suite as a gate, even though CI ran on the PR.
   # Prevents shipping a master commit that someone pushed directly without PR.
+  # Runs IN PARALLEL with the image build below — only the deploy job waits on it.
   gate-tests:
     uses: ./.github/workflows/ci.yml
 
-  build-and-deploy:
-    needs: gate-tests
+  # Backend + frontend images build in SEPARATE jobs so they run on parallel
+  # runners, concurrently with gate-tests. Images are tagged by SHA, so building
+  # a commit that later fails the gate is harmless — the deploy job is what
+  # actually ships, and it waits for the gate. This takes both the test run and
+  # the other image off each build's critical path.
+  build-backend:
     runs-on: ubuntu-latest
-    environment: production   # protect with required reviewers in repo settings
     steps:
       - uses: actions/checkout@v4
 
@@ -51,6 +55,43 @@ jobs:
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Persist Next.js's incremental build cache (.next/cache) across runs.
+      # The Docker layer cache can't help — any source change invalidates the
+      # `npm run build` layer — so we restore the cache dir here, inject it into
+      # the BuildKit cache mount the Dockerfile declares, and the dance action's
+      # post step extracts the updated cache back out for actions/cache to save.
+      - name: Restore Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: nextjs-build-cache
+          key: nextjs-build-cache-${{ hashFiles('frontend/package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            nextjs-build-cache-${{ hashFiles('frontend/package-lock.json') }}-
+            nextjs-build-cache-
+
+      - name: Inject Next.js cache into BuildKit
+        uses: reproducible-containers/buildkit-cache-dance@v3.1.2
+        with:
+          cache-map: |
+            {
+              "nextjs-build-cache": "/app/.next/cache"
+            }
+
       - name: Build & push frontend image
         uses: docker/build-push-action@v5
         with:
@@ -61,6 +102,17 @@ jobs:
             ${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+
+  # Ship it. Waits on BOTH the test gate and BOTH image builds, plus the
+  # `production` environment's required-reviewer approval. Builds above run
+  # without waiting for approval (cheap, harmless); the actual prod mutation
+  # — this SSH deploy — is what the approval gate protects.
+  deploy:
+    needs: [gate-tests, build-backend, build-frontend]
+    runs-on: ubuntu-latest
+    environment: production   # protect with required reviewers in repo settings
+    steps:
+      - uses: actions/checkout@v4
 
       - name: SSH deploy to production
         uses: appleboy/ssh-action@v1
