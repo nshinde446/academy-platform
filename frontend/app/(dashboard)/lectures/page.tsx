@@ -893,6 +893,7 @@ function LecturesPageBody() {
               teachers={teachers}
               subjects={allSubjects}
               topics={allTopics}
+              classrooms={classrooms}
               coveredLectureIds={coveredLectureIds}
               selectedIds={selectedIds}
               onToggleSelect={toggleSelect}
@@ -904,6 +905,8 @@ function LecturesPageBody() {
               onSubstitute={handleSubstitute}
               onNoShow={handleNoShow}
               onActuals={handleActuals}
+              onGenerateDpp={handleGenerateDpp}
+              onRecordMakeup={handleRecordMakeup}
             />
           )}
 

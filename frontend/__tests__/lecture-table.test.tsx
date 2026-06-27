@@ -59,6 +59,8 @@ const handlers = {
   onSubstitute: vi.fn(),
   onNoShow: vi.fn(),
   onActuals: vi.fn(),
+  onGenerateDpp: vi.fn(),
+  onRecordMakeup: vi.fn(),
 };
 
 function renderTable(lectures: LectureResponse[]) {
@@ -117,42 +119,45 @@ describe("LectureTable", () => {
 
   async function openMenu(user: ReturnType<typeof userEvent.setup>) {
     await user.click(
-      screen.getByRole("button", { name: /actions for lecture/i })
+      screen.getByRole("button", { name: /more actions for lecture/i })
     );
     // The Base UI menu mounts asynchronously — wait for the popup to appear.
     await screen.findByRole("menu");
   }
 
-  it("scheduled: menu has Start + Cancel + Attendance (not Complete); Delete separate", async () => {
+  it("scheduled (past): Start is the quick-action; menu has Cancel, not Start", async () => {
     const user = userEvent.setup();
-    renderTable([makeLecture({ lecture_status: "scheduled" })]);
-    // Delete lives outside the actions menu, on its own.
+    renderTable([makeLecture({ lecture_status: "scheduled" })]); // 2026-05-20, past
+    // Quick action + separate Delete, both outside the overflow.
+    expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /delete lecture/i })
     ).toBeInTheDocument();
     await openMenu(user);
-    expect(screen.getByRole("menuitem", { name: "Start" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Cancel" })).toBeInTheDocument();
     expect(
       screen.getByRole("menuitem", { name: "Attendance" })
     ).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: "Complete" })).toBeNull();
+    // Start is the primary, so it's not duplicated in the overflow.
+    expect(screen.queryByRole("menuitem", { name: "Start" })).toBeNull();
   });
 
-  it("started: menu has Complete + Cancel, not Start", async () => {
+  it("started: Complete is the quick-action; menu keeps Cancel, not Complete", async () => {
     const user = userEvent.setup();
     renderTable([makeLecture({ lecture_status: "started" })]);
+    expect(screen.getByRole("button", { name: "Complete" })).toBeInTheDocument();
     await openMenu(user);
-    expect(screen.queryByRole("menuitem", { name: "Start" })).toBeNull();
-    expect(
-      screen.getByRole("menuitem", { name: "Complete" })
-    ).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Complete" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Start" })).toBeNull();
   });
 
-  it("completed: no Start/Complete/Cancel in the menu; Delete still separate", async () => {
+  it("completed: Generate DPP is the quick-action; no Start/Complete/Cancel in menu", async () => {
     const user = userEvent.setup();
     renderTable([makeLecture({ lecture_status: "completed" })]);
+    expect(
+      screen.getByRole("button", { name: /generate dpp/i })
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /delete lecture/i })
     ).toBeInTheDocument();
@@ -160,6 +165,16 @@ describe("LectureTable", () => {
     expect(screen.queryByRole("menuitem", { name: "Start" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Complete" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Cancel" })).toBeNull();
+  });
+
+  it("no-show: Record makeup is the quick-action", async () => {
+    const user = userEvent.setup();
+    renderTable([
+      makeLecture({ lecture_status: "no_show", no_show_reason: "EXTERNAL" }),
+    ]);
+    expect(
+      screen.getByRole("button", { name: /record makeup/i })
+    ).toBeInTheDocument();
   });
 
   it("Attendance menuitem links to /attendance?lecture_id={id}", async () => {
@@ -170,13 +185,12 @@ describe("LectureTable", () => {
     expect(item.getAttribute("href")).toBe("/attendance?lecture_id=l1");
   });
 
-  it("invokes onStart/onCancel from the menu and onDelete from the button", async () => {
+  it("invokes onStart (quick action), onCancel (menu), onDelete (button)", async () => {
     const user = userEvent.setup();
     const l = makeLecture({ lecture_status: "scheduled" });
     renderTable([l]);
 
-    await openMenu(user);
-    await user.click(screen.getByRole("menuitem", { name: "Start" }));
+    await user.click(screen.getByRole("button", { name: "Start" }));
     expect(handlers.onStart).toHaveBeenCalledWith(l);
 
     await openMenu(user);
@@ -229,7 +243,7 @@ describe("LectureTable", () => {
     expect(onToggleSelect).toHaveBeenCalledWith("l1");
   });
 
-  it("future-dated lecture: menu offers Plan topic, not End of day", async () => {
+  it("future-dated lecture: Plan topic is the quick-action (no End of day)", async () => {
     const user = userEvent.setup();
     const future = new Date();
     future.setFullYear(future.getFullYear() + 1);
@@ -241,14 +255,16 @@ describe("LectureTable", () => {
         lecture_status: "scheduled",
       }),
     ]);
-    await openMenu(user);
     expect(
-      screen.getByRole("menuitem", { name: "Plan topic" })
+      screen.getByRole("button", { name: "Plan topic" })
     ).toBeInTheDocument();
+    await openMenu(user);
+    // The actuals/plan action is the primary, so not duplicated in the menu.
     expect(screen.queryByRole("menuitem", { name: "End of day" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Plan topic" })).toBeNull();
   });
 
-  it("past-dated lecture: menu offers End of day", async () => {
+  it("past-dated lecture: Start is the quick-action; menu offers End of day", async () => {
     const user = userEvent.setup();
     renderTable([
       makeLecture({
@@ -257,6 +273,7 @@ describe("LectureTable", () => {
         lecture_status: "scheduled",
       }),
     ]);
+    expect(screen.getByRole("button", { name: "Start" })).toBeInTheDocument();
     await openMenu(user);
     expect(
       screen.getByRole("menuitem", { name: "End of day" })

@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type {
   BatchSummary,
+  ClassroomSummary,
   LectureResponse,
   SubjectSummary,
   TeacherSummary,
@@ -33,6 +34,7 @@ interface LectureTableProps {
   teachers: TeacherSummary[];
   subjects: SubjectSummary[];
   topics: TopicSummary[];
+  classrooms?: ClassroomSummary[];
   /** Lecture IDs that have at least one linked LectureSession — drives
    * the "MADE UP" chip on no-show rows that were later covered. */
   coveredLectureIds?: Set<string>;
@@ -48,6 +50,8 @@ interface LectureTableProps {
   onSubstitute: (lecture: LectureResponse) => void;
   onNoShow: (lecture: LectureResponse) => void;
   onActuals: (lecture: LectureResponse) => void;
+  onGenerateDpp?: (lecture: LectureResponse) => void;
+  onRecordMakeup?: (lecture: LectureResponse) => void;
 }
 
 function formatDuration(min: number | null): string | null {
@@ -57,11 +61,60 @@ function formatDuration(min: number | null): string | null {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+// Stable colour per subject from a small palette, hashed by code/name — the
+// same subject always reads the same colour (the design's SubjectTag).
+const SUBJECT_PALETTE = [
+  "bg-blue-500/15 text-blue-700 dark:text-blue-300",
+  "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  "bg-violet-500/15 text-violet-700 dark:text-violet-300",
+  "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  "bg-rose-500/15 text-rose-700 dark:text-rose-300",
+  "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300",
+];
+function subjectColor(key: string): string {
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+  return SUBJECT_PALETTE[Math.abs(h) % SUBJECT_PALETTE.length];
+}
+function SubjectTag({ subject }: { subject: SubjectSummary | undefined }) {
+  if (!subject) return <span className="text-muted-foreground">—</span>;
+  return (
+    <span
+      className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium ${subjectColor(
+        subject.code || subject.name,
+      )}`}
+    >
+      {subject.name}
+    </span>
+  );
+}
+
+// Compact "Jun 26 · 09:00" for the schedule cell (the design's "When").
+function compactWhen(iso: string): { day: string; time: string } {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { day: iso, time: "" };
+  return {
+    day: d.toLocaleDateString(undefined, { month: "short", day: "2-digit" }),
+    time: d.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  };
+}
+
 // Status pill derivation. Inspired by Google Classroom's mutually-exclusive
 // state model — one pill per row, color tied to MEANING (teacher
 // reliability problem vs. intentional decision vs. clean outcome), not raw
 // severity. See docs/lectures-and-insights.md for the rationale.
 type StatusTone = "success" | "secondary" | "default" | "destructive";
+
+// Leading dot colour per status tone (the design's dotted status badge).
+const DOT_COLOR: Record<StatusTone, string> = {
+  success: "bg-emerald-500",
+  destructive: "bg-rose-500",
+  secondary: "bg-muted-foreground/50",
+  default: "bg-blue-500",
+};
 
 const NO_SHOW_REASON_PILL_LABEL: Record<string, string> = {
   TEACHER_NO_SHOW: "teacher",
@@ -225,6 +278,7 @@ export function LectureTable({
   teachers,
   subjects,
   topics,
+  classrooms = [],
   coveredLectureIds,
   selectedIds,
   onToggleSelect,
@@ -236,6 +290,8 @@ export function LectureTable({
   onSubstitute,
   onNoShow,
   onActuals,
+  onGenerateDpp,
+  onRecordMakeup,
 }: LectureTableProps) {
   const selectable = !!selectedIds && !!onToggleSelect;
   const allSelected =
@@ -321,6 +377,7 @@ export function LectureTable({
               className="hidden md:table-cell"
             />
             <TableHead className="hidden lg:table-cell">Topic</TableHead>
+            <TableHead className="hidden xl:table-cell">Room</TableHead>
             <SortHead label="Scheduled" sortKey="scheduled" />
             <TableHead className="hidden lg:table-cell">Actual</TableHead>
             <SortHead
@@ -365,6 +422,26 @@ export function LectureTable({
               l.lecture_status !== "no_show";
             const isFuture = isFutureDay(l.scheduled_start);
             const duration = formatDuration(l.actual_duration_min);
+            const classroom = lookup(classrooms, l.classroom_id);
+
+            // Primary "quick action" (the reference design): the single most
+            // likely next action, by status. Everything else lives in the ⋯
+            // overflow, which excludes whatever is shown here.
+            const st = l.lecture_status;
+            let primary:
+              | { key: string; label: string; onClick: () => void; variant: "default" | "outline" }
+              | null = null;
+            if (st === "completed" && onGenerateDpp) {
+              primary = { key: "dpp", label: "✦ Generate DPP", onClick: () => onGenerateDpp(l), variant: "outline" };
+            } else if (canComplete) {
+              primary = { key: "complete", label: "Complete", onClick: () => onComplete(l), variant: "default" };
+            } else if ((st === "cancelled" || st === "no_show") && onRecordMakeup) {
+              primary = { key: "makeup", label: "Record makeup", onClick: () => onRecordMakeup(l), variant: "outline" };
+            } else if (isScheduledLike) {
+              primary = isFuture
+                ? { key: "plan", label: "Plan topic", onClick: () => onActuals(l), variant: "outline" }
+                : { key: "start", label: "Start", onClick: () => onStart(l), variant: "default" };
+            }
 
             return (
               <TableRow key={l.id}>
@@ -400,13 +477,31 @@ export function LectureTable({
                   )}
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
-                  {subject ? subject.name : "—"}
+                  <SubjectTag subject={subject} />
                 </TableCell>
                 <TableCell className="hidden lg:table-cell text-muted-foreground">
                   {topic ? topic.name : "—"}
                 </TableCell>
+                <TableCell className="hidden xl:table-cell text-xs text-muted-foreground">
+                  {classroom ? classroom.name : "—"}
+                </TableCell>
                 <TableCell>
-                  <Window start={l.scheduled_start} end={l.scheduled_end} />
+                  {(() => {
+                    const w = compactWhen(l.scheduled_start);
+                    const end = compactWhen(l.scheduled_end);
+                    return (
+                      <div className="flex flex-col leading-tight">
+                        <span className="whitespace-nowrap text-sm tabular-nums">
+                          {w.day} · {w.time}
+                        </span>
+                        {end.time && (
+                          <span className="text-[10px] text-muted-foreground tabular-nums">
+                            → {end.time}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell">
                   <Window start={l.actual_start} end={l.actual_end} />
@@ -422,7 +517,13 @@ export function LectureTable({
                     );
                     return (
                       <div className="flex flex-col items-start gap-0.5">
-                        <Badge variant={s.tone}>{s.label}</Badge>
+                        <Badge variant={s.tone} className="gap-1.5">
+                          <span
+                            aria-hidden
+                            className={`inline-block h-1.5 w-1.5 rounded-full ${DOT_COLOR[s.tone]}`}
+                          />
+                          {s.label}
+                        </Badge>
                         {s.subLabel && (
                           <span className="text-[10px] text-muted-foreground">
                             {s.subLabel}
@@ -446,6 +547,17 @@ export function LectureTable({
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
+                    {primary && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={primary.variant}
+                        onClick={primary.onClick}
+                        className="whitespace-nowrap"
+                      >
+                        {primary.label}
+                      </Button>
+                    )}
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         render={
@@ -453,7 +565,7 @@ export function LectureTable({
                             type="button"
                             size="sm"
                             variant="outline"
-                            aria-label={`Actions for lecture ${l.id}`}
+                            aria-label={`More actions for lecture ${l.id}`}
                             className="px-2"
                           >
                             <span aria-hidden className="text-base leading-none">
@@ -463,17 +575,17 @@ export function LectureTable({
                         }
                       />
                       <DropdownMenuContent>
-                        {canStart && (
+                        {canStart && primary?.key !== "start" && (
                           <DropdownMenuItem onClick={() => onStart(l)}>
                             Start
                           </DropdownMenuItem>
                         )}
-                        {canComplete && (
+                        {canComplete && primary?.key !== "complete" && (
                           <DropdownMenuItem onClick={() => onComplete(l)}>
                             Complete
                           </DropdownMenuItem>
                         )}
-                        {canActuals && (
+                        {canActuals && primary?.key !== "plan" && (
                           <DropdownMenuItem onClick={() => onActuals(l)}>
                             {isFuture
                               ? "Plan topic"
