@@ -269,6 +269,24 @@ async def test_holiday_row_is_skipped(client: AsyncClient, db_session, seed_data
 
 
 @pytest.mark.asyncio
+async def test_preview_flags_offline_without_classroom(
+    client: AsyncClient, seed_data
+):
+    """Preview must mirror commit: an offline row with no classroom is not
+    'ready' — it would be skipped on import."""
+    await _login_admin(client)
+    csv = HEADER + "2026-06-01,09:00,10:00,teacher@test.com,BATCH-A,PHY,,offline,\n"
+    resp = await client.post(
+        "/api/v1/lectures/import/preview",
+        params={"branch_id": BRANCH_A_ID},
+        files={"file": ("schedule.csv", csv.encode(), "text/csv")},
+    )
+    body = resp.json()
+    assert body["ok_count"] == 0 and body["error_count"] == 1
+    assert "classroom" in body["rows"][0]["message"].lower()
+
+
+@pytest.mark.asyncio
 async def test_preview_flags_holiday_row(client: AsyncClient, db_session, seed_data):
     await _login_admin(client)
     await _map_subject(db_session)

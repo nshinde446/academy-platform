@@ -316,6 +316,15 @@ async def preview_schedule(
                 (str(row.get("classroom_code")) if row.get("classroom_code") else None),
             )
 
+            # Mirror the delivery-mode rules the commit (schedule_lecture)
+            # enforces, so the preview never marks "ready" a row import skips.
+            raw_mode = str(row.get("delivery_mode") or "").strip().lower()
+            delivery_mode = raw_mode or ("offline" if classroom else "online")
+            if delivery_mode not in lecture_service.VALID_DELIVERY_MODES:
+                raise ValueError(f"invalid delivery mode: {delivery_mode}")
+            if delivery_mode == "offline" and classroom is None:
+                raise ValueError("offline lectures require a classroom")
+
             if not await teacher_repository.teacher_teaches_subject(
                 session, teacher.id, subject.id
             ):
