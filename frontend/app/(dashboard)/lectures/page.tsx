@@ -12,6 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
   subjectKeys,
   topicKeys,
   useBatchesForLectures,
@@ -223,6 +230,11 @@ function LecturesPageBody() {
   );
   const [actualsOpen, setActualsOpen] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
+
+  // Which "Manage" tool dialog is open (driven from the header overflow menu).
+  const [tool, setTool] = useState<
+    "timetable" | "holidays" | "leave" | "copy" | null
+  >(null);
 
   // Row selection for "copy selected to date" — explicit, no by-date guess.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -581,50 +593,89 @@ function LecturesPageBody() {
 
   const headerActions = (
     <div className="flex flex-wrap items-center gap-2">
-      {/* Setup / management tools — used occasionally, kept visually lighter. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <TimetableDialog
-          branchId={branchId}
-          batches={batches}
-          teachers={teachers}
-          classrooms={classrooms}
+      {/* Occasional setup/admin tools, collapsed behind one overflow so the two
+          everyday actions stay prominent. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button type="button" variant="outline">
+              Manage
+              <span aria-hidden className="ml-1 text-xs">
+                ⌄
+              </span>
+            </Button>
+          }
         />
-        <HolidaysDialog branchId={branchId} />
-        <TeacherLeaveDialog branchId={branchId} teachers={teachers} />
-        <CopyScheduleDialog branchId={branchId} />
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleDownloadCsv}
-          disabled={visibleLectures.length === 0}
-          aria-label="Download schedule as CSV"
-        >
-          Download CSV
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            setMakeupPrefillId(null);
-            setMakeupOpen(true);
-          }}
-        >
-          Record Makeup
-        </Button>
-      </div>
-      {/* Divider between occasional tools and the two everyday actions. */}
-      <span className="hidden h-6 w-px bg-border sm:block" aria-hidden />
+        <DropdownMenuContent>
+          <DropdownMenuItem onClick={() => setTool("timetable")}>
+            Weekly timetable
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTool("holidays")}>
+            Holidays
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTool("leave")}>
+            Teacher leave
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTool("copy")}>
+            Copy to next day
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => {
+              setMakeupPrefillId(null);
+              setMakeupOpen(true);
+            }}
+          >
+            Record makeup
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={handleDownloadCsv}
+            disabled={visibleLectures.length === 0}
+          >
+            Download CSV
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
       {/* Primary actions */}
-      <div className="flex flex-wrap items-center gap-2">
-        <ImportScheduleDialog branchId={branchId} />
-        <CreateLectureDialog
-          branchId={branchId}
-          batches={batches}
-          classrooms={classrooms}
-          onSubmit={handleCreate}
-          isPending={createMutation.isPending}
-        />
-      </div>
+      <ImportScheduleDialog branchId={branchId} />
+      <CreateLectureDialog
+        branchId={branchId}
+        batches={batches}
+        classrooms={classrooms}
+        onSubmit={handleCreate}
+        isPending={createMutation.isPending}
+      />
+
+      {/* Controlled tool dialogs — no visible trigger; opened from "Manage". */}
+      <TimetableDialog
+        branchId={branchId}
+        batches={batches}
+        teachers={teachers}
+        classrooms={classrooms}
+        hideTrigger
+        open={tool === "timetable"}
+        onOpenChange={(o) => setTool(o ? "timetable" : null)}
+      />
+      <HolidaysDialog
+        branchId={branchId}
+        hideTrigger
+        open={tool === "holidays"}
+        onOpenChange={(o) => setTool(o ? "holidays" : null)}
+      />
+      <TeacherLeaveDialog
+        branchId={branchId}
+        teachers={teachers}
+        hideTrigger
+        open={tool === "leave"}
+        onOpenChange={(o) => setTool(o ? "leave" : null)}
+      />
+      <CopyScheduleDialog
+        branchId={branchId}
+        hideTrigger
+        open={tool === "copy"}
+        onOpenChange={(o) => setTool(o ? "copy" : null)}
+      />
     </div>
   );
 

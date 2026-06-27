@@ -20,6 +20,11 @@ import {
 
 interface HolidaysDialogProps {
   branchId: string | undefined;
+  /** Controlled mode (driven from the page's "Manage" menu). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Hide the built-in trigger button when the dialog is opened externally. */
+  hideTrigger?: boolean;
 }
 
 function formatDate(iso: string): string {
@@ -33,8 +38,18 @@ function formatDate(iso: string): string {
   });
 }
 
-export function HolidaysDialog({ branchId }: HolidaysDialogProps) {
-  const [open, setOpen] = useState(false);
+export function HolidaysDialog({
+  branchId,
+  open: openProp,
+  onOpenChange,
+  hideTrigger,
+}: HolidaysDialogProps) {
+  const [openInternal, setOpenInternal] = useState(false);
+  const open = openProp ?? openInternal;
+  const setOpen = (v: boolean) => {
+    if (openProp === undefined) setOpenInternal(v);
+    onOpenChange?.(v);
+  };
   const [date, setDate] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
@@ -76,13 +91,15 @@ export function HolidaysDialog({ branchId }: HolidaysDialogProps) {
         }
       }}
     >
-      <DialogTrigger
-        render={
-          <Button variant="outline" onClick={() => setOpen(true)}>
-            Holidays
-          </Button>
-        }
-      />
+      {!hideTrigger && (
+        <DialogTrigger
+          render={
+            <Button variant="outline" onClick={() => setOpen(true)}>
+              Holidays
+            </Button>
+          }
+        />
+      )}
       <DialogPopup className="max-w-lg">
         <DialogTitle>Holiday calendar</DialogTitle>
         <DialogDescription>

@@ -25,6 +25,11 @@ const SELECT_CLASS =
 interface TeacherLeaveDialogProps {
   branchId: string | undefined;
   teachers: TeacherSummary[];
+  /** Controlled mode (driven from the page's "Manage" menu). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Hide the built-in trigger button when the dialog is opened externally. */
+  hideTrigger?: boolean;
 }
 
 function fmt(iso: string): string {
@@ -40,8 +45,16 @@ function fmt(iso: string): string {
 export function TeacherLeaveDialog({
   branchId,
   teachers,
+  open: openProp,
+  onOpenChange,
+  hideTrigger,
 }: TeacherLeaveDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [openInternal, setOpenInternal] = useState(false);
+  const open = openProp ?? openInternal;
+  const setOpen = (v: boolean) => {
+    if (openProp === undefined) setOpenInternal(v);
+    onOpenChange?.(v);
+  };
   const [teacherId, setTeacherId] = useState("");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -97,13 +110,15 @@ export function TeacherLeaveDialog({
         }
       }}
     >
-      <DialogTrigger
-        render={
-          <Button variant="outline" onClick={() => setOpen(true)}>
-            Teacher Leave
-          </Button>
-        }
-      />
+      {!hideTrigger && (
+        <DialogTrigger
+          render={
+            <Button variant="outline" onClick={() => setOpen(true)}>
+              Teacher Leave
+            </Button>
+          }
+        />
+      )}
       <DialogPopup className="max-w-xl">
         <DialogTitle>Teacher leave</DialogTitle>
         <DialogDescription>

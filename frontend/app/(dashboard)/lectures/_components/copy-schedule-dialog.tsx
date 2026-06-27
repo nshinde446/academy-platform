@@ -17,6 +17,11 @@ import type { CopyScheduleSummary } from "../_schemas/lecture";
 
 interface CopyScheduleDialogProps {
   branchId: string | undefined;
+  /** Controlled mode (driven from the page's "Manage" menu). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Hide the built-in trigger button when the dialog is opened externally. */
+  hideTrigger?: boolean;
 }
 
 function todayIso(): string {
@@ -32,8 +37,18 @@ function nextDay(iso: string): string {
   return shifted.toISOString().slice(0, 10);
 }
 
-export function CopyScheduleDialog({ branchId }: CopyScheduleDialogProps) {
-  const [open, setOpen] = useState(false);
+export function CopyScheduleDialog({
+  branchId,
+  open: openProp,
+  onOpenChange,
+  hideTrigger,
+}: CopyScheduleDialogProps) {
+  const [openInternal, setOpenInternal] = useState(false);
+  const open = openProp ?? openInternal;
+  const setOpen = (v: boolean) => {
+    if (openProp === undefined) setOpenInternal(v);
+    onOpenChange?.(v);
+  };
   const [sourceDate, setSourceDate] = useState(todayIso());
   const [targetDate, setTargetDate] = useState(nextDay(todayIso()));
   const [result, setResult] = useState<CopyScheduleSummary | null>(null);
@@ -75,13 +90,15 @@ export function CopyScheduleDialog({ branchId }: CopyScheduleDialogProps) {
         if (!isOpen) reset();
       }}
     >
-      <DialogTrigger
-        render={
-          <Button variant="outline" onClick={() => setOpen(true)}>
-            Copy to Next Day
-          </Button>
-        }
-      />
+      {!hideTrigger && (
+        <DialogTrigger
+          render={
+            <Button variant="outline" onClick={() => setOpen(true)}>
+              Copy to Next Day
+            </Button>
+          }
+        />
+      )}
       <DialogPopup className="max-w-md">
         <DialogTitle>Copy Schedule</DialogTitle>
         <DialogDescription>

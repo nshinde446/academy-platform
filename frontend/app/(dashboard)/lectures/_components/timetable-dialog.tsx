@@ -48,6 +48,11 @@ interface TimetableDialogProps {
   batches: BatchSummary[];
   teachers: TeacherSummary[];
   classrooms: ClassroomSummary[];
+  /** Controlled mode (driven from the page's "Manage" menu). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Hide the built-in trigger button when the dialog is opened externally. */
+  hideTrigger?: boolean;
 }
 
 function todayIso(): string {
@@ -79,8 +84,16 @@ export function TimetableDialog({
   branchId,
   batches,
   classrooms,
+  open: openProp,
+  onOpenChange,
+  hideTrigger,
 }: TimetableDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [openInternal, setOpenInternal] = useState(false);
+  const open = openProp ?? openInternal;
+  const setOpen = (v: boolean) => {
+    if (openProp === undefined) setOpenInternal(v);
+    onOpenChange?.(v);
+  };
   const [batchId, setBatchId] = useState("");
   const [slots, setSlots] = useState<TimetableSlot[]>([]);
   const [error, setError] = useState("");
@@ -211,13 +224,15 @@ export function TimetableDialog({
         if (!isOpen) reset();
       }}
     >
-      <DialogTrigger
-        render={
-          <Button variant="outline" onClick={() => setOpen(true)}>
-            Weekly Timetable
-          </Button>
-        }
-      />
+      {!hideTrigger && (
+        <DialogTrigger
+          render={
+            <Button variant="outline" onClick={() => setOpen(true)}>
+              Weekly Timetable
+            </Button>
+          }
+        />
+      )}
       <DialogPopup className="max-w-3xl">
         <DialogTitle>Weekly Timetable</DialogTitle>
         <DialogDescription>

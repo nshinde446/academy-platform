@@ -70,6 +70,43 @@ describe("TimetableDialog", () => {
     ).toBeInTheDocument();
   });
 
+  it("controlled mode: hideTrigger drops the trigger and `open` drives the dialog", async () => {
+    // Closed + hidden trigger → nothing rendered (the page's Manage menu owns it).
+    const { rerender } = render(
+      withQuery(
+        <TimetableDialog
+          branchId="br1"
+          batches={BATCHES}
+          teachers={TEACHERS}
+          classrooms={CLASSROOMS}
+          hideTrigger
+          open={false}
+          onOpenChange={() => {}}
+        />
+      )
+    );
+    expect(
+      screen.queryByRole("button", { name: "Weekly Timetable" })
+    ).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    // Flip `open` → the dialog appears without any trigger click.
+    rerender(
+      withQuery(
+        <TimetableDialog
+          branchId="br1"
+          batches={BATCHES}
+          teachers={TEACHERS}
+          classrooms={CLASSROOMS}
+          hideTrigger
+          open
+          onOpenChange={() => {}}
+        />
+      )
+    );
+    await screen.findByLabelText("Batch *");
+  });
+
   it("shows the slot editor once a batch is picked, and can add a slot", async () => {
     const user = userEvent.setup();
     renderDialog();
