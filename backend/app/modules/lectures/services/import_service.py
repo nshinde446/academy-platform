@@ -211,6 +211,13 @@ async def _resolve_lookups(
     return teacher, batch, subject, classroom
 
 
+async def _holiday_dates(session: AsyncSession, branch_id: uuid.UUID) -> set:
+    """The branch's non-teaching days as a set of date, so the importer skips
+    rows landing on a holiday — matching generate / copy-to-next-day."""
+    rows = await lecture_repository.list_holidays(session, branch_id)
+    return {h.holiday_date for h in rows}
+
+
 async def preview_schedule(
     session: AsyncSession,
     file: UploadFile,
@@ -246,6 +253,7 @@ async def preview_schedule(
                 detail=f"Missing required columns: {', '.join(missing)}",
             )
 
+    holidays = await _holiday_dates(session, branch_id)
     out_rows: list[dict[str, Any]] = []
     ok_count = 0
     error_count = 0
@@ -271,6 +279,8 @@ async def preview_schedule(
             scheduled_end = datetime.combine(date_part.date(), end_t)
             if scheduled_end <= scheduled_start:
                 raise ValueError("end_time must be after start_time")
+            if date_part.date() in holidays:
+                raise ValueError(f"{date_part.date().isoformat()} is a holiday")
 
             teacher, batch, subject, classroom = await _resolve_lookups(
                 session,
@@ -350,6 +360,7 @@ async def import_schedule(
                 detail=f"Missing required columns: {', '.join(missing)}",
             )
 
+    holidays = await _holiday_dates(session, branch_id)
     imported = 0
     skipped = 0
     errors: list[str] = []
@@ -365,6 +376,8 @@ async def import_schedule(
             scheduled_end = datetime.combine(date_part.date(), end_t)
             if scheduled_end <= scheduled_start:
                 raise ValueError("end_time must be after start_time")
+            if date_part.date() in holidays:
+                raise ValueError(f"{date_part.date().isoformat()} is a holiday")
 
             teacher, batch, subject, classroom = await _resolve_lookups(
                 session,
