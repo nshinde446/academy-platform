@@ -55,11 +55,16 @@ async def list_batch_schedule(
 async def list_branch_schedule(
     session: AsyncSession, branch_id: uuid.UUID
 ) -> list[BatchSchedule]:
+    """All timetable slots for the branch whose batch is still active. The join
+    drops orphaned slots (batch deleted) so the all-batches generator ignores
+    them quietly instead of reporting them as 'batch not found'."""
     result = await session.execute(
         select(BatchSchedule)
+        .join(Batch, Batch.id == BatchSchedule.batch_id)
         .where(
             BatchSchedule.branch_id == branch_id,
             BatchSchedule.is_deleted == False,
+            Batch.is_deleted == False,
         )
         .order_by(BatchSchedule.day_of_week, BatchSchedule.start_time)
     )

@@ -148,13 +148,20 @@ async def delete_batch(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
 
     await batch_repository.soft_delete(session, batch)
+    # Cascade: clear the batch's weekly timetable so its slots don't outlive it
+    # as orphans the schedule generator has to skip.
+    cleared = await batch_repository.soft_delete_schedules(session, batch.id)
     await audit_service.log_action(
         session,
         user_id=current_user_id,
         action="DELETE",
         table_name="batches",
         record_id=batch.id,
-        old_values={"name": batch.name, "code": batch.code},
+        old_values={
+            "name": batch.name,
+            "code": batch.code,
+            "timetable_slots_cleared": cleared,
+        },
         ip_address=ip_address,
         branch_id=branch_id,
     )

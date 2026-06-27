@@ -3,7 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.batch.models.batch_models import Batch
+from app.modules.batch.models.batch_models import Batch, BatchSchedule
 
 
 async def create(session: AsyncSession, **kwargs) -> Batch:
@@ -43,3 +43,20 @@ async def update(session: AsyncSession, batch: Batch, **kwargs) -> Batch:
 async def soft_delete(session: AsyncSession, batch: Batch) -> None:
     batch.is_deleted = True
     await session.flush()
+
+
+async def soft_delete_schedules(session: AsyncSession, batch_id: uuid.UUID) -> int:
+    """Soft-delete a batch's weekly timetable slots — called when the batch is
+    deleted so its patterns don't linger as orphans the generator must skip.
+    Returns how many were cleared."""
+    result = await session.execute(
+        select(BatchSchedule).where(
+            BatchSchedule.batch_id == batch_id,
+            BatchSchedule.is_deleted == False,
+        )
+    )
+    rows = list(result.scalars().all())
+    for slot in rows:
+        slot.is_deleted = True
+    await session.flush()
+    return len(rows)
