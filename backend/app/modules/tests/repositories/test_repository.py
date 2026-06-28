@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.academic.models.academic_models import Subject
 from app.modules.tests.models.test_models import (
     Question,
     QuestionTopic,
@@ -52,7 +53,27 @@ def _apply_question_filters(
 
     clauses = [Question.branch_id == branch_id, Question.is_deleted == False]
     if subject_id:
-        clauses.append(Question.subject_id == subject_id)
+        # A subject NAME is carried by one Subject row per course (e.g. 21
+        # "Physics" rows, one per JEE/NEET/… course), but the question bank is
+        # branch-wide, not course-scoped. Questions land under whichever
+        # Physics row the ingest used; the composer's subject dropdown collapses
+        # the name to a single — effectively arbitrary — id. Matching that exact
+        # id would hide every question stored under a sibling row (and shows
+        # nothing at all if the picked row happens to be an empty duplicate).
+        # So match questions under ANY same-named subject row in this branch.
+        name_subq = (
+            select(Subject.name).where(Subject.id == subject_id).scalar_subquery()
+        )
+        sibling_subject_ids = (
+            select(Subject.id)
+            .where(
+                Subject.branch_id == branch_id,
+                Subject.name == name_subq,
+                Subject.is_deleted == False,
+            )
+            .scalar_subquery()
+        )
+        clauses.append(Question.subject_id.in_(sibling_subject_ids))
     if topic_id:
         clauses.append(Question.topic_id == topic_id)
     if difficulty:
