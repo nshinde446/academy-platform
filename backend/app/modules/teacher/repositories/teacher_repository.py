@@ -11,6 +11,40 @@ from app.modules.teacher.models.teacher_models import (
 )
 
 
+def _same_name_subject_ids(
+    subject_id: uuid.UUID, branch_id: uuid.UUID | None = None
+):
+    """Scalar subquery of subject ids in the branch that share ``subject_id``'s
+    NAME.
+
+    A subject name (e.g. "Chemistry") is carried by one Subject row per course,
+    so prod has many "Chemistry" rows. Teacher qualifications and the schedule
+    treat the *name* as the unit, but a slot's subject dropdown collapses the
+    name to one arbitrary id. Matching teacher mappings by name across sibling
+    rows means a teacher qualified for any "Chemistry" is offered for every
+    "Chemistry" — the same fix applied to the question bank. Mirrors the
+    branch-wide semantic without depending on which duplicate id was picked.
+
+    When ``branch_id`` is given it scopes directly; otherwise the branch is
+    derived from ``subject_id`` (for call sites without a branch in hand)."""
+    from app.modules.academic.models.academic_models import Subject
+
+    name_subq = (
+        select(Subject.name).where(Subject.id == subject_id).scalar_subquery()
+    )
+    conds = [Subject.name == name_subq, Subject.is_deleted == False]  # noqa: E712
+    if branch_id is not None:
+        conds.append(Subject.branch_id == branch_id)
+    else:
+        branch_subq = (
+            select(Subject.branch_id)
+            .where(Subject.id == subject_id)
+            .scalar_subquery()
+        )
+        conds.append(Subject.branch_id == branch_subq)
+    return select(Subject.id).where(*conds).scalar_subquery()
+
+
 async def create(session: AsyncSession, **kwargs) -> Teacher:
     teacher = Teacher(**kwargs)
     session.add(teacher)
@@ -258,7 +292,10 @@ async def teacher_teaches_subject(
         select(TeacherSubjectMapping.id)
         .where(
             TeacherSubjectMapping.teacher_id == teacher_id,
-            TeacherSubjectMapping.subject_id == subject_id,
+            # Match across same-named sibling subject rows (per-course
+            # duplicates) so the lock isn't defeated by which "Chemistry" id
+            # the schedule slot happened to pick.
+            TeacherSubjectMapping.subject_id.in_(_same_name_subject_ids(subject_id)),
             TeacherSubjectMapping.is_deleted == False,  # noqa: E712
         )
         .limit(1)
@@ -332,7 +369,11 @@ async def list_for_subject(
         .where(
             Teacher.branch_id == branch_id,
             Teacher.is_deleted == False,  # noqa: E712
-            TeacherSubjectMapping.subject_id == subject_id,
+            # Offer every teacher qualified for any same-named subject row in
+            # the branch, not just the one duplicate id the slot selected.
+            TeacherSubjectMapping.subject_id.in_(
+                _same_name_subject_ids(subject_id, branch_id)
+            ),
             TeacherSubjectMapping.is_deleted == False,  # noqa: E712
         )
         .order_by(Teacher.first_name, Teacher.last_name)
