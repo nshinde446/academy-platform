@@ -5,6 +5,8 @@ import { useUserStore } from "@/store/user-store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { TableSkeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/components/ui/toast";
 import {
   useBatchesForLectures,
   useLectures,
@@ -72,7 +74,7 @@ export default function AttendancePage() {
   const [pendingStudentId, setPendingStudentId] = useState<string | null>(null);
   const [isBulk, setIsBulk] = useState(false);
   const [confirmProcess, setConfirmProcess] = useState(false);
-  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const toast = useToast();
 
   const lookupBatchName = (id: string) =>
     batches.find((b) => b.id === id)?.name ?? "";
@@ -171,7 +173,7 @@ export default function AttendancePage() {
         attendance_status: status,
       });
     } catch (err) {
-      setAlertMessage(errorOf(err));
+      toast.error(errorOf(err));
     } finally {
       setPendingStudentId(null);
     }
@@ -192,7 +194,7 @@ export default function AttendancePage() {
         ),
       );
     } catch (err) {
-      setAlertMessage(errorOf(err));
+      toast.error(errorOf(err));
     } finally {
       setIsBulk(false);
     }
@@ -203,11 +205,11 @@ export default function AttendancePage() {
     setIsBulk(true);
     try {
       const res = await processMutation.mutateAsync();
-      setAlertMessage(
+      toast.success(
         `Processed biometric punches — ${res.length} record(s) created from raw logs.`,
       );
     } catch (err) {
-      setAlertMessage(errorOf(err));
+      toast.error(errorOf(err));
     } finally {
       setIsBulk(false);
     }
@@ -331,7 +333,7 @@ export default function AttendancePage() {
       {!branchId ? (
         <p className="text-muted-foreground text-sm">No branch selected.</p>
       ) : lecturesQuery.isLoading ? (
-        <p className="text-muted-foreground text-sm">Loading lectures...</p>
+        <TableSkeleton rows={6} />
       ) : lecturesQuery.isError ? (
         <p className="text-destructive text-sm">
           Failed to load lectures. Make sure the backend is running.
@@ -364,15 +366,6 @@ export default function AttendancePage() {
       />
       </>
       )}
-
-      <ConfirmDialog
-        open={!!alertMessage}
-        onOpenChange={(o) => !o && setAlertMessage(null)}
-        title="Attendance"
-        description={alertMessage ?? ""}
-        confirmLabel="OK"
-        hideCancel
-      />
     </div>
   );
 }

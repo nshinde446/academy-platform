@@ -32,9 +32,9 @@ describe("Sidebar (MSA_Design section layout)", () => {
 
   it("renders the brand mark + product name", () => {
     render(<Sidebar />);
-    // "Academy" as the brand wordmark, "Platform" as the chip under it.
-    expect(screen.getByText("Academy")).toBeInTheDocument();
-    expect(screen.getByText("Platform")).toBeInTheDocument();
+    // MSA wordmark + the gold exam-stream tagline beneath it.
+    expect(screen.getByText("Matrix Science Academy")).toBeInTheDocument();
+    expect(screen.getByText("JEE · NEET · MHT-CET")).toBeInTheDocument();
   });
 
   it("renders the user footer placeholder when not signed in", () => {

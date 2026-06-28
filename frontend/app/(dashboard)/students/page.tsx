@@ -7,6 +7,7 @@ import apiClient from "@/services/api-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import {
   useStudentsRoster,
   useCreateStudent,
@@ -266,7 +267,7 @@ export default function StudentsPage() {
 
       {/* Content */}
       {statsQuery.isLoading ? (
-        <p className="text-muted-foreground text-sm">Loading students...</p>
+        <TableSkeleton rows={8} />
       ) : statsQuery.isError ? (
         <p className="text-destructive text-sm">
           Failed to load students. Make sure the backend is running.

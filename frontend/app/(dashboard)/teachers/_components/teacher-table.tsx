@@ -24,6 +24,11 @@ interface TeacherTableProps {
   teachersById: Record<string, TeacherResponse>;
   onEdit: (teacher: TeacherResponse) => void;
   onDelete: (teacher: TeacherResponse) => void;
+  // Row selection for bulk delete — optional; when omitted the checkbox
+  // column is hidden (keeps the table usable without a selection model).
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
 }
 
 export function TeacherTable({
@@ -31,12 +36,28 @@ export function TeacherTable({
   teachersById,
   onEdit,
   onDelete,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
 }: TeacherTableProps) {
+  const selectable = !!onToggleSelect;
+  const allSelected =
+    selectable && rows.length > 0 && rows.every((r) => selectedIds?.has(r.id));
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
-      <Table>
+      <Table stickyHeader containerClassName="max-h-[calc(100vh-19rem)]">
         <TableHeader>
           <TableRow>
+            {selectable && (
+              <TableHead className="w-9">
+                <input
+                  type="checkbox"
+                  aria-label="Select all on this page"
+                  checked={allSelected}
+                  onChange={() => onToggleSelectAll?.()}
+                />
+              </TableHead>
+            )}
             <TableHead className="w-9"></TableHead>
             <TableHead>Name</TableHead>
             <TableHead className="hidden md:table-cell">Subject</TableHead>
@@ -59,6 +80,16 @@ export function TeacherTable({
             const full = teachersById[r.id];
             return (
               <TableRow key={r.id}>
+                {selectable && (
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${r.first_name} ${r.last_name}`}
+                      checked={selectedIds?.has(r.id) ?? false}
+                      onChange={() => onToggleSelect?.(r.id)}
+                    />
+                  </TableCell>
+                )}
                 <TableCell>
                   <RosterAvatar first={r.first_name} last={r.last_name} />
                 </TableCell>

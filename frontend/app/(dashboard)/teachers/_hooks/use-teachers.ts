@@ -172,3 +172,27 @@ export function useDeleteTeacher(branchId: string | undefined) {
     },
   });
 }
+
+// Bulk soft-delete a selected set of teachers from the roster. Mirrors the
+// Students bulk-delete flow (POST /teachers/bulk-delete).
+export function useBulkDeleteTeachers(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (teacherIds: string[]) => {
+      const res = await apiClient.post<{ deleted: number }>(
+        "/api/v1/teachers/bulk-delete",
+        { teacher_ids: teacherIds },
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: teacherKeys.list(branchId) });
+        queryClient.invalidateQueries({
+          queryKey: teacherKeys.withStats(branchId),
+        });
+      }
+    },
+  });
+}

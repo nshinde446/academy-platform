@@ -31,7 +31,7 @@ describe("LoginPage", () => {
   it("renders login form", () => {
     render(<LoginPage />);
 
-    expect(screen.getByText("Academy Platform")).toBeInTheDocument();
+    expect(screen.getByText("Matrix Science Academy")).toBeInTheDocument();
     expect(screen.getByText("Sign in to your account")).toBeInTheDocument();
     expect(screen.getByLabelText("Email")).toBeInTheDocument();
     expect(screen.getByLabelText("Password")).toBeInTheDocument();

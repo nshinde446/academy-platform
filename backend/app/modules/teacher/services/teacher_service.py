@@ -189,3 +189,64 @@ async def delete_teacher(
         ip_address=ip_address,
         branch_id=branch_id,
     )
+
+
+async def bulk_delete_teachers(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    teacher_ids: list[uuid.UUID],
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict[str, int]:
+    """Soft-delete a selected set of teachers (+ their subject/batch mappings).
+    Only live teachers in this branch are affected; recoverable like the
+    single-row delete."""
+    from sqlalchemy import select, update
+
+    from app.modules.teacher.models.teacher_models import (
+        Teacher,
+        TeacherBatchMapping,
+        TeacherSubjectMapping,
+    )
+
+    if not teacher_ids:
+        return {"deleted": 0}
+
+    valid_ids = list(
+        (
+            await session.execute(
+                select(Teacher.id).where(
+                    Teacher.id.in_(teacher_ids),
+                    Teacher.branch_id == branch_id,
+                    Teacher.is_deleted == False,  # noqa: E712
+                )
+            )
+        ).scalars().all()
+    )
+    if not valid_ids:
+        return {"deleted": 0}
+
+    await session.execute(
+        update(Teacher).where(Teacher.id.in_(valid_ids)).values(is_deleted=True)
+    )
+    for mapping in (TeacherSubjectMapping, TeacherBatchMapping):
+        await session.execute(
+            update(mapping)
+            .where(
+                mapping.teacher_id.in_(valid_ids),
+                mapping.is_deleted == False,  # noqa: E712
+            )
+            .values(is_deleted=True)
+        )
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="DELETE",
+        table_name="teachers",
+        record_id=valid_ids[0],
+        new_values={"bulk_deleted": [str(i) for i in valid_ids]},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return {"deleted": len(valid_ids)}

@@ -70,3 +70,13 @@ class ImportSummary(BaseModel):
     imported: int
     skipped: int
     errors: list[str] = []
+
+
+class BulkTeacherDelete(BaseModel):
+    teacher_ids: list[uuid.UUID]
+
+
+class BulkDeleteSummary(BaseModel):
+    """Result of a bulk soft-delete of teachers."""
+
+    deleted: int

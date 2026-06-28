@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { useUserStore } from "@/store/user-store";
 import {
   useBatches,
@@ -38,7 +39,7 @@ export default function MaterialsPage() {
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [alert, setAlert] = useState<string | null>(null);
+  const toast = useToast();
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const queryFilters = useMemo(
@@ -89,12 +90,12 @@ export default function MaterialsPage() {
       await ingestMutation.mutateAsync(id);
       // Extraction runs in the background; the list polls until it
       // flips to "ingested". Don't claim completion here.
-      setAlert("Ingest started — extracting questions in the background. The count updates when it's done.");
+      toast.info("Ingest started — extracting questions in the background. The count updates when it's done.");
     } catch (err) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data
           ?.detail ?? "Ingest failed";
-      setAlert(msg);
+      toast.error(msg);
     }
   }
 
@@ -109,7 +110,7 @@ export default function MaterialsPage() {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data
           ?.detail ?? "Delete failed";
-      setAlert(msg);
+      toast.error(msg);
     }
   }
 
@@ -211,17 +212,8 @@ export default function MaterialsPage() {
         onOpenChange={setUploadOpen}
         branchId={branchId}
         onUploaded={(n) =>
-          setAlert(`Uploaded ${n} material${n !== 1 ? "s" : ""}.`)
+          toast.success(`Uploaded ${n} material${n !== 1 ? "s" : ""}.`)
         }
-      />
-
-      <ConfirmDialog
-        open={!!alert}
-        onOpenChange={(o) => !o && setAlert(null)}
-        title="Info"
-        description={alert ?? ""}
-        confirmLabel="OK"
-        hideCancel
       />
 
       <ConfirmDialog

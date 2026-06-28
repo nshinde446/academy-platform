@@ -2,12 +2,39 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+type TableProps = React.ComponentProps<"table"> & {
+  /** Classes for the scroll container (e.g. a `max-h-*` to cap height). */
+  containerClassName?: string
+  /**
+   * Pin `<thead>` to the top while the body scrolls. Pair with a
+   * `max-h-*` on `containerClassName` so the container actually scrolls —
+   * useful for long, unpaginated rosters where the column labels would
+   * otherwise scroll out of view.
+   */
+  stickyHeader?: boolean
+}
+
+function Table({
+  className,
+  containerClassName,
+  stickyHeader,
+  ...props
+}: TableProps) {
   return (
-    <div className="relative w-full overflow-auto">
+    <div
+      data-slot="table-container"
+      className={cn("relative w-full overflow-auto", containerClassName)}
+    >
       <table
         data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
+        className={cn(
+          "w-full caption-bottom text-sm",
+          // Sticky header cells carry their own background so rows don't
+          // bleed through, plus a bottom border that travels with them.
+          stickyHeader &&
+            "[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-background [&_thead_th]:shadow-[inset_0_-1px_0_var(--border)]",
+          className
+        )}
         {...props}
       />
     </div>

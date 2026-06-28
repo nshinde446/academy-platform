@@ -104,7 +104,7 @@ export function StudentTable({
 
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
-      <Table>
+      <Table stickyHeader containerClassName="max-h-[calc(100vh-19rem)]">
         <TableHeader>
           <TableRow>
             {selectable && (

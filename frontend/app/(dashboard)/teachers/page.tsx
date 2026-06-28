@@ -11,6 +11,7 @@ import {
   useCreateTeacher,
   useUpdateTeacher,
   useDeleteTeacher,
+  useBulkDeleteTeachers,
   useSubjectOptions,
   useTeacherSubjects,
   useSetTeacherSubjects,
@@ -22,6 +23,7 @@ import type {
   TeacherWithStats,
 } from "./_schemas/teacher";
 import { TeacherTable } from "./_components/teacher-table";
+import { TeacherBulkActionBar } from "./_components/teacher-bulk-action-bar";
 import { TeacherEmptyState } from "./_components/teacher-empty-state";
 import { CreateTeacherDialog } from "./_components/create-teacher-dialog";
 import { EditTeacherDialog } from "./_components/edit-teacher-dialog";
@@ -53,12 +55,15 @@ export default function TeachersPage() {
   const [deleteTarget, setDeleteTarget] = useState<TeacherResponse | null>(
     null
   );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const teachersQuery = useTeachers(branchId);
   const statsQuery = useTeachersWithStats(branchId);
   const createMutation = useCreateTeacher(branchId);
   const updateMutation = useUpdateTeacher(branchId);
   const deleteMutation = useDeleteTeacher(branchId);
+  const bulkDeleteMutation = useBulkDeleteTeachers(branchId);
   const subjectOptionsQuery = useSubjectOptions(branchId);
   const editSubjectsQuery = useTeacherSubjects(branchId, editTarget?.id);
   const setSubjectsMutation = useSetTeacherSubjects(branchId);
@@ -104,6 +109,37 @@ export default function TeachersPage() {
     await deleteMutation.mutateAsync(deleteTarget.id);
   }
 
+  // --- Selection + bulk delete ---
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // Operates on the currently filtered rows (filtering is client-side here).
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      const allOnPage = filtered.every((r) => prev.has(r.id));
+      const next = new Set(prev);
+      if (allOnPage) filtered.forEach((r) => next.delete(r.id));
+      else filtered.forEach((r) => next.add(r.id));
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  async function handleBulkDeleteConfirm() {
+    if (selectedIds.size === 0) return;
+    await bulkDeleteMutation.mutateAsync([...selectedIds]);
+    clearSelection();
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -147,12 +183,25 @@ export default function TeachersPage() {
       ) : filtered.length === 0 ? (
         <TeacherEmptyState hasSearch={!!debouncedSearch} />
       ) : (
-        <TeacherTable
-          rows={filtered}
-          teachersById={teachersById}
-          onEdit={handleEdit}
-          onDelete={handleDeleteClick}
-        />
+        <>
+          {selectedIds.size > 0 && (
+            <TeacherBulkActionBar
+              count={selectedIds.size}
+              pending={bulkDeleteMutation.isPending}
+              onDelete={() => setBulkDeleteOpen(true)}
+              onClear={clearSelection}
+            />
+          )}
+          <TeacherTable
+            rows={filtered}
+            teachersById={teachersById}
+            onEdit={handleEdit}
+            onDelete={handleDeleteClick}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onToggleSelectAll={toggleSelectAll}
+          />
+        </>
       )}
 
       <EditTeacherDialog
@@ -178,6 +227,16 @@ export default function TeachersPage() {
         confirmLabel="Delete"
         destructive
         onConfirm={handleDeleteConfirm}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title={`Delete ${selectedIds.size} teacher(s)?`}
+        description={`This soft-deletes the ${selectedIds.size} selected teacher(s) and removes their subject/batch assignments. They can be restored by re-importing.`}
+        confirmLabel="Delete selected"
+        destructive
+        onConfirm={handleBulkDeleteConfirm}
       />
     </div>
   );

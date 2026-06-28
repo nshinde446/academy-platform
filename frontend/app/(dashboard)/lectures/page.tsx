@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -230,7 +231,7 @@ function LecturesPageBody() {
     null
   );
   const [actualsOpen, setActualsOpen] = useState(false);
-  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const toast = useToast();
 
   // Which "Manage" tool dialog is open (driven from the header overflow menu).
   const [tool, setTool] = useState<
@@ -456,7 +457,7 @@ function LecturesPageBody() {
         err?.response?.data?.error?.message ||
         err?.response?.data?.detail ||
         "Action failed";
-      setAlertMessage(msg);
+      toast.error(msg);
     }
   }
 
@@ -536,15 +537,13 @@ function LecturesPageBody() {
       });
       setSelectedIds(new Set());
       setCopyTargetDate("");
-      const lines = [
+      const summary =
         `Copied ${res.copied} lecture(s) to ${res.target_date}` +
-          (res.skipped ? ` · ${res.skipped} skipped` : "") +
-          ".",
-        ...res.errors.slice(0, 6),
-      ];
-      setAlertMessage(lines.join("\n"));
+        (res.skipped ? ` · ${res.skipped} skipped` : "") +
+        ".";
+      toast.success(summary, res.errors.slice(0, 6).join(" · ") || undefined);
     } catch (err: any) {
-      setAlertMessage(
+      toast.error(
         err?.response?.data?.error?.message ||
           err?.response?.data?.detail ||
           "Copy failed"
@@ -1139,15 +1138,6 @@ function LecturesPageBody() {
         confirmLabel={`Delete ${selectedIds.size}`}
         destructive
         onConfirm={handleDeleteSelectedConfirm}
-      />
-
-      <ConfirmDialog
-        open={!!alertMessage}
-        onOpenChange={(o) => !o && setAlertMessage(null)}
-        title="Action failed"
-        description={alertMessage ?? ""}
-        confirmLabel="OK"
-        hideCancel
       />
     </div>
   );

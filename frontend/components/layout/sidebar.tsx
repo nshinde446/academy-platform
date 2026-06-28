@@ -98,18 +98,16 @@ export function Sidebar() {
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r bg-sidebar">
-      {/* Brand */}
+      {/* Brand — Matrix Science Academy */}
       <div className="flex h-14 items-center gap-2.5 border-b px-4">
-        <div
-          className="grid h-7 w-7 place-items-center rounded-md bg-primary text-[12px] font-bold tracking-wider text-primary-foreground"
-          aria-hidden
-        >
-          A
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="" className="h-7 w-7 shrink-0" aria-hidden />
         <div className="flex min-w-0 flex-col leading-tight">
-          <span className="truncate text-[13.5px] font-semibold">Academy</span>
-          <span className="text-[10.5px] uppercase tracking-[0.06em] text-muted-foreground">
-            Platform
+          <span className="truncate text-[13px] font-semibold">
+            Matrix Science Academy
+          </span>
+          <span className="truncate text-[9.5px] font-semibold uppercase tracking-[0.06em] text-brand-gold">
+            JEE · NEET · MHT-CET
           </span>
         </div>
       </div>
