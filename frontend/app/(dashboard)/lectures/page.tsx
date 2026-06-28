@@ -28,6 +28,7 @@ import {
   useCreateLecture,
   useCreateLectureSession,
   useDeleteLecture,
+  useDppCoverage,
   useLectures,
   useLectureSessions,
   useLecturesInRange,
@@ -257,6 +258,7 @@ function LecturesPageBody() {
   const pendingActualsQuery = usePendingActuals(branchId);
   const pendingMakeupsQuery = usePendingMakeups(branchId);
   const sessionsQuery = useLectureSessions(branchId);
+  const dppCoverageQuery = useDppCoverage(branchId);
   const batchesQuery = useBatchesForLectures(branchId);
   const teachersQuery = useTeachers(branchId);
   const classroomsQuery = useClassrooms(branchId);
@@ -819,7 +821,7 @@ function LecturesPageBody() {
           {/* At-a-glance strip — week context + the two triage queues that the
               worklists below let you act on. Queue tiles glow when non-empty. */}
           <Card size="sm">
-            <div className="grid grid-cols-2 gap-3 px-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 px-3 sm:grid-cols-3 xl:grid-cols-6">
               <Kpi label="This week" value={String(msaKpis.thisWeek)} />
               <Kpi
                 label="Completed"
@@ -842,6 +844,24 @@ function LecturesPageBody() {
                 value={String(pendingMakeups.length)}
                 tone={pendingMakeups.length > 0 ? "warning" : "default"}
               />
+              {(() => {
+                const cov = dppCoverageQuery.data;
+                const done = cov?.completed ?? 0;
+                const withDpp = cov?.with_dpp ?? 0;
+                const pct = done > 0 ? Math.round((withDpp / done) * 100) : 0;
+                return (
+                  <Kpi
+                    label="DPP coverage"
+                    value={done > 0 ? `${pct}%` : "—"}
+                    hint={
+                      done > 0
+                        ? `${withDpp} of ${done} completed`
+                        : "no completed lectures yet"
+                    }
+                    tone="primary"
+                  />
+                );
+              })()}
             </div>
           </Card>
 

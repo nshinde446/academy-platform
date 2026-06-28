@@ -110,6 +110,12 @@ class Test(BaseModel):
     academic_year_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("academic_years.id"), nullable=False
     )
+    # The completed lecture this paper was generated off, when the composer was
+    # opened via the lectures "Generate DPP" flow. Powers DPP-coverage on the
+    # lectures dashboard. Nullable: most papers aren't lecture-anchored.
+    source_lecture_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("lectures.id"), nullable=True
+    )
 
 
 class TestQuestion(BaseModel):

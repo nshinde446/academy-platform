@@ -134,6 +134,25 @@ export function useLectures(branchId: string | undefined) {
   });
 }
 
+export interface DppCoverage {
+  completed: number;
+  with_dpp: number;
+}
+
+export function useDppCoverage(branchId: string | undefined) {
+  return useQuery<DppCoverage>({
+    queryKey: [...lectureKeys.all, "dpp-coverage", branchId] as const,
+    queryFn: async () => {
+      const res = await apiClient.get<DppCoverage>(
+        "/api/v1/lectures/dpp-coverage",
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    enabled: !!branchId,
+  });
+}
+
 export function usePendingActuals(branchId: string | undefined) {
   return useQuery<LectureResponse[]>({
     queryKey: pendingActualsKeys.list(branchId!),

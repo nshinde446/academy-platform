@@ -70,6 +70,13 @@ function PapersPageBody() {
 
   const [picked, setPicked] = useState<QuestionResponse[]>([]);
   const [name, setName] = useState(() => searchParams.get("name") ?? "");
+  // Carries through from the lectures "Generate DPP" flow so the saved paper
+  // links back to its source lecture (powers DPP coverage). Read once.
+  const sourceLectureId = useMemo(
+    () => searchParams.get("source_lecture_id") ?? "",
+    // searchParams identity is stable for the life of the page.
+    [],
+  );
   const [pickMode, setPickMode] = useState<"pick" | "reshuffle" | null>(null);
   const [swappingId, setSwappingId] = useState<string | null>(null);
   const [alert, setAlert] = useState<string | null>(null);
@@ -182,6 +189,7 @@ function PapersPageBody() {
           batch_id: batchId,
           subject_id: subjectId,
           total_marks: picked.length,
+          ...(sourceLectureId ? { source_lecture_id: sourceLectureId } : {}),
         },
         questionIds: picked.map((p) => p.id),
       },

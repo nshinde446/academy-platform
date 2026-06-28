@@ -487,3 +487,10 @@ class AttendanceResponse(BaseModel):
     attendance_status: str
     marked_at: datetime
     model_config = {"from_attributes": True}
+
+
+class DppCoverageResponse(BaseModel):
+    """Completed lectures vs. those with a DPP generated off them."""
+
+    completed: int
+    with_dpp: int

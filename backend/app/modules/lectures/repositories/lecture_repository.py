@@ -1106,3 +1106,35 @@ async def branch_test_summary(
         "students_with_marks": int(row[0] or 0),
         "branch_avg_score": round(float(row[1] or 0.0), 1),
     }
+
+
+async def dpp_coverage(session: AsyncSession, branch_id: uuid.UUID) -> dict:
+    """How many completed lectures have a DPP generated off them.
+
+    A DPP is a Test(paper_type="DPP") whose source_lecture_id points back at the
+    lecture (set by the lectures "Generate DPP" → composer flow). Powers the
+    DPP-coverage KPI on the lectures dashboard.
+    """
+    completed_filters = [
+        Lecture.branch_id == branch_id,
+        Lecture.lecture_status == "completed",
+        Lecture.is_deleted == False,
+    ]
+    completed = await session.scalar(
+        select(func.count()).select_from(Lecture).where(*completed_filters)
+    )
+    has_dpp = (
+        select(Test.id)
+        .where(
+            Test.source_lecture_id == Lecture.id,
+            Test.paper_type == "DPP",
+            Test.is_deleted == False,
+        )
+        .exists()
+    )
+    with_dpp = await session.scalar(
+        select(func.count())
+        .select_from(Lecture)
+        .where(*completed_filters, has_dpp)
+    )
+    return {"completed": int(completed or 0), "with_dpp": int(with_dpp or 0)}

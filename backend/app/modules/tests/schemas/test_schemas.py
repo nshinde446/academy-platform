@@ -70,6 +70,9 @@ class TestCreate(BaseModel):
     scheduled_at: datetime | None = None
     duration_minutes: int = 60
     total_marks: float = 100.0
+    # Optional link back to the lecture this paper was generated from
+    # (set by the lectures "Generate DPP" flow → DPP-coverage metric).
+    source_lecture_id: uuid.UUID | None = None
 
 
 class TestResponse(BaseModel):
@@ -85,6 +88,7 @@ class TestResponse(BaseModel):
     test_status: str
     branch_id: uuid.UUID
     academic_year_id: uuid.UUID
+    source_lecture_id: uuid.UUID | None = None
     status: str
     model_config = {"from_attributes": True}
 

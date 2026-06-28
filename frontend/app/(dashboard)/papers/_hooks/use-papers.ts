@@ -105,6 +105,9 @@ export interface CreatePaperInput {
   batch_id: string;
   subject_id: string;
   total_marks: number;
+  /** When the composer was opened from a lecture's "Generate DPP" — links the
+   * paper back to that lecture for the DPP-coverage metric. */
+  source_lecture_id?: string;
 }
 
 // Create the draft Test then attach the picked questions, in order.

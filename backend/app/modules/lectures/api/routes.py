@@ -14,6 +14,7 @@ from app.modules.lectures.schemas.lecture_schemas import (
     CopyScheduleSummary,
     CopySelectedRequest,
     CopySelectedSummary,
+    DppCoverageResponse,
     EligibleSubstitute,
     GenerateScheduleSummary,
     HolidayCreate,
@@ -102,6 +103,15 @@ async def list_lectures(
     session: AsyncSession = Depends(get_db),
 ):
     return await lecture_service.list_lectures(session, branch_id, offset, limit)
+
+
+@router.get("/dpp-coverage", response_model=DppCoverageResponse)
+async def dpp_coverage(
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    return await lecture_service.get_dpp_coverage(session, branch_id)
 
 
 @router.post("/sessions", response_model=LectureSessionResponse)

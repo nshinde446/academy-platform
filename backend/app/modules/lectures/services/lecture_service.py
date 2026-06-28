@@ -237,6 +237,12 @@ async def list_lectures(session: AsyncSession, branch_id: uuid.UUID, offset: int
     return await lecture_repository.list_by_branch(session, branch_id, offset, limit)
 
 
+async def get_dpp_coverage(session: AsyncSession, branch_id: uuid.UUID):
+    """Completed lectures vs. those with a DPP generated off them (the lectures
+    dashboard's DPP-coverage KPI)."""
+    return await lecture_repository.dpp_coverage(session, branch_id)
+
+
 async def get_pending_actuals(session: AsyncSession, branch_id: uuid.UUID):
     """The end-of-day worklist: past lectures (scheduled end already elapsed)
     that were never closed out, so nothing silently slips through."""

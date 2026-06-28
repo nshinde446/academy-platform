@@ -339,6 +339,7 @@ async def create_test(
         test_status="DRAFT",
         branch_id=batch.branch_id,
         academic_year_id=batch.start_academic_year_id,
+        source_lecture_id=data.get("source_lecture_id"),
     )
 
     await audit_service.log_action(
