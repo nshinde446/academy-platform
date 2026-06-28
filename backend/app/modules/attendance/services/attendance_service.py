@@ -1,11 +1,12 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config.settings import get_settings
 from app.modules.attendance.repositories import attendance_repository
+from app.modules.attendance.services import daily_service
+from app.modules.attendance.time_utils import local_date_of
 from app.modules.audit.services import audit_service
 from app.modules.events.services import event_service
 from app.modules.lectures.repositories import lecture_repository
@@ -53,88 +54,46 @@ async def process_raw_punches(
     current_user_id: uuid.UUID,
     ip_address: str | None = None,
 ):
+    """Aggregate punches into per-lecture attendance via the day layer.
+
+    Rebuilds each batch student's Layer 1 day row from punches, then projects
+    those day facts onto this lecture's window — writing one attendance_records
+    row per student (present & absent), manual marks preserved. Route and
+    response are unchanged; the engine underneath is now the day model.
+    """
     lecture = await lecture_repository.get_by_id(session, lecture_id)
     if not lecture:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture not found")
     if lecture.branch_id != branch_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
 
-    from app.modules.lectures.repositories import lecture_repository as lr
-    attendance_mappings = await lr.get_attendance(session, lecture_id)
-    existing_student_ids = {m.student_id for m in attendance_mappings}
-
-    start = lecture.scheduled_start - timedelta(minutes=30)
-    end = lecture.scheduled_end + timedelta(minutes=15)
-
-    from app.modules.student.models.student_models import StudentBatchMapping
     from sqlalchemy import select
-    sbm_result = await session.execute(
+    from app.modules.student.models.student_models import StudentBatchMapping
+
+    tz_name = await daily_service.branch_timezone(session, branch_id)
+    day = local_date_of(lecture.scheduled_start, tz_name)
+
+    student_ids = [row[0] for row in (await session.execute(
         select(StudentBatchMapping.student_id).where(
             StudentBatchMapping.batch_id == lecture.batch_id,
             StudentBatchMapping.is_deleted == False,
         )
-    )
-    student_ids = [row[0] for row in sbm_result.all()]
-
+    )).all()]
     if not student_ids:
         return []
 
-    raw_punches = await attendance_repository.get_raw_punches_for_lecture(
-        session, student_ids, start, end, branch_id
-    )
-
-    punches_by_student: dict[uuid.UUID, list] = {}
-    for punch in raw_punches:
-        punches_by_student.setdefault(punch.student_id, []).append(punch)
-
-    results = []
-    now = datetime.now(timezone.utc)
-
-    for student_id in student_ids:
-        if student_id in existing_student_ids:
-            continue
-
-        student_punches = punches_by_student.get(student_id, [])
-
-        if not student_punches:
-            record = await attendance_repository.create_attendance_record(
-                session,
-                student_id=student_id,
-                lecture_id=lecture_id,
-                attendance_status="ABSENT",
-                marked_at=now,
-                marked_by=current_user_id,
-                source="SYSTEM",
-                branch_id=branch_id,
-            )
-            results.append(record)
-            continue
-
-        first_punch = student_punches[0]
-
-        duplicates = _detect_duplicates(student_punches)
-        for dup in duplicates:
-            await attendance_repository.create_exception(
-                session,
-                student_id=student_id,
-                lecture_id=lecture_id,
-                reason=f"Duplicate punch at {dup.punch_timestamp.isoformat()}",
-                branch_id=branch_id,
-            )
-
-        att_status = _determine_status(first_punch.punch_timestamp, lecture.scheduled_start)
-
-        record = await attendance_repository.create_attendance_record(
-            session,
-            student_id=student_id,
-            lecture_id=lecture_id,
-            attendance_status=att_status,
-            marked_at=now,
-            marked_by=current_user_id,
-            source="BIOMETRIC",
-            branch_id=branch_id,
+    for sid in student_ids:
+        await daily_service.rebuild_daily(
+            session, student_id=sid, branch_id=branch_id, day=day, tz_name=tz_name
         )
-        results.append(record)
+
+    results = await daily_service.project_day_onto_lecture(
+        session,
+        lecture_id=lecture_id,
+        branch_id=branch_id,
+        current_user_id=current_user_id,
+        tz_name=tz_name,
+    )
 
     await audit_service.log_action(
         session,
@@ -147,26 +106,6 @@ async def process_raw_punches(
         branch_id=branch_id,
     )
     return results
-
-
-def _detect_duplicates(punches: list) -> list:
-    if len(punches) <= 1:
-        return []
-    settings = get_settings()
-    duplicates = []
-    for i in range(1, len(punches)):
-        delta = punches[i].punch_timestamp - punches[i - 1].punch_timestamp
-        if delta < timedelta(minutes=settings.ATTENDANCE_DUPLICATE_WINDOW_MINUTES):
-            duplicates.append(punches[i])
-    return duplicates
-
-
-def _determine_status(punch_time: datetime, scheduled_start: datetime) -> str:
-    settings = get_settings()
-    grace = timedelta(minutes=settings.ATTENDANCE_GRACE_PERIOD_MINUTES)
-    if punch_time <= scheduled_start + grace:
-        return "PRESENT"
-    return "LATE"
 
 
 async def mark_attendance(

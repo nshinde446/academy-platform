@@ -21,9 +21,12 @@ import type {
   AttendanceStatus,
 } from "./_schemas/attendance";
 import { AttendanceRoster } from "./_components/attendance-roster";
+import { DayRegister } from "./_components/day-register";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
+
+type AttendanceView = "lecture" | "day";
 
 function formatLectureLabel(
   l: LectureResponse,
@@ -63,6 +66,7 @@ export default function AttendancePage() {
   const batches = useMemo(() => batchesQuery.data ?? [], [batchesQuery.data]);
   const students = useMemo(() => studentsQuery.data ?? [], [studentsQuery.data]);
 
+  const [view, setView] = useState<AttendanceView>("lecture");
   const [filterBatchId, setFilterBatchId] = useState("");
   const [selectedLectureId, setSelectedLectureId] = useState("");
   const [pendingStudentId, setPendingStudentId] = useState<string | null>(null);
@@ -223,26 +227,57 @@ export default function AttendancePage() {
             overwrites the previous status.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!selectedLecture || roster.length === 0 || busy}
-            onClick={handleMarkAllPresent}
-          >
-            Mark all present
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={!selectedLecture || busy}
-            onClick={() => setConfirmProcess(true)}
-          >
-            Process biometric punches
-          </Button>
-        </div>
+        {view === "lecture" && (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!selectedLecture || roster.length === 0 || busy}
+              onClick={handleMarkAllPresent}
+            >
+              Mark all present
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!selectedLecture || busy}
+              onClick={() => setConfirmProcess(true)}
+            >
+              Process biometric punches
+            </Button>
+          </div>
+        )}
       </div>
 
+      {/* View toggle — per-lecture roster vs whole-day campus register */}
+      <div
+        role="tablist"
+        aria-label="Attendance view"
+        className="inline-flex w-fit overflow-hidden rounded-lg border"
+      >
+        {(["lecture", "day"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            role="tab"
+            aria-selected={view === v}
+            onClick={() => setView(v)}
+            className={
+              "h-8 px-4 text-sm font-medium transition-colors " +
+              (view === v
+                ? "bg-primary text-primary-foreground"
+                : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
+            }
+          >
+            {v === "lecture" ? "By lecture" : "By day"}
+          </button>
+        ))}
+      </div>
+
+      {view === "day" ? (
+        <DayRegister branchId={branchId} batches={batches} />
+      ) : (
+      <>
       {/* Lecture picker */}
       <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
         <select
@@ -327,6 +362,8 @@ export default function AttendancePage() {
         confirmLabel="Process"
         onConfirm={handleProcessPunches}
       />
+      </>
+      )}
 
       <ConfirmDialog
         open={!!alertMessage}

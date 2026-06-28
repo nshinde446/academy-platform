@@ -36,7 +36,7 @@ from app.modules.lectures.models.lecture_models import (  # noqa: F401
     Holiday, Lecture, LectureAttendanceMapping, LectureTopicMapping,
 )
 from app.modules.attendance.models.attendance_models import (  # noqa: F401
-    AttendanceException, AttendanceRecord, RawPunchLog,
+    AttendanceException, AttendanceRecord, DailyAttendance, RawPunchLog,
 )
 from app.modules.tests.models.test_models import (  # noqa: F401
     Question, QuestionMetadata, QuestionTopic, StudentMark, Test, TestQuestion,

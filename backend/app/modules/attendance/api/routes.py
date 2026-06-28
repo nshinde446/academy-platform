@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,13 +10,16 @@ from app.modules.attendance.schemas.attendance_schemas import (
     AttendanceMarkRequest,
     AttendanceRecordResponse,
     AttendanceReportResponse,
+    AttendanceSummaryResponse,
+    ClassroomRegisterRow,
+    DailyAttendanceResponse,
     ExceptionCreate,
     ExceptionResolve,
     ExceptionResponse,
     RawPunchBatchCreate,
     RawPunchResponse,
 )
-from app.modules.attendance.services import attendance_service
+from app.modules.attendance.services import attendance_service, daily_service
 from app.modules.student.models.student_models import Student
 from sqlalchemy import select
 
@@ -116,6 +120,53 @@ async def get_student_attendance(
 ):
     return await attendance_service.get_student_attendance(
         session, student_id, branch_id, offset, limit
+    )
+
+
+_REPORT_ROLES = ["super_admin", "branch_admin", "academic_head", "teacher"]
+
+
+@router.get("/daily/student/{student_id}", response_model=list[DailyAttendanceResponse])
+async def get_student_day_timeline(
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(..., description="inclusive local start date"),
+    end: date = Query(..., description="inclusive local end date"),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Reference A — a student's IN/OUT/status timeline across days."""
+    return await daily_service.student_timeline(
+        session, student_id=student_id, branch_id=branch_id, start=start, end=end
+    )
+
+
+@router.get("/daily/register", response_model=list[ClassroomRegisterRow])
+async def get_classroom_register(
+    branch_id: uuid.UUID = Query(...),
+    batch_id: uuid.UUID = Query(...),
+    day: date = Query(..., description="local date"),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Reference B — P/A roster for a batch on one day."""
+    return await daily_service.classroom_register(
+        session, branch_id=branch_id, batch_id=batch_id, day=day
+    )
+
+
+@router.get("/daily/summary/{student_id}", response_model=AttendanceSummaryResponse)
+async def get_student_attendance_summary(
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Attendance % over a range (working_days = days with >=1 lecture)."""
+    return await daily_service.monthly_summary(
+        session, student_id=student_id, branch_id=branch_id, start=start, end=end
     )
 
 

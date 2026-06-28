@@ -4,13 +4,82 @@ import { studentKeys } from "../../students/_hooks/use-students";
 import type {
   AttendanceMarkRequest,
   AttendanceRecord,
+  AttendanceSummary,
+  ClassroomRegisterRow,
+  DailyAttendance,
 } from "../_schemas/attendance";
 
 export const attendanceKeys = {
   all: ["attendance"] as const,
   lecture: (branchId: string, lectureId: string) =>
     [...attendanceKeys.all, "lecture", branchId, lectureId] as const,
+  register: (branchId: string, batchId: string, day: string) =>
+    [...attendanceKeys.all, "register", branchId, batchId, day] as const,
+  timeline: (branchId: string, studentId: string, start: string, end: string) =>
+    [...attendanceKeys.all, "timeline", branchId, studentId, start, end] as const,
+  summary: (branchId: string, studentId: string, start: string, end: string) =>
+    [...attendanceKeys.all, "summary", branchId, studentId, start, end] as const,
 };
+
+// Classroom day register (Reference B) — P/A roster for a batch on one day,
+// computed from biometric day-attendance.
+export function useClassroomRegister(
+  branchId: string | undefined,
+  batchId: string | undefined,
+  day: string | undefined,
+) {
+  return useQuery<ClassroomRegisterRow[]>({
+    queryKey: attendanceKeys.register(branchId!, batchId!, day!),
+    queryFn: async () => {
+      const res = await apiClient.get<ClassroomRegisterRow[]>(
+        "/api/v1/attendance/daily/register",
+        { params: { branch_id: branchId, batch_id: batchId, day } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!batchId && !!day,
+  });
+}
+
+// One student's day-by-day IN/OUT/status timeline (Reference A).
+export function useStudentTimeline(
+  branchId: string | undefined,
+  studentId: string | undefined,
+  start: string,
+  end: string,
+) {
+  return useQuery<DailyAttendance[]>({
+    queryKey: attendanceKeys.timeline(branchId!, studentId!, start, end),
+    queryFn: async () => {
+      const res = await apiClient.get<DailyAttendance[]>(
+        `/api/v1/attendance/daily/student/${studentId}`,
+        { params: { branch_id: branchId, start, end } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!studentId && !!start && !!end,
+  });
+}
+
+// Attendance % over a range (working_days = days with >=1 scheduled lecture).
+export function useAttendanceSummary(
+  branchId: string | undefined,
+  studentId: string | undefined,
+  start: string,
+  end: string,
+) {
+  return useQuery<AttendanceSummary>({
+    queryKey: attendanceKeys.summary(branchId!, studentId!, start, end),
+    queryFn: async () => {
+      const res = await apiClient.get<AttendanceSummary>(
+        `/api/v1/attendance/daily/summary/${studentId}`,
+        { params: { branch_id: branchId, start, end } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!studentId && !!start && !!end,
+  });
+}
 
 // Records already marked for a lecture. Students without a record yet are
 // simply absent from this list — the page treats them as "not marked".

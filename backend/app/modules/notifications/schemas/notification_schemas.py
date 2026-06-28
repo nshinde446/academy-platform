@@ -7,6 +7,7 @@ from pydantic import BaseModel
 VALID_CHANNELS = {"EMAIL", "SMS", "WHATSAPP", "PUSH"}
 VALID_EVENT_TYPES = {
     "ATTENDANCE_MARKED",
+    "STUDENT_ABSENT",  # emitted per student by the nightly absent sweep -> parent notify
     "LECTURE_COMPLETED",
     "LECTURE_CANCELLED",
     "TEST_UPLOADED",

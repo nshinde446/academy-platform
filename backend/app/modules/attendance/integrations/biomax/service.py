@@ -37,6 +37,21 @@ from app.modules.student.models.student_models import Student
 DUPLICATE_WINDOW = timedelta(seconds=5)
 
 
+def _normalize_direction(raw: str | None) -> str | None:
+    """Map a vendor's direction value to "IN"/"OUT"; None if absent/unknown.
+
+    Vendors use 0/1, in/out, I/O, check-in/check-out, etc. We only persist a
+    clean IN/OUT (or None) so the aggregator can trust the column."""
+    if raw is None:
+        return None
+    v = str(raw).strip().lower()
+    if v in {"in", "i", "0", "checkin", "check-in", "check_in"}:
+        return "IN"
+    if v in {"out", "o", "1", "checkout", "check-out", "check_out"}:
+        return "OUT"
+    return None
+
+
 async def ingest_punches(
     session: AsyncSession,
     events: list[PunchEvent],
@@ -93,6 +108,7 @@ async def ingest_punches(
                 synced_at=None,  # filled by the aggregator when it processes
                 student_id=student_id,
                 punch_timestamp=ev.punch_timestamp,
+                direction=_normalize_direction(ev.direction),
                 branch_id=branch_id,
             ))
             inserted += 1

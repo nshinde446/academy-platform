@@ -48,6 +48,18 @@ class Settings(BaseSettings):
 
     ATTENDANCE_GRACE_PERIOD_MINUTES: int = 10
     ATTENDANCE_DUPLICATE_WINDOW_MINUTES: int = 5
+    # Day-attendance (biometric) — see docs/biometric-attendance-design.md.
+    # Timezone is stored per branch (branch.timezone); this is only the
+    # fallback for branches with no value set.
+    DEFAULT_TIMEZONE: str = "Asia/Kolkata"
+    # Local wall-clock the coaching day's first lecture starts. A first punch
+    # at or before START + grace is on-time (PRESENT), later is LATE.
+    ATTENDANCE_CLASS_START_HOUR: int = 10
+    ATTENDANCE_CLASS_START_MINUTE: int = 0
+    # Campus operating window (local). Punches outside it aren't attributed to
+    # the day's sign-in/sign-off (Reference B header: "07:00 - 15:00").
+    ATTENDANCE_CAMPUS_OPEN_HOUR: int = 7
+    ATTENDANCE_CAMPUS_CLOSE_HOUR: int = 15
 
     # Safety cap on Materials ingest — at most this many PDF pages get
     # sent to Gemini Vision per ingest, bounding worst-case API cost if

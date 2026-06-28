@@ -42,3 +42,44 @@ export interface RosterStudent {
   last_name: string;
   enrollment_number: string | null;
 }
+
+// ── Day-attendance (Layer 1) — population campus presence ───────────────────
+// Mirrors the backend DailyAttendance reports. A "day" row is one student on
+// one local day, independent of any lecture.
+
+export type DayStatus = "PRESENT" | "LATE" | "ABSENT";
+export type Signoff = "COMPLETE" | "MISSING" | "NA";
+
+// One line in a classroom day register (Reference B export — P/A roster).
+export interface ClassroomRegisterRow {
+  student_id: string;
+  name: string;
+  enrollment_number: string | null;
+  parent_mobile: string | null;
+  mark: "P" | "A";
+  day_status: DayStatus;
+  first_in: string | null;
+  last_out: string | null;
+  signoff: Signoff;
+}
+
+// One day in a student's timeline (Reference A export — IN/OUT/status by day).
+export interface DailyAttendance {
+  id: string;
+  student_id: string;
+  branch_id: string;
+  attendance_date: string;
+  first_in: string | null;
+  last_out: string | null;
+  day_status: DayStatus;
+  signoff: Signoff;
+  source: AttendanceSource;
+}
+
+export interface AttendanceSummary {
+  student_id: string;
+  working_days: number;
+  present_days: number;
+  absent_days: number;
+  attendance_pct: number;
+}
