@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -77,3 +77,42 @@ class AttendanceReportResponse(BaseModel):
     late: int
     partial: int
     excused: int
+
+
+# ── Day-attendance reports (Layer 1) ───────────────────────────────────────
+
+
+class DailyAttendanceResponse(BaseModel):
+    """One day row — the unit of the per-student timeline (Reference A)."""
+    id: uuid.UUID
+    student_id: uuid.UUID
+    branch_id: uuid.UUID
+    attendance_date: date
+    first_in: datetime | None = None
+    last_out: datetime | None = None
+    day_status: str
+    signoff: str
+    source: str
+    model_config = {"from_attributes": True}
+
+
+class ClassroomRegisterRow(BaseModel):
+    """One student's P/A line in a classroom day register (Reference B)."""
+    student_id: uuid.UUID
+    name: str
+    enrollment_number: str | None = None
+    parent_mobile: str | None = None
+    mark: str  # "P" | "A"
+    day_status: str
+    first_in: datetime | None = None
+    last_out: datetime | None = None
+    signoff: str
+
+
+class AttendanceSummaryResponse(BaseModel):
+    """Monthly/range % for one student (working_days = days with a lecture)."""
+    student_id: uuid.UUID
+    working_days: int
+    present_days: int
+    absent_days: int
+    attendance_pct: float

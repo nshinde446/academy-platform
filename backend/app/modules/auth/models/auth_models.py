@@ -18,6 +18,12 @@ class Branch(BaseModel):
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # IANA timezone for all local-day attendance logic (sign-in/out bucketing,
+    # the nightly absent sweep). Per-branch so branches can differ; defaults to
+    # Asia/Kolkata. See docs/biometric-attendance-design.md §2.3.
+    timezone: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default="Asia/Kolkata", default="Asia/Kolkata"
+    )
 
 
 class User(BaseModel):
