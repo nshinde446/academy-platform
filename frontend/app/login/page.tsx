@@ -46,8 +46,20 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Academy Platform</CardTitle>
-          <CardDescription>Sign in to your account</CardDescription>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.svg"
+            alt=""
+            className="mx-auto mb-1 h-11 w-11"
+            aria-hidden
+          />
+          <CardTitle className="text-2xl">Matrix Science Academy</CardTitle>
+          <CardDescription>
+            <span className="block text-[11px] font-semibold uppercase tracking-[0.08em] text-brand-gold">
+              JEE · NEET · MHT-CET · NDA · IISER
+            </span>
+            <span className="mt-1 block">Sign in to your account</span>
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">

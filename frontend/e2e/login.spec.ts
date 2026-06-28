@@ -4,7 +4,7 @@ test.describe("Login flow", () => {
   test("shows login form", async ({ page }) => {
     await page.goto("/login");
 
-    await expect(page.getByText("Academy Platform")).toBeVisible();
+    await expect(page.getByText("Matrix Science Academy")).toBeVisible();
     await expect(page.getByText("Sign in to your account")).toBeVisible();
     await expect(page.getByLabel("Email")).toBeVisible();
     await expect(page.getByLabel("Password")).toBeVisible();

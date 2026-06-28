@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.teacher.schemas.teacher_schemas import (
+    BulkDeleteSummary,
+    BulkTeacherDelete,
     ImportSummary,
     TeacherCreate,
     TeacherResponse,
@@ -80,6 +82,25 @@ async def list_teachers_by_subject(
     """
     return await teacher_service.list_teachers_for_subject(
         session, branch_id, subject_id
+    )
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteSummary)
+async def bulk_delete_teachers(
+    body: BulkTeacherDelete,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Soft-delete a selected set of teachers from the roster. Literal path —
+    registered before ``/{teacher_id}`` so it isn't captured as a UUID param."""
+    return await teacher_service.bulk_delete_teachers(
+        session,
+        branch_id,
+        body.teacher_ids,
+        current_user["user_id"],
+        request.client.host if request.client else None,
     )
 
 

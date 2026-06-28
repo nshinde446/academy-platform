@@ -139,4 +139,35 @@ describe("TeacherTable (MSA_Design layout)", () => {
     );
     expect(mockDelete).toHaveBeenCalledWith(TEACHERS.t1);
   });
+
+  it("renders a selection column and fires onToggleSelect when ticked", async () => {
+    const user = userEvent.setup();
+    const onToggleSelect = vi.fn();
+    render(
+      <TeacherTable
+        rows={ROWS}
+        teachersById={TEACHERS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
+        selectedIds={new Set()}
+        onToggleSelect={onToggleSelect}
+        onToggleSelectAll={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: /select rahul sharma/i }));
+    expect(onToggleSelect).toHaveBeenCalledWith("t1");
+  });
+
+  it("hides the selection column when no selection model is passed", () => {
+    render(
+      <TeacherTable
+        rows={ROWS}
+        teachersById={TEACHERS}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
+      />,
+    );
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
 });

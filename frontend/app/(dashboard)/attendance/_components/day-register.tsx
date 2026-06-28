@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { useClassroomRegister } from "../_hooks/use-attendance";
 import type { ClassroomRegisterRow } from "../_schemas/attendance";
 
@@ -115,7 +116,7 @@ export function DayRegister({ branchId, batches }: DayRegisterProps) {
           Pick a batch and day to see the campus attendance register.
         </p>
       ) : registerQuery.isLoading ? (
-        <p className="text-muted-foreground text-sm">Loading register…</p>
+        <TableSkeleton rows={6} />
       ) : registerQuery.isError ? (
         <p className="text-destructive text-sm">Failed to load the register.</p>
       ) : rows.length === 0 ? (
@@ -124,7 +125,7 @@ export function DayRegister({ branchId, batches }: DayRegisterProps) {
         </p>
       ) : (
         <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
-          <Table>
+          <Table stickyHeader containerClassName="max-h-[70vh]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10 text-right tabular-nums">#</TableHead>

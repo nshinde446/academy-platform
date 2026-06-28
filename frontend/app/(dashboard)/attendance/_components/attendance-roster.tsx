@@ -62,7 +62,7 @@ export function AttendanceRoster({
 }: AttendanceRosterProps) {
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
-      <Table>
+      <Table stickyHeader containerClassName="max-h-[70vh]">
         <TableHeader>
           <TableRow>
             <TableHead className="w-10 text-right tabular-nums">#</TableHead>

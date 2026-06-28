@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { useUserStore } from "@/store/user-store";
 import {
   useBulkApprove,
@@ -45,7 +45,7 @@ export default function QuestionBankPage() {
 
   const [editTarget, setEditTarget] = useState<QuestionResponse | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [alert, setAlert] = useState<string | null>(null);
+  const toast = useToast();
 
   const queryFilters = useMemo(
     () => ({
@@ -117,7 +117,7 @@ export default function QuestionBankPage() {
         return n;
       });
     } catch (err: any) {
-      setAlert(err?.response?.data?.detail || "Failed to approve");
+      toast.error(err?.response?.data?.detail || "Failed to approve");
     }
   }
   async function rejectOne(id: string) {
@@ -129,7 +129,7 @@ export default function QuestionBankPage() {
         return n;
       });
     } catch (err: any) {
-      setAlert(err?.response?.data?.detail || "Failed to reject");
+      toast.error(err?.response?.data?.detail || "Failed to reject");
     }
   }
 
@@ -138,9 +138,9 @@ export default function QuestionBankPage() {
     try {
       const res = await approveMutation.mutateAsync(Array.from(bulkSelected));
       setBulkSelected(new Set());
-      setAlert(`Approved ${res.updated} question${res.updated !== 1 ? "s" : ""}.`);
+      toast.success(`Approved ${res.updated} question${res.updated !== 1 ? "s" : ""}.`);
     } catch (err: any) {
-      setAlert(err?.response?.data?.detail || "Bulk approve failed");
+      toast.error(err?.response?.data?.detail || "Bulk approve failed");
     }
   }
   async function bulkReject() {
@@ -148,9 +148,9 @@ export default function QuestionBankPage() {
     try {
       const res = await rejectMutation.mutateAsync(Array.from(bulkSelected));
       setBulkSelected(new Set());
-      setAlert(`Rejected ${res.updated} question${res.updated !== 1 ? "s" : ""}.`);
+      toast.success(`Rejected ${res.updated} question${res.updated !== 1 ? "s" : ""}.`);
     } catch (err: any) {
-      setAlert(err?.response?.data?.detail || "Bulk reject failed");
+      toast.error(err?.response?.data?.detail || "Bulk reject failed");
     }
   }
 
@@ -316,15 +316,6 @@ export default function QuestionBankPage() {
         }}
         onSubmit={handleEditSubmit}
         isPending={updateMutation.isPending}
-      />
-
-      <ConfirmDialog
-        open={!!alert}
-        onOpenChange={(o) => !o && setAlert(null)}
-        title="Info"
-        description={alert ?? ""}
-        confirmLabel="OK"
-        hideCancel
       />
     </div>
   );

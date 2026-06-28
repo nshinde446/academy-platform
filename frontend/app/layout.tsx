@@ -16,8 +16,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Academy Platform",
-  description: "Coaching Institute Academic Intelligence Platform",
+  title: "Matrix Science Academy",
+  description: "Matrix Science Academy — Academic Intelligence Platform",
 };
 
 export default function RootLayout({

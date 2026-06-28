@@ -3,6 +3,7 @@
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { useUserStore } from "@/store/user-store";
 import type {
   Difficulty,
@@ -79,7 +80,7 @@ function PapersPageBody() {
   );
   const [pickMode, setPickMode] = useState<"pick" | "reshuffle" | null>(null);
   const [swappingId, setSwappingId] = useState<string | null>(null);
-  const [alert, setAlert] = useState<string | null>(null);
+  const toast = useToast();
 
   const subjects = useSubjectOptions(branchId);
   const batches = useBatchOptions(branchId);
@@ -95,7 +96,7 @@ function PapersPageBody() {
       { testId: p.id, kind, name: p.name },
       {
         onError: (err: any) =>
-          setAlert(err?.response?.data?.detail || "Could not generate the PDF"),
+          toast.error(err?.response?.data?.detail || "Could not generate the PDF"),
       },
     );
   }
@@ -142,11 +143,11 @@ function PapersPageBody() {
         onSuccess: (res) => {
           setPicked(res);
           if (res.length === 0) {
-            setAlert("No approved questions match these facets yet.");
+            toast.info("No approved questions match these facets yet.");
           }
         },
         onError: (err: any) =>
-          setAlert(err?.response?.data?.detail || "Auto-pick failed"),
+          toast.error(err?.response?.data?.detail || "Auto-pick failed"),
         onSettled: () => setPickMode(null),
       },
     );
@@ -165,11 +166,11 @@ function PapersPageBody() {
           if (res[0]) {
             setPicked((prev) => prev.map((p) => (p.id === q.id ? res[0] : p)));
           } else {
-            setAlert(`No other ${q.difficulty.toLowerCase()} question available to swap in.`);
+            toast.info(`No other ${q.difficulty.toLowerCase()} question available to swap in.`);
           }
         },
         onError: (err: any) =>
-          setAlert(err?.response?.data?.detail || "Swap failed"),
+          toast.error(err?.response?.data?.detail || "Swap failed"),
         onSettled: () => setSwappingId(null),
       },
     );
@@ -195,12 +196,12 @@ function PapersPageBody() {
       },
       {
         onSuccess: (t) => {
-          setAlert(`Saved "${t.name}" as a ${PAPER_TYPE_LABEL[t.paper_type]} draft.`);
+          toast.success(`Saved "${t.name}" as a ${PAPER_TYPE_LABEL[t.paper_type]} draft.`);
           setPicked([]);
           setName("");
         },
         onError: (err: any) =>
-          setAlert(err?.response?.data?.detail || "Save failed"),
+          toast.error(err?.response?.data?.detail || "Save failed"),
       },
     );
   }
@@ -283,15 +284,6 @@ function PapersPageBody() {
           await deleteTest.mutateAsync(deleteTarget.id);
           setDeleteTarget(null);
         }}
-      />
-
-      <ConfirmDialog
-        open={!!alert}
-        onOpenChange={(o) => !o && setAlert(null)}
-        title="Papers"
-        description={alert ?? ""}
-        confirmLabel="OK"
-        hideCancel
       />
     </div>
   );

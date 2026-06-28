@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { useUserStore } from "@/store/user-store";
 import { useRoster } from "./_hooks/use-roster";
 import { SnapshotStrip } from "./_components/snapshot-strip";
@@ -63,7 +63,7 @@ export default function TodayPage() {
   const [substituteOpen, setSubstituteOpen] = useState(false);
   const [noShowTarget, setNoShowTarget] = useState<LectureResponse | null>(null);
   const [noShowOpen, setNoShowOpen] = useState(false);
-  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const toast = useToast();
 
   function findLecture(id: string): LectureResponse | null {
     return allLectures.find((l) => l.id === id) ?? null;
@@ -77,7 +77,7 @@ export default function TodayPage() {
         err?.response?.data?.error?.message ||
         err?.response?.data?.detail ||
         "Action failed";
-      setAlertMessage(msg);
+      toast.error(msg);
     }
   }
 
@@ -114,7 +114,7 @@ export default function TodayPage() {
     }
     if (status === "cancelled") {
       // No primary action; offer record-makeup via the Lectures page.
-      setAlertMessage(
+      toast.info(
         "Cancelled lectures can be made up via Record Makeup on the Lectures page.",
       );
       return;
@@ -249,15 +249,6 @@ export default function TodayPage() {
         }}
         onSubmit={handleNoShowSubmit}
         isPending={noShowMutation.isPending}
-      />
-
-      <ConfirmDialog
-        open={!!alertMessage}
-        onOpenChange={(o) => !o && setAlertMessage(null)}
-        title="Action info"
-        description={alertMessage ?? ""}
-        confirmLabel="OK"
-        hideCancel
       />
     </div>
   );
