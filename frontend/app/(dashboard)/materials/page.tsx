@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
@@ -18,9 +19,18 @@ import {
   MaterialFilterRail,
   type MaterialFilters,
 } from "./_components/filter-rail";
-import { MaterialListRow } from "./_components/list-row";
+import { MaterialGridCard, MaterialListRow } from "./_components/list-row";
 import { MaterialPreviewPane } from "./_components/preview-pane";
 import { UploadDialog } from "./_components/upload-dialog";
+
+type SortKey = "recent" | "questions" | "name";
+type ViewMode = "list" | "grid";
+
+const SORT_LABEL: Record<SortKey, string> = {
+  recent: "Most recent",
+  questions: "Most questions",
+  name: "Filename A–Z",
+};
 
 const DEFAULT_FILTERS: MaterialFilters = {
   academic_year_id: "",
@@ -37,6 +47,8 @@ export default function MaterialsPage() {
 
   const [filters, setFilters] = useState<MaterialFilters>(DEFAULT_FILTERS);
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SortKey>("recent");
+  const [view, setView] = useState<ViewMode>("list");
   const [openId, setOpenId] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const toast = useToast();
@@ -77,13 +89,52 @@ export default function MaterialsPage() {
     return out;
   }, [subjectsQuery.data]);
 
-  const items = listQuery.data?.items ?? [];
+  const items = useMemo(
+    () => listQuery.data?.items ?? [],
+    [listQuery.data],
+  );
   const total = listQuery.data?.total ?? 0;
   // Falls back to first row whenever the explicit selection is stale
   // (filter changed and the previously-open material is no longer in the
   // list). Pure derivation — no effect needed.
+  // KPI strip — derived from the loaded set (list returns the full branch up
+  // to 200). Mirrors the MSA console's stat row.
+  const kpis = useMemo(() => {
+    let ingested = 0;
+    let pending = 0;
+    let failed = 0;
+    let questions = 0;
+    for (const m of items) {
+      if (m.ingest_status === "ingested") ingested += 1;
+      else if (m.ingest_status === "uploaded" || m.ingest_status === "ingesting")
+        pending += 1;
+      else if (m.ingest_status === "ingest_failed") failed += 1;
+      questions += m.question_count;
+    }
+    const ingestedPct = items.length > 0 ? Math.round((ingested / items.length) * 100) : 0;
+    return { ingested, pending, failed, questions, ingestedPct };
+  }, [items]);
+
+  const subjectCount =
+    facetsQuery.data?.subjects.length ?? dedupedSubjects.length;
+
+  const sortedItems = useMemo(() => {
+    const copy = [...items];
+    if (sort === "questions") {
+      copy.sort((a, b) => b.question_count - a.question_count);
+    } else if (sort === "name") {
+      copy.sort((a, b) => a.filename.localeCompare(b.filename));
+    } else {
+      copy.sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
+    }
+    return copy;
+  }, [items, sort]);
+
   const openMaterial =
-    items.find((m) => m.id === openId) ?? items[0] ?? null;
+    sortedItems.find((m) => m.id === openId) ?? sortedItems[0] ?? null;
 
   async function handleIngest(id: string) {
     try {
@@ -123,12 +174,46 @@ export default function MaterialsPage() {
         <div>
           <h2 className="text-2xl font-semibold">Study materials</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Upload PDFs, Word docs, images, or text and tag them so the
-            question bank and test composer can find them later.
+            {total} material{total !== 1 ? "s" : ""}
+            {subjectCount > 0 && ` across ${subjectCount} subject${subjectCount !== 1 ? "s" : ""}`}
+            . Upload, tag, and ingest so the question bank and test composer can
+            find them.
           </p>
         </div>
         <Button onClick={() => setUploadOpen(true)}>+ Upload</Button>
       </div>
+
+      {/* KPI strip */}
+      <Card size="sm">
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+            <Kpi label="Total" value={String(total)} />
+            <Kpi
+              label="Ingested"
+              value={String(kpis.ingested)}
+              hint={`${kpis.ingestedPct}% of loaded`}
+              tone="success"
+            />
+            <Kpi
+              label="Awaiting ingest"
+              value={String(kpis.pending)}
+              hint="uploaded / extracting"
+              tone={kpis.pending > 0 ? "primary" : "default"}
+            />
+            <Kpi
+              label="Questions extracted"
+              value={String(kpis.questions)}
+              hint="across loaded materials"
+            />
+            <Kpi
+              label="Ingest failures"
+              value={String(kpis.failed)}
+              hint={kpis.failed > 0 ? "need attention" : "none"}
+              tone={kpis.failed > 0 ? "destructive" : "default"}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Three-pane */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)_360px]">
@@ -151,49 +236,99 @@ export default function MaterialsPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
 
-          <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-1.5">
-            <span className="text-xs text-muted-foreground">
-              {total} material{total !== 1 ? "s" : ""}
-            </span>
-            {(filters.category ||
-              filters.class_label ||
-              filters.subject_id ||
-              filters.exam_type ||
-              filters.batch_id) && (
-              <button
-                type="button"
-                onClick={() => setFilters(DEFAULT_FILTERS)}
-                className="text-xs text-muted-foreground hover:text-foreground"
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {total} material{total !== 1 ? "s" : ""}
+              </span>
+              {(filters.category ||
+                filters.class_label ||
+                filters.subject_id ||
+                filters.exam_type ||
+                filters.batch_id) && (
+                <button
+                  type="button"
+                  onClick={() => setFilters(DEFAULT_FILTERS)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as SortKey)}
+                aria-label="Sort materials"
+                className="h-7 rounded-md border border-input bg-background px-2 text-xs"
               >
-                Clear filters
-              </button>
-            )}
+                {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
+                  <option key={k} value={k}>
+                    {SORT_LABEL[k]}
+                  </option>
+                ))}
+              </select>
+              <div
+                role="group"
+                aria-label="View mode"
+                className="inline-flex overflow-hidden rounded-md border"
+              >
+                {(["list", "grid"] as ViewMode[]).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    aria-pressed={view === v}
+                    onClick={() => setView(v)}
+                    className={
+                      "h-7 px-2.5 text-xs font-medium capitalize transition-colors " +
+                      (view === v
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
+                    }
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
-          <div className="overflow-hidden rounded-xl border bg-card">
-            {listQuery.isLoading && (
-              <p className="p-4 text-sm text-muted-foreground">Loading…</p>
-            )}
-            {listQuery.isError && (
-              <p className="p-4 text-sm text-destructive">
-                Failed to load. Make sure the backend is running.
-              </p>
-            )}
-            {!listQuery.isLoading && items.length === 0 && (
-              <p className="p-4 text-sm italic text-muted-foreground">
-                No materials yet. Click <strong>+ Upload</strong> to add some.
-              </p>
-            )}
-            {items.map((m, i) => (
-              <MaterialListRow
-                key={m.id}
-                material={m}
-                selected={openMaterial?.id === m.id}
-                onSelect={setOpenId}
-                isLast={i === items.length - 1}
-              />
-            ))}
-          </div>
+          {listQuery.isLoading ? (
+            <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
+              Loading…
+            </p>
+          ) : listQuery.isError ? (
+            <p className="rounded-xl border bg-card p-4 text-sm text-destructive">
+              Failed to load. Make sure the backend is running.
+            </p>
+          ) : items.length === 0 ? (
+            <p className="rounded-xl border bg-card p-4 text-sm italic text-muted-foreground">
+              No materials yet. Click <strong>+ Upload</strong> to add some.
+            </p>
+          ) : view === "grid" ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {sortedItems.map((m) => (
+                <MaterialGridCard
+                  key={m.id}
+                  material={m}
+                  selected={openMaterial?.id === m.id}
+                  onSelect={setOpenId}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-xl border bg-card">
+              {sortedItems.map((m, i) => (
+                <MaterialListRow
+                  key={m.id}
+                  material={m}
+                  selected={openMaterial?.id === m.id}
+                  onSelect={setOpenId}
+                  isLast={i === sortedItems.length - 1}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* RIGHT: preview */}
@@ -225,6 +360,37 @@ export default function MaterialsPage() {
         destructive
         onConfirm={confirmDelete}
       />
+    </div>
+  );
+}
+
+const KPI_TONE: Record<string, string> = {
+  default: "text-foreground",
+  success: "text-emerald-600 dark:text-emerald-400",
+  primary: "text-primary",
+  destructive: "text-destructive",
+};
+
+function Kpi({
+  label,
+  value,
+  hint,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: "default" | "success" | "primary" | "destructive";
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span className={`text-2xl font-semibold tabular-nums ${KPI_TONE[tone]}`}>
+        {value}
+      </span>
+      {hint && <span className="text-[11px] text-muted-foreground">{hint}</span>}
     </div>
   );
 }
