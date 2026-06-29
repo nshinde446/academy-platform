@@ -16,9 +16,12 @@ const ROWS: ClassroomRegisterRow[] = [
   },
 ];
 
-// Mock the data hook so the component renders the register without a network.
+const downloadMutate = vi.fn();
+
+// Mock the data hooks so the component renders without a network.
 vi.mock("@/app/(dashboard)/attendance/_hooks/use-attendance", () => ({
   useClassroomRegister: () => ({ data: ROWS, isLoading: false, isError: false }),
+  useDownloadAttendanceReport: () => ({ mutate: downloadMutate, isPending: false }),
 }));
 
 import { DayRegister } from "@/app/(dashboard)/attendance/_components/day-register";
@@ -31,7 +34,9 @@ describe("DayRegister", () => {
     expect(
       screen.getByText(/pick a batch and day/i),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Aarav Patil")).not.toBeInTheDocument();
+    // No register table until a batch is chosen (names may appear in the
+    // report student dropdown, so assert on the table, not the name).
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
   it("renders the P/A register once a batch is selected", async () => {
@@ -39,10 +44,10 @@ describe("DayRegister", () => {
     render(<DayRegister branchId="br1" batches={BATCHES} />);
     await user.selectOptions(screen.getByLabelText("Select batch"), "b1");
 
-    expect(screen.getByText("Aarav Patil")).toBeInTheDocument();
-    expect(screen.getByText("Diya Shah")).toBeInTheDocument();
-    // "Present"/"Absent" also appear as KPI labels — scope to the table badges.
+    // Names appear in both the report dropdown and the table — scope to table.
     const table = screen.getByRole("table");
+    expect(within(table).getByText("Aarav Patil")).toBeInTheDocument();
+    expect(within(table).getByText("Diya Shah")).toBeInTheDocument();
     expect(within(table).getByText("Present")).toBeInTheDocument();
     expect(within(table).getByText("Absent")).toBeInTheDocument();
   });
@@ -55,5 +60,21 @@ describe("DayRegister", () => {
     // 1 of 2 present -> 50%; one MISSING sign-off.
     expect(screen.getByText("50%")).toBeInTheDocument();
     expect(screen.getByText("1/2")).toBeInTheDocument();
+  });
+
+  it("downloads an all-batches report without needing a batch", async () => {
+    const user = userEvent.setup();
+    downloadMutate.mockClear();
+    render(<DayRegister branchId="br1" batches={BATCHES} />);
+
+    // "All batches" group is always enabled; click its Excel button.
+    const group = screen.getByText("All batches").parentElement!;
+    await user.click(within(group).getByText("Excel"));
+
+    expect(downloadMutate).toHaveBeenCalledTimes(1);
+    expect(downloadMutate.mock.calls[0][0]).toMatchObject({
+      scope: "all-batches",
+      fmt: "xlsx",
+    });
   });
 });

@@ -61,6 +61,50 @@ export function useStudentTimeline(
   });
 }
 
+// Download an attendance report (Excel / PDF) as a blob and save it.
+export type ReportScope = "student" | "batch" | "all-batches";
+
+export function useDownloadAttendanceReport(branchId: string | undefined) {
+  return useMutation({
+    mutationFn: async ({
+      scope,
+      id,
+      start,
+      end,
+      fmt,
+    }: {
+      scope: ReportScope;
+      id?: string;
+      start: string;
+      end: string;
+      fmt: "xlsx" | "pdf";
+    }) => {
+      const path =
+        scope === "student"
+          ? `/api/v1/attendance/reports/student/${id}`
+          : scope === "batch"
+            ? `/api/v1/attendance/reports/batch/${id}`
+            : `/api/v1/attendance/reports/all-batches`;
+      const res = await apiClient.get(path, {
+        params: { branch_id: branchId, start, end, fmt },
+        responseType: "blob",
+      });
+      // Filename comes from Content-Disposition; fall back to a sane default.
+      const cd = res.headers["content-disposition"] as string | undefined;
+      const match = cd?.match(/filename="?([^"]+)"?/);
+      const filename = match?.[1] ?? `attendance-${scope}.${fmt}`;
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
+  });
+}
+
 // Attendance % over a range (working_days = days with >=1 scheduled lecture).
 export function useAttendanceSummary(
   branchId: string | undefined,
