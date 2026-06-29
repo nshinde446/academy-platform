@@ -21,7 +21,12 @@ ENV API_BASE_URL=${API_BASE_URL} \
     NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+# Mount Next.js's incremental build cache so `next build` can reuse compiled
+# output across CI runs. The mount is ephemeral to the build (never baked into
+# a layer), and `next start` doesn't need .next/cache at runtime — so the
+# runtime COPY of /app/.next below is unaffected. CI persists this mount across
+# runs via buildkit-cache-dance (see deploy-prod.yml).
+RUN --mount=type=cache,target=/app/.next/cache npm run build
 
 FROM node:${NODE_VERSION}-slim AS runtime
 WORKDIR /app

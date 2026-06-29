@@ -1,0 +1,35 @@
+name: Security scan / production
+
+# OWASP ZAP scan against the LIVE production site. This used to live in the
+# deploy gate (ci.yml) where it scanned a non-running http://localhost:8000 —
+# pure wasted minutes on every prod deploy. It now runs on a weekly schedule
+# (and on demand) against the real URL, off the deploy critical path.
+#
+# Uses the *baseline* (passive) scan, not full-scan: full-scan actively attacks
+# the target, which you don't want pointed at live production.
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"   # Mondays 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "URL to scan"
+        required: false
+        default: "https://app.eduworld-livekit.duckdns.org"
+
+permissions:
+  contents: read
+
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: OWASP ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: ${{ github.event.inputs.target || 'https://app.eduworld-livekit.duckdns.org' }}
+          allow_issue_writing: false
+        continue-on-error: true
