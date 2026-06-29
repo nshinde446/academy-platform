@@ -42,3 +42,7 @@ next-env.d.ts
 
 .vercel
 .env*.local
+
+# local ad-hoc diagnostic scripts (not part of the app)
+diag-attendance.cjs
+drive-attendance.cjs
