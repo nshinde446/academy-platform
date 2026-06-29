@@ -31,7 +31,10 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
+  // `iclock` is excluded alongside `api`: biometric devices push to /iclock/*
+  // and authenticate by device serial at the backend, not a web session — the
+  // proxy must NOT bounce them to /login (it runs before next.config rewrites).
   matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
+    "/((?!api|iclock|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
   ],
 };
