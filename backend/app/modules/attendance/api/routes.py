@@ -1,11 +1,12 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
+from app.modules.attendance.services import attendance_report_service
 from app.modules.attendance.schemas.attendance_schemas import (
     AttendanceMarkRequest,
     AttendanceRecordResponse,
@@ -168,6 +169,67 @@ async def get_student_attendance_summary(
     return await daily_service.monthly_summary(
         session, student_id=student_id, branch_id=branch_id, start=start, end=end
     )
+
+
+# ── Downloadable reports (Excel / PDF) ─────────────────────────────────────
+
+
+def _download(filename: str, data: bytes, media_type: str) -> Response:
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/reports/student/{student_id}")
+async def download_student_report(
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    fmt: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Individual student attendance report (timeline + %) as Excel or PDF."""
+    filename, data, mime = await attendance_report_service.student_report(
+        session, student_id=student_id, branch_id=branch_id, start=start, end=end, fmt=fmt,
+    )
+    return _download(filename, data, mime)
+
+
+@router.get("/reports/batch/{batch_id}")
+async def download_batch_report(
+    batch_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    fmt: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Single-batch attendance register (matrix) as Excel or PDF."""
+    filename, data, mime = await attendance_report_service.batch_report(
+        session, batch_id=batch_id, branch_id=branch_id, start=start, end=end, fmt=fmt,
+    )
+    return _download(filename, data, mime)
+
+
+@router.get("/reports/all-batches")
+async def download_all_batches_report(
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    fmt: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """All-batches attendance summary (+ per-batch sheets in Excel)."""
+    filename, data, mime = await attendance_report_service.all_batches_report(
+        session, branch_id=branch_id, start=start, end=end, fmt=fmt,
+    )
+    return _download(filename, data, mime)
 
 
 @router.post("/exceptions", response_model=ExceptionResponse)

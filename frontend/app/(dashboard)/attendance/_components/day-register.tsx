@@ -10,18 +10,30 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
-import { useClassroomRegister } from "../_hooks/use-attendance";
+import {
+  useClassroomRegister,
+  useDownloadAttendanceReport,
+} from "../_hooks/use-attendance";
 import type { ClassroomRegisterRow } from "../_schemas/attendance";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
 
-function todayLocalISO(): string {
-  const d = new Date();
+function localISO(d: Date): string {
   const off = d.getTimezoneOffset();
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+}
+
+function todayLocalISO(): string {
+  return localISO(new Date());
+}
+
+function monthStartISO(): string {
+  const d = new Date();
+  return localISO(new Date(d.getFullYear(), d.getMonth(), 1));
 }
 
 function timeOf(iso: string | null): string {
@@ -43,6 +55,10 @@ interface DayRegisterProps {
 export function DayRegister({ branchId, batches }: DayRegisterProps) {
   const [batchId, setBatchId] = useState("");
   const [day, setDay] = useState(todayLocalISO());
+  // Report range — defaults to the current month.
+  const [from, setFrom] = useState(monthStartISO());
+  const [to, setTo] = useState(todayLocalISO());
+  const [studentId, setStudentId] = useState("");
 
   const registerQuery = useClassroomRegister(
     branchId,
@@ -53,6 +69,17 @@ export function DayRegister({ branchId, batches }: DayRegisterProps) {
     () => registerQuery.data ?? [],
     [registerQuery.data],
   );
+
+  const download = useDownloadAttendanceReport(branchId);
+  function pull(scope: "student" | "batch" | "all-batches", fmt: "xlsx" | "pdf") {
+    download.mutate({
+      scope,
+      id: scope === "student" ? studentId : scope === "batch" ? batchId : undefined,
+      start: from,
+      end: to,
+      fmt,
+    });
+  }
 
   const counts = useMemo(() => {
     let present = 0;
@@ -105,6 +132,75 @@ export function DayRegister({ branchId, batches }: DayRegisterProps) {
               <Kpi label="Present / total" value={`${counts.present}/${counts.total}`} />
               <Kpi label="Absent" value={String(counts.absent)} />
               <Kpi label="Missed punch-out" value={String(counts.missingOut)} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Downloadable reports */}
+      {branchId && (
+        <Card size="sm">
+          <CardContent>
+            <div className="flex flex-col gap-3">
+              <span className="text-sm font-medium">Download reports</span>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  From
+                  <input
+                    type="date"
+                    value={from}
+                    max={to}
+                    onChange={(e) => setFrom(e.target.value)}
+                    className={SELECT_CLASS}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  To
+                  <input
+                    type="date"
+                    value={to}
+                    min={from}
+                    onChange={(e) => setTo(e.target.value)}
+                    className={SELECT_CLASS}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  Student (for individual report)
+                  <select
+                    value={studentId}
+                    onChange={(e) => setStudentId(e.target.value)}
+                    className={`${SELECT_CLASS} min-w-44`}
+                    disabled={rows.length === 0}
+                  >
+                    <option value="">Select a student…</option>
+                    {rows.map((r) => (
+                      <option key={r.student_id} value={r.student_id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-4">
+                <DownloadGroup
+                  label="Student"
+                  disabled={!studentId || download.isPending}
+                  onExcel={() => pull("student", "xlsx")}
+                  onPdf={() => pull("student", "pdf")}
+                />
+                <DownloadGroup
+                  label="This batch"
+                  disabled={!batchId || download.isPending}
+                  onExcel={() => pull("batch", "xlsx")}
+                  onPdf={() => pull("batch", "pdf")}
+                />
+                <DownloadGroup
+                  label="All batches"
+                  disabled={download.isPending}
+                  onExcel={() => pull("all-batches", "xlsx")}
+                  onPdf={() => pull("all-batches", "pdf")}
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -196,6 +292,34 @@ function RegisterRow({
         )}
       </TableCell>
     </TableRow>
+  );
+}
+
+function DownloadGroup({
+  label,
+  disabled,
+  onExcel,
+  onPdf,
+}: {
+  label: string;
+  disabled?: boolean;
+  onExcel: () => void;
+  onPdf: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <div className="flex gap-1.5">
+        <Button variant="outline" size="sm" disabled={disabled} onClick={onExcel}>
+          Excel
+        </Button>
+        <Button variant="outline" size="sm" disabled={disabled} onClick={onPdf}>
+          PDF
+        </Button>
+      </div>
+    </div>
   );
 }
 

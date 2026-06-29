@@ -340,6 +340,155 @@ async def _student_batch_ids(
     )).scalars().all())
 
 
+def _status_code(day_status: str | None) -> str:
+    """Register cell: P (present), L (late), A (absent / no row)."""
+    if day_status == "PRESENT":
+        return "P"
+    if day_status == "LATE":
+        return "L"
+    return "A"
+
+
+async def _batch_working_dates(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    start: date,
+    end: date,
+    tz_name: str,
+) -> list[date]:
+    """Local dates in range with >=1 scheduled lecture for the batch (the
+    register's columns / the % denominator — decision 1)."""
+    range_start, _ = day_bounds(start, tz_name)
+    _, range_end = day_bounds(end, tz_name)
+    starts = (await session.execute(
+        select(Lecture.scheduled_start).where(
+            Lecture.batch_id == batch_id,
+            Lecture.branch_id == branch_id,
+            Lecture.scheduled_start >= range_start,
+            Lecture.scheduled_start < range_end,
+            Lecture.is_deleted == False,
+        )
+    )).scalars().all()
+    days = {local_date_of(s, tz_name) for s in starts}
+    return sorted(d for d in days if start <= d <= end)
+
+
+async def batch_matrix(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    start: date,
+    end: date,
+    tz_name: str | None = None,
+) -> dict:
+    """Register matrix for one batch: students × working-day columns, each cell
+    P/L/A, plus per-student % and per-day present totals."""
+    tz_name = tz_name or await branch_timezone(session, branch_id)
+    dates = await _batch_working_dates(session, branch_id, batch_id, start, end, tz_name)
+
+    students = (await session.execute(
+        select(Student)
+        .join(StudentBatchMapping, StudentBatchMapping.student_id == Student.id)
+        .where(
+            StudentBatchMapping.batch_id == batch_id,
+            StudentBatchMapping.is_deleted == False,
+            Student.is_deleted == False,
+        )
+        .order_by(Student.first_name, Student.last_name)
+    )).scalars().unique().all()
+    student_ids = [s.id for s in students]
+
+    by_student_date: dict[uuid.UUID, dict[date, str]] = {}
+    if student_ids and dates:
+        rows = (await session.execute(
+            select(DailyAttendance).where(
+                DailyAttendance.student_id.in_(student_ids),
+                DailyAttendance.attendance_date >= dates[0],
+                DailyAttendance.attendance_date <= dates[-1],
+                DailyAttendance.is_deleted == False,
+            )
+        )).scalars().all()
+        for r in rows:
+            by_student_date.setdefault(r.student_id, {})[r.attendance_date] = (
+                _status_code(r.day_status)
+            )
+
+    total_days = len(dates)
+    student_rows = []
+    day_present = {d: 0 for d in dates}
+    for s in students:
+        cells = []
+        present = 0
+        smap = by_student_date.get(s.id, {})
+        for d in dates:
+            code = smap.get(d, "A")
+            cells.append(code)
+            if code in ("P", "L"):
+                present += 1
+                day_present[d] += 1
+        pct = round(present / total_days * 100, 1) if total_days else 0.0
+        student_rows.append({
+            "student_id": s.id,
+            "name": f"{s.first_name} {s.last_name}".strip(),
+            "enrollment_number": s.enrollment_number,
+            "cells": cells,
+            "present": present,
+            "working_days": total_days,
+            "attendance_pct": pct,
+        })
+
+    return {
+        "batch_id": batch_id,
+        "dates": dates,
+        "students": student_rows,
+        "day_present": [day_present[d] for d in dates],
+        "student_count": len(students),
+    }
+
+
+async def branch_summary(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    start: date,
+    end: date,
+    tz_name: str | None = None,
+) -> list[dict]:
+    """One summary row per active batch in the branch: students, present/total
+    slots, avg attendance %. Powers the all-batches report."""
+    from app.modules.batch.models.batch_models import Batch
+
+    tz_name = tz_name or await branch_timezone(session, branch_id)
+    batches = (await session.execute(
+        select(Batch)
+        .where(Batch.branch_id == branch_id, Batch.is_deleted == False)
+        .order_by(Batch.name)
+    )).scalars().all()
+
+    out = []
+    for b in batches:
+        m = await batch_matrix(
+            session, branch_id=branch_id, batch_id=b.id,
+            start=start, end=end, tz_name=tz_name,
+        )
+        total_slots = m["student_count"] * len(m["dates"])
+        present = sum(r["present"] for r in m["students"])
+        avg_pct = round(present / total_slots * 100, 1) if total_slots else 0.0
+        out.append({
+            "batch_id": b.id,
+            "batch_name": b.name,
+            "batch_code": b.code,
+            "student_count": m["student_count"],
+            "working_days": len(m["dates"]),
+            "present": present,
+            "total_slots": total_slots,
+            "avg_pct": avg_pct,
+        })
+    return out
+
+
 async def monthly_summary(
     session: AsyncSession,
     *,
