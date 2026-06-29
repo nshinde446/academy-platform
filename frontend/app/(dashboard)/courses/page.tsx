@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/layout/page-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   useCourses,
@@ -82,20 +83,16 @@ export default function CoursesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Courses</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Master course definitions (NEET, JEE, Class 9, etc.) used across
-            academic years
-          </p>
-        </div>
-        <CreateCourseDialog
-          onSubmit={handleCreate}
-          isPending={createMutation.isPending}
-        />
-      </div>
+      <PageHeader
+        title="Courses"
+        description="Master course definitions (NEET, JEE, Class 9, etc.) used across academic years."
+        actions={
+          <CreateCourseDialog
+            onSubmit={handleCreate}
+            isPending={createMutation.isPending}
+          />
+        }
+      />
 
       {/* Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

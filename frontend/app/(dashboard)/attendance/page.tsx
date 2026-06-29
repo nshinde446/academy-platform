@@ -23,6 +23,7 @@ import type {
   AttendanceRecord,
   AttendanceStatus,
 } from "./_schemas/attendance";
+import { PageHeader } from "@/components/layout/page-header";
 import { AttendanceRoster } from "./_components/attendance-roster";
 import { DayRegister } from "./_components/day-register";
 
@@ -234,28 +235,24 @@ export default function AttendancePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Attendance</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Mark a lecture roster by hand, or aggregate biometric punches once
-            devices are live. Marks upsert per student — changing one
-            overwrites the previous status.
-          </p>
-        </div>
-        {view === "lecture" && (
-          <div className="flex flex-col gap-2 sm:items-end">
-            {branchName && (
-              <span className="text-xs text-muted-foreground">
-                Pull attendance for{" "}
-                <span className="font-medium text-foreground">{branchName}</span>
-              </span>
-            )}
-            <div className="flex flex-wrap gap-2">
+      <PageHeader
+        title="Attendance"
+        description="Mark a lecture roster by hand, or aggregate biometric punches once devices are live. Marks upsert per student — changing one overwrites the previous status."
+        actions={
+          view === "lecture" ? (
+            <>
+              {branchName && (
+                <span className="mr-1 hidden text-xs text-muted-foreground sm:inline">
+                  Pull for{" "}
+                  <span className="font-medium text-foreground">
+                    {branchName}
+                  </span>
+                </span>
+              )}
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 disabled={!selectedLecture || roster.length === 0 || busy}
                 onClick={handleMarkAllPresent}
               >
@@ -264,6 +261,7 @@ export default function AttendancePage() {
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 disabled={!selectedLecture || busy}
                 onClick={() => setConfirmSource("etimeoffice")}
                 title="Pull this lecture's day from the eTimeOffice cloud"
@@ -273,41 +271,42 @@ export default function AttendancePage() {
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 disabled={!selectedLecture || busy}
                 onClick={() => setConfirmSource("biomax")}
                 title="Process BioMax device punches for this lecture"
               >
                 BioMax
               </Button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* View toggle — per-lecture roster vs whole-day campus register */}
-      <div
-        role="tablist"
-        aria-label="Attendance view"
-        className="inline-flex w-fit overflow-hidden rounded-lg border"
+            </>
+          ) : undefined
+        }
       >
-        {(["lecture", "day"] as const).map((v) => (
-          <button
-            key={v}
-            type="button"
-            role="tab"
-            aria-selected={view === v}
-            onClick={() => setView(v)}
-            className={
-              "h-8 px-4 text-sm font-medium transition-colors " +
-              (view === v
-                ? "bg-primary text-primary-foreground"
-                : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
-            }
-          >
-            {v === "lecture" ? "By lecture" : "By day"}
-          </button>
-        ))}
-      </div>
+        {/* View toggle — per-lecture roster vs whole-day campus register */}
+        <div
+          role="tablist"
+          aria-label="Attendance view"
+          className="inline-flex w-fit overflow-hidden rounded-lg border"
+        >
+          {(["lecture", "day"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              role="tab"
+              aria-selected={view === v}
+              onClick={() => setView(v)}
+              className={
+                "h-8 px-4 text-sm font-medium transition-colors " +
+                (view === v
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
+              }
+            >
+              {v === "lecture" ? "By lecture" : "By day"}
+            </button>
+          ))}
+        </div>
+      </PageHeader>
 
       {view === "day" ? (
         <DayRegister branchId={branchId} batches={batches} />

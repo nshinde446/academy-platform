@@ -5,6 +5,7 @@ import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import apiClient from "@/services/api-client";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/page-header";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { TableSkeleton } from "@/components/ui/skeleton";
@@ -212,35 +213,32 @@ export default function StudentsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Students</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage student records for your branch
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {branchId && (
-            <DeleteAllStudentsDialog branchId={branchId} count={total} />
-          )}
-          {branchId && (
-            <Button
-              variant="outline"
-              onClick={handleExport}
-              disabled={exporting || total === 0}
-            >
-              {exporting ? "Exporting…" : "Export CSV"}
-            </Button>
-          )}
-          {branchId && <ImportStudentsDialog branchId={branchId} />}
-          <CreateStudentDialog
-            academicYears={academicYearsQuery.data ?? []}
-            onSubmit={handleCreate}
-            isPending={createMutation.isPending}
-          />
-        </div>
-      </div>
+      <PageHeader
+        title="Students"
+        description="Manage student records for your branch."
+        actions={
+          <>
+            {branchId && (
+              <DeleteAllStudentsDialog branchId={branchId} count={total} />
+            )}
+            {branchId && (
+              <Button
+                variant="outline"
+                onClick={handleExport}
+                disabled={exporting || total === 0}
+              >
+                {exporting ? "Exporting…" : "Export CSV"}
+              </Button>
+            )}
+            {branchId && <ImportStudentsDialog branchId={branchId} />}
+            <CreateStudentDialog
+              academicYears={academicYearsQuery.data ?? []}
+              onSubmit={handleCreate}
+              isPending={createMutation.isPending}
+            />
+          </>
+        }
+      />
 
       {/* Search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

@@ -8,6 +8,7 @@ import apiClient from "@/services/api-client";
 import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -682,50 +683,46 @@ function LecturesPageBody() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Lectures</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            {isCalendar
-              ? "Week-at-a-glance grid of every batch's scheduled lectures."
-              : isMsa
-                ? "Schedule, attendance, and one-click DPP generation off completed lectures."
-                : "Schedule, run, and track lectures. Backend rejects teacher/batch/classroom conflicts at create time."}
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            {[
-              { key: "full", label: "Full", href: "/lectures" },
-              { key: "msa", label: "Simplified", href: "/lectures?view=msa" },
-              {
-                key: "calendar",
-                label: "Calendar",
-                href: "/lectures?view=calendar",
-              },
-            ].map((v, i) => {
-              const active =
-                (v.key === "full" && !isMsa && !isCalendar) ||
-                (v.key === "msa" && isMsa) ||
-                (v.key === "calendar" && isCalendar);
-              return (
-                <span key={v.key}>
-                  {i > 0 && " · "}
-                  {active ? (
-                    <span className="font-medium text-foreground">
-                      {v.label}
-                    </span>
-                  ) : (
-                    <Link href={v.href} className="underline">
-                      {v.label}
-                    </Link>
-                  )}
-                </span>
-              );
-            })}
-          </p>
-        </div>
-        {headerActions}
-      </div>
+      <PageHeader
+        title="Lectures"
+        description={
+          isCalendar
+            ? "Week-at-a-glance grid of every batch's scheduled lectures."
+            : isMsa
+              ? "Schedule, attendance, and one-click DPP generation off completed lectures."
+              : "Schedule, run, and track lectures. Backend rejects teacher/batch/classroom conflicts at create time."
+        }
+        actions={headerActions}
+      >
+        <p className="text-xs text-muted-foreground">
+          {[
+            { key: "full", label: "Full", href: "/lectures" },
+            { key: "msa", label: "Simplified", href: "/lectures?view=msa" },
+            {
+              key: "calendar",
+              label: "Calendar",
+              href: "/lectures?view=calendar",
+            },
+          ].map((v, i) => {
+            const active =
+              (v.key === "full" && !isMsa && !isCalendar) ||
+              (v.key === "msa" && isMsa) ||
+              (v.key === "calendar" && isCalendar);
+            return (
+              <span key={v.key}>
+                {i > 0 && " · "}
+                {active ? (
+                  <span className="font-medium text-foreground">{v.label}</span>
+                ) : (
+                  <Link href={v.href} className="underline">
+                    {v.label}
+                  </Link>
+                )}
+              </span>
+            );
+          })}
+        </p>
+      </PageHeader>
 
       {isCalendar ? (
         <CalendarWeekView
