@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useUserStore } from "@/store/user-store";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   useBackfillCurriculum,
   useChaptersBySubjects,
@@ -116,39 +117,35 @@ export default function SyllabusPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Syllabus Manager</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Browse the syllabus tree for each course. Import an .xlsx to seed
-            or extend it — re-imports merge by name and never duplicate nodes.
-          </p>
-        </div>
-        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-          <Button
-            variant="outline"
-            disabled={!branchId || backfillMutation.isPending}
-            onClick={() => branchId && backfillMutation.mutate(branchId)}
-            title="Load the bundled master curriculum onto courses' empty subjects, by Target"
-          >
-            {backfillMutation.isPending
-              ? "Backfilling..."
-              : "Backfill master curriculum"}
-          </Button>
-          <ImportSyllabusDialog
-            courses={courses}
-            defaultCourseId={effectiveCourseId}
-            onImport={(params) =>
-              importMutation.mutateAsync({
-                courseId: params.courseId,
-                file: params.file,
-              })
-            }
-            isPending={importMutation.isPending}
-          />
-        </div>
-      </div>
+      <PageHeader
+        title="Syllabus Manager"
+        description="Browse the syllabus tree for each course. Import an .xlsx to seed or extend it — re-imports merge by name and never duplicate nodes."
+        actions={
+          <>
+            <Button
+              variant="outline"
+              disabled={!branchId || backfillMutation.isPending}
+              onClick={() => branchId && backfillMutation.mutate(branchId)}
+              title="Load the bundled master curriculum onto courses' empty subjects, by Target"
+            >
+              {backfillMutation.isPending
+                ? "Backfilling..."
+                : "Backfill master curriculum"}
+            </Button>
+            <ImportSyllabusDialog
+              courses={courses}
+              defaultCourseId={effectiveCourseId}
+              onImport={(params) =>
+                importMutation.mutateAsync({
+                  courseId: params.courseId,
+                  file: params.file,
+                })
+              }
+              isPending={importMutation.isPending}
+            />
+          </>
+        }
+      />
 
       {backfillMutation.isSuccess && (
         <p className="text-sm text-emerald-600">

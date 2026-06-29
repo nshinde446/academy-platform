@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   useEtoPull,
   useEtoStatus,
@@ -44,14 +45,10 @@ export default function IntegrationsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h2 className="text-2xl font-semibold">Integrations</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Connect the academy&apos;s biometric attendance devices. Punches from
-          either source flow into the same day-attendance engine — register,
-          timelines and reports update automatically.
-        </p>
-      </div>
+      <PageHeader
+        title="Integrations"
+        description="Connect the academy's biometric attendance devices. Punches from either source flow into the same day-attendance engine — register, timelines and reports update automatically."
+      />
 
       <EtimeOfficeCard branchId={branchId} />
       <BiomaxCard branchId={branchId} />

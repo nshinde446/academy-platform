@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -169,19 +170,19 @@ export default function MaterialsPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-semibold">Study materials</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
+      <PageHeader
+        title="Study materials"
+        description={
+          <>
             {total} material{total !== 1 ? "s" : ""}
-            {subjectCount > 0 && ` across ${subjectCount} subject${subjectCount !== 1 ? "s" : ""}`}
+            {subjectCount > 0 &&
+              ` across ${subjectCount} subject${subjectCount !== 1 ? "s" : ""}`}
             . Upload, tag, and ingest so the question bank and test composer can
             find them.
-          </p>
-        </div>
-        <Button onClick={() => setUploadOpen(true)}>+ Upload</Button>
-      </div>
+          </>
+        }
+        actions={<Button onClick={() => setUploadOpen(true)}>+ Upload</Button>}
+      />
 
       {/* KPI strip */}
       <Card size="sm">

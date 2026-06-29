@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useUserStore } from "@/store/user-store";
@@ -149,43 +150,40 @@ export default function TodayPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">{friendly}</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Live roster of every teacher&apos;s day. Click a class to start,
-            complete, mark no-show, or record a substitute.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setDate(shiftIsoDate(date, -1))}
-            aria-label="Previous day"
-          >
-            ◀
-          </Button>
-          <Input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="w-44"
-            aria-label="Pick date"
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setDate(shiftIsoDate(date, 1))}
-            aria-label="Next day"
-          >
-            ▶
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setDate(today)}>
-            Today
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={friendly}
+        description="Live roster of every teacher's day. Click a class to start, complete, mark no-show, or record a substitute."
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDate(shiftIsoDate(date, -1))}
+              aria-label="Previous day"
+            >
+              ◀
+            </Button>
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-44"
+              aria-label="Pick date"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDate(shiftIsoDate(date, 1))}
+              aria-label="Next day"
+            >
+              ▶
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setDate(today)}>
+              Today
+            </Button>
+          </>
+        }
+      />
 
       {rosterQuery.isLoading && (
         <p className="text-muted-foreground text-sm">Loading roster…</p>

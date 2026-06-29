@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/page-header";
 import { useToast } from "@/components/ui/toast";
 import { useUserStore } from "@/store/user-store";
 import {
@@ -172,14 +173,10 @@ export default function QuestionBankPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-semibold">Question bank</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Browse, filter, and approve ingested questions before they feed into
-          papers.
-        </p>
-      </div>
+      <PageHeader
+        title="Question bank"
+        description="Browse, filter, and approve ingested questions before they feed into papers."
+      />
 
       {/* Stats */}
       <QBStatsStrip

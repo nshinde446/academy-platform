@@ -3,6 +3,7 @@
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PageHeader } from "@/components/layout/page-header";
 import { useToast } from "@/components/ui/toast";
 import { useUserStore } from "@/store/user-store";
 import type {
@@ -210,14 +211,10 @@ function PapersPageBody() {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-semibold">Papers</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Compose a DPP, CPP or test by auto-picking approved questions from the
-          bank, then save it as a draft.
-        </p>
-      </div>
+      <PageHeader
+        title="Papers"
+        description="Compose a DPP, CPP or test by auto-picking approved questions from the bank, then save it as a draft."
+      />
 
       {/* Composer */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">

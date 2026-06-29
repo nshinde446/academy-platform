@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/layout/page-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   useClassrooms,
@@ -84,18 +85,16 @@ export default function ClassroomsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Classrooms</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage physical rooms for offline / hybrid lectures
-          </p>
-        </div>
-        <CreateClassroomDialog
-          onSubmit={handleCreate}
-          isPending={createMutation.isPending}
-        />
-      </div>
+      <PageHeader
+        title="Classrooms"
+        description="Manage physical rooms for offline / hybrid lectures."
+        actions={
+          <CreateClassroomDialog
+            onSubmit={handleCreate}
+            isPending={createMutation.isPending}
+          />
+        }
+      />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Input

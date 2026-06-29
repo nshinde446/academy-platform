@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/layout/page-header";
 import { useUserStore } from "@/store/user-store";
 import {
   useAdherenceInsights,
@@ -64,32 +65,29 @@ export default function InsightsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Insights</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Plan-vs-Actual adherence: how much of what you scheduled actually
-            happened, and which teachers drive the deviations.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <Input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            aria-label="From date"
-            className="w-40"
-          />
-          <span className="text-muted-foreground text-sm">to</span>
-          <Input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            aria-label="To date"
-            className="w-40"
-          />
-        </div>
-      </div>
+      <PageHeader
+        title="Insights"
+        description="Plan-vs-Actual adherence: how much of what you scheduled actually happened, and which teachers drive the deviations."
+        actions={
+          <>
+            <Input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              aria-label="From date"
+              className="w-40"
+            />
+            <span className="text-muted-foreground text-sm">to</span>
+            <Input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              aria-label="To date"
+              className="w-40"
+            />
+          </>
+        }
+      />
 
       {!dateValid && (
         <p className="text-sm text-destructive">

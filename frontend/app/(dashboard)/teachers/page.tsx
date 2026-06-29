@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/layout/page-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   useTeachers,
@@ -142,23 +143,20 @@ export default function TeachersPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Teachers</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage faculty for your branch
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {branchId && <ImportTeachersDialog branchId={branchId} />}
-          <CreateTeacherDialog
-            onSubmit={handleCreate}
-            isPending={createMutation.isPending}
-            subjectOptions={subjectOptions}
-          />
-        </div>
-      </div>
+      <PageHeader
+        title="Teachers"
+        description="Manage faculty for your branch."
+        actions={
+          <>
+            {branchId && <ImportTeachersDialog branchId={branchId} />}
+            <CreateTeacherDialog
+              onSubmit={handleCreate}
+              isPending={createMutation.isPending}
+              subjectOptions={subjectOptions}
+            />
+          </>
+        }
+      />
 
       {/* Search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
