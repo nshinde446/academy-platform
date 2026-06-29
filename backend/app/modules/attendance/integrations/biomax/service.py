@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.attendance.models.attendance_models import RawPunchLog
 from app.modules.attendance.integrations.biomax.schemas import (
+    AffectedPunch,
     IngestResult,
     PunchEvent,
 )
@@ -77,6 +78,7 @@ async def ingest_punches(
     skipped_no_student = 0
     skipped_duplicate = 0
     errors: list[str] = []
+    affected: list[AffectedPunch] = []
 
     for ev in events:
         student_id = student_by_vendor_id.get(ev.vendor_user_id)
@@ -112,6 +114,9 @@ async def ingest_punches(
                 branch_id=branch_id,
             ))
             inserted += 1
+            affected.append(AffectedPunch(
+                student_id=student_id, punch_timestamp=ev.punch_timestamp
+            ))
         except Exception as exc:  # noqa: BLE001 — surface to caller, don't break batch
             errors.append(f"{ev.vendor_user_id}@{ev.punch_timestamp}: {exc}")
 
@@ -123,4 +128,5 @@ async def ingest_punches(
         skipped_no_student=skipped_no_student,
         skipped_duplicate=skipped_duplicate,
         errors=errors,
+        affected=affected,
     )

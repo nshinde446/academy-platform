@@ -18,11 +18,16 @@ env:
   FRONTEND_IMAGE_NAME: ghcr.io/${{ github.repository }}-frontend
 
 jobs:
-  # Re-run the test suite as a gate, even though CI ran on the PR.
+  # Re-run the unit tests as a gate, even though CI ran on the PR.
   # Prevents shipping a master commit that someone pushed directly without PR.
   # Runs IN PARALLEL with the image build below — only the deploy job waits on it.
+  # `fast: true` runs ONLY the unit suites (backend pytest + frontend vitest) and
+  # skips coverage/e2e/security scans — those gate quality on PRs, not releases —
+  # taking several minutes off the deploy's critical path.
   gate-tests:
     uses: ./.github/workflows/ci.yml
+    with:
+      fast: true
 
   # Backend + frontend images build in SEPARATE jobs so they run on parallel
   # runners, concurrently with gate-tests. Images are tagged by SHA, so building

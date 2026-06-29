@@ -172,6 +172,52 @@ export function useMarkAttendance(
   });
 }
 
+// Pull/aggregate attendance for a lecture from a chosen device source.
+//
+// - "etimeoffice": cloud-pull the lecture's day for this branch first, then
+//   project the day facts onto the lecture.
+// - "biomax": punches already arrived via device push, so just project.
+//
+// Both end by calling the lecture projection (/process), so a present/absent
+// row exists per student. Manual marks are preserved.
+export type SyncSource = "etimeoffice" | "biomax";
+
+export function useSyncAttendanceSource(
+  branchId: string | undefined,
+  lectureId: string | undefined,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ source, day }: { source: SyncSource; day: string }) => {
+      if (source === "etimeoffice") {
+        // Pull that single day from the eTimeOffice cloud into raw punches.
+        await apiClient.post(
+          "/api/v1/attendance/etimeoffice/pull",
+          undefined,
+          { params: { branch_id: branchId, start: day, end: day } },
+        );
+      }
+      // Project the day onto this lecture's roster (present + absent).
+      const res = await apiClient.post<AttendanceRecord[]>(
+        `/api/v1/attendance/process/${lectureId}`,
+        undefined,
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId && lectureId) {
+        queryClient.invalidateQueries({
+          queryKey: attendanceKeys.lecture(branchId, lectureId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: studentKeys.withStats(branchId),
+        });
+      }
+    },
+  });
+}
+
 // Aggregate raw biometric punches into attendance records for a lecture.
 // Seeds ABSENT for students with no punch and PRESENT/LATE for those who
 // punched. No-ops for students already marked.

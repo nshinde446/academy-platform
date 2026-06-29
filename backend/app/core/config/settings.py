@@ -72,6 +72,33 @@ class Settings(BaseSettings):
     # for now this single name is enough.
     ACADEMY_BRAND_NAME: str = "Academy Institute"
 
+    # ── Biometric device integrations ──────────────────────────────────────
+    # See docs/biometric-attendance-design.md (integrations section).
+    #
+    # eTimeOffice / TeamOffice (cloud SaaS) — we PULL punches from their REST
+    # API on a schedule. Credentials come from the client's API panel. When
+    # ETO_ENABLED is false the poll job and pull route are no-ops, so the
+    # rest of the platform runs without these set.
+    ETO_ENABLED: bool = False
+    ETO_BASE_URL: str = "https://api.etimeoffice.com/api"
+    ETO_CORP_ID: str = ""
+    ETO_USERNAME: str = ""
+    ETO_PASSWORD: str = ""
+    # How far back each poll re-pulls, to catch punches the device synced late.
+    ETO_LOOKBACK_DAYS: int = 2
+    # Branch every eTimeOffice punch is attributed to. Single-corporate setups
+    # have one branch; multi-branch mapping can come later.
+    ETO_BRANCH_ID: str = ""
+
+    # BioMax SmartOffice (on-prem devices) — devices PUSH punches to us via the
+    # ZKTeco/ADMS "iclock" protocol. We trust a device only if its serial is in
+    # this allowlist (comma-separated). Empty = reject all (fail-safe).
+    BIOMAX_DEVICE_SERIALS: str = ""
+    # Branch that iclock push devices attribute punches to (single-site
+    # assumption, mirroring ETO_BRANCH_ID). Per-serial branch mapping can come
+    # later; for now all allowed devices map here.
+    BIOMAX_BRANCH_ID: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

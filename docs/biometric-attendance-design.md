@@ -253,3 +253,40 @@ reference files); B6 makes it live; B7–B9 wire lectures + UI.
   `branch.timezone`; already supports branches in different timezones.
 - **Vendor direction reliability**: store when present, infer otherwise; revisit
   once BioMax docs confirm IN/OUT semantics (see `misc/biomax-integration-email.md`).
+
+---
+
+## 8. Device integrations (built 2026-06-29)
+
+Two client-owned products feed the pipeline. Both converge on one funnel —
+`PunchEvent` → `ingest_punches()` (rfid_number match + 5s dedup) →
+`RawPunchLog` → `rebuild_after_ingest()` → `DailyAttendance` (Layer 1) → lecture
+projection (Layer 2). Neither feeder changes anything downstream.
+
+### eTimeOffice / TeamOffice — cloud, PULL
+Hosted SaaS; punches live in their cloud, so we poll their REST API.
+- `integrations/etimeoffice/client.py` — `fetch_punch_data` (GET
+  `{ETO_BASE_URL}/DownloadInOutPunchData?Empcode=ALL&FromDate&ToDate`, colon-joined
+  `Authorization: corp:user:pass`). Field casing must be confirmed against the
+  client's API panel — isolated as constants.
+- `integrations/etimeoffice/service.py` — `rows_to_events` (Empcode→rfid_number,
+  IN/OUT local times → tz-aware UTC PunchEvents), `sync_range`, `sync_recent`.
+- Celery beat `attendance.etimeoffice_poll` every 10 min (no-op unless
+  `ETO_ENABLED` + `ETO_BRANCH_ID`). Manual `POST /api/v1/attendance/etimeoffice/pull`.
+- Config: `ETO_ENABLED, ETO_BASE_URL, ETO_CORP_ID, ETO_USERNAME, ETO_PASSWORD,
+  ETO_LOOKBACK_DAYS, ETO_BRANCH_ID`.
+
+### BioMax SmartOffice — on-prem, PUSH (iclock/ADMS)
+Devices are ZKTeco-based and push punches in real time over the iclock protocol.
+- `integrations/biomax/iclock.py` — `GET /iclock/cdata` handshake (Realtime=1),
+  `POST /iclock/cdata` ATTLOG ingest (tab-separated `PIN\ttime\tstatus`),
+  `GET /iclock/getrequest` command stub. Mounted with **no** `/api/v1` prefix;
+  frontend `next.config.ts` proxies `/iclock/*` to the backend.
+- Trust: serial allowlist `BIOMAX_DEVICE_SERIALS`; punches attributed to
+  `BIOMAX_BRANCH_ID`. Unknown serial → 401. ATTLOG times are device-local → UTC.
+- Device setup surfaced in the **Integrations** admin page (`/integrations`):
+  push URL + copy, serial/branch env reminders, eTimeOffice status + "Pull now".
+
+### Enrollment contract
+Both match the device user id to `Student.rfid_number`. Aligning enrollment
+numbers / device PINs to `rfid_number` is the one manual step per student.

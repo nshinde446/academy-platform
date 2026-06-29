@@ -150,6 +150,33 @@ async def rebuild_daily(
     return existing
 
 
+async def rebuild_after_ingest(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    affected: list[tuple[uuid.UUID, datetime]],
+    tz_name: str | None = None,
+) -> int:
+    """Recompute Layer 1 for exactly the (student, local-day) cells touched by a
+    fresh punch ingest. Cheaper and more precise than sweeping the branch.
+
+    ``affected`` is the (student_id, punch_timestamp) pairs ingest returned. We
+    fold them to distinct (student_id, local-day) and rebuild each once.
+    Returns the number of day rows rebuilt. MANUAL rows are left untouched by
+    ``rebuild_daily`` itself (decision 7)."""
+    if not affected:
+        return 0
+    tz_name = tz_name or await branch_timezone(session, branch_id)
+    cells: set[tuple[uuid.UUID, date]] = {
+        (student_id, local_date_of(ts, tz_name)) for student_id, ts in affected
+    }
+    for student_id, day in cells:
+        await rebuild_daily(
+            session, student_id=student_id, branch_id=branch_id, day=day, tz_name=tz_name
+        )
+    return len(cells)
+
+
 async def _scheduled_batch_ids(
     session: AsyncSession, branch_id: uuid.UUID, start: datetime, end: datetime
 ) -> list[uuid.UUID]:
