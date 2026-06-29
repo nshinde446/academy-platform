@@ -10,6 +10,7 @@ When BioMax docs arrive, the only thing that changes is
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -82,6 +83,14 @@ def parse_biomax_webhook_payload(raw: dict[str, Any]) -> list[PunchEvent]:
     return out
 
 
+class AffectedPunch(BaseModel):
+    """A successfully-ingested punch, surfaced so callers can rebuild the
+    matching day rows without re-querying. Vendor-agnostic."""
+
+    student_id: uuid.UUID
+    punch_timestamp: datetime
+
+
 class IngestResult(BaseModel):
     """What the webhook / manual import endpoints return."""
 
@@ -90,3 +99,6 @@ class IngestResult(BaseModel):
     skipped_no_student: int
     skipped_duplicate: int
     errors: list[str] = Field(default_factory=list)
+    # Inserted (student, timestamp) pairs — lets the caller recompute exactly
+    # the affected DailyAttendance rows (near-real-time), not the whole branch.
+    affected: list[AffectedPunch] = Field(default_factory=list)

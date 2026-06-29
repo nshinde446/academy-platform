@@ -22,6 +22,10 @@ from app.modules.batch.api.routes import router as batch_router
 from app.modules.classroom.api.routes import router as classroom_router
 from app.modules.attendance.api.routes import router as attendance_router
 from app.modules.attendance.integrations.biomax.routes import router as biomax_router
+from app.modules.attendance.integrations.biomax.iclock import router as iclock_router
+from app.modules.attendance.integrations.etimeoffice.routes import (
+    router as etimeoffice_router,
+)
 from app.modules.analytics.api.routes import router as analytics_router
 from app.modules.events.api.routes import router as events_router
 from app.modules.notifications.api.routes import router as notifications_router
@@ -79,6 +83,9 @@ app.include_router(lectures_router, prefix=settings.API_V1_PREFIX)
 app.include_router(materials_router, prefix=settings.API_V1_PREFIX)
 app.include_router(attendance_router, prefix=settings.API_V1_PREFIX)
 app.include_router(biomax_router, prefix=settings.API_V1_PREFIX)
+app.include_router(etimeoffice_router, prefix=settings.API_V1_PREFIX)
+# iclock devices POST to a fixed /iclock/* path — no API version prefix.
+app.include_router(iclock_router)
 app.include_router(questions_router, prefix=settings.API_V1_PREFIX)
 app.include_router(tests_router, prefix=settings.API_V1_PREFIX)
 app.include_router(marks_router, prefix=settings.API_V1_PREFIX)

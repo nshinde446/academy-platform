@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         destination: `${API_BASE_URL}/api/:path*`,
       },
+      // BioMax/ZKTeco devices push to a fixed /iclock/* path. Proxy it to the
+      // backend so devices can use the public app host as their server URL.
+      {
+        source: "/iclock/:path*",
+        destination: `${API_BASE_URL}/iclock/:path*`,
+      },
     ];
   },
 };

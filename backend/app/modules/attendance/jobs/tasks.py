@@ -85,3 +85,30 @@ def rebuild_student_day(student_id: str, branch_id: str, day_iso: str):
     return asyncio.run(
         _rebuild_one(uuid.UUID(student_id), uuid.UUID(branch_id), date.fromisoformat(day_iso))
     )
+
+
+# ── eTimeOffice cloud poll ──────────────────────────────────────────────────
+# eTimeOffice is pull-based (their cloud holds the punches), so unlike BioMax
+# (which pushes) we poll it on a schedule. The job re-pulls a short lookback
+# window every tick; ingest dedup makes the overlap harmless.
+
+
+async def _run_eto_poll() -> dict:
+    from app.core.config.settings import get_settings
+    from app.modules.attendance.integrations.etimeoffice import service as eto_service
+
+    settings = get_settings()
+    if not settings.ETO_ENABLED or not settings.ETO_BRANCH_ID:
+        return {"skipped": "eTimeOffice disabled or ETO_BRANCH_ID unset"}
+
+    branch_id = uuid.UUID(settings.ETO_BRANCH_ID)
+    async with async_session_factory() as session:
+        summary = await eto_service.sync_recent(session, branch_id=branch_id)
+        await session.commit()
+    return summary
+
+
+@celery_app.task(name="attendance.etimeoffice_poll")
+def etimeoffice_poll():
+    """Beat entrypoint — pull recent eTimeOffice punches for the configured branch."""
+    return asyncio.run(_run_eto_poll())

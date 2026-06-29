@@ -27,6 +27,7 @@ from app.modules.attendance.integrations.biomax.schemas import (
     parse_biomax_webhook_payload,
 )
 from app.modules.attendance.integrations.biomax.service import ingest_punches
+from app.modules.attendance.services import daily_service
 from app.modules.auth.permissions.rbac import require_roles
 
 
@@ -35,6 +36,21 @@ router = APIRouter(prefix="/attendance/biomax", tags=["attendance"])
 
 class ManualImportBody(BaseModel):
     events: list[PunchEvent]
+
+
+async def _ingest_and_rebuild(
+    session: AsyncSession, events: list[PunchEvent], branch_id: uuid.UUID
+) -> IngestResult:
+    """Write raw punches, then immediately recompute the day rows they touched
+    so the register/timeline/reports reflect the punch without waiting for the
+    nightly sweep."""
+    result = await ingest_punches(session, events, branch_id)
+    await daily_service.rebuild_after_ingest(
+        session,
+        branch_id=branch_id,
+        affected=[(a.student_id, a.punch_timestamp) for a in result.affected],
+    )
+    return result
 
 
 def _verify_webhook_secret(provided: str | None) -> None:
@@ -76,7 +92,7 @@ async def biomax_webhook(
 
     body = await request.json()
     events = parse_biomax_webhook_payload(body)
-    return await ingest_punches(session, events, branch_id)
+    return await _ingest_and_rebuild(session, events, branch_id)
 
 
 @router.post("/import", response_model=IngestResult)
@@ -90,4 +106,4 @@ async def manual_import(
     ``PunchEvent`` objects. Useful for CSV backfills (parse CSV
     client-side, POST as JSON) and for testing the ingestion + dedup
     paths without a live device."""
-    return await ingest_punches(session, body.events, branch_id)
+    return await _ingest_and_rebuild(session, body.events, branch_id)

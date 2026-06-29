@@ -40,6 +40,12 @@ celery_app.conf.update(
             "task": "attendance.nightly_absent_sweep",
             "schedule": crontab(minute="*/15"),
         },
+        # eTimeOffice is cloud/pull — poll its rolling lookback every 10 min.
+        # No-op when ETO_ENABLED is false, so it's safe to always schedule.
+        "attendance-etimeoffice-poll": {
+            "task": "attendance.etimeoffice_poll",
+            "schedule": crontab(minute="*/10"),
+        },
     },
     # Explicit import so the worker registers our tasks without autodiscover.
     imports=("app.modules.attendance.jobs.tasks",),

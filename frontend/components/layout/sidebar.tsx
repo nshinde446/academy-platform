@@ -29,6 +29,7 @@ const SECTIONS: NavSection[] = [
       { label: "Lectures", href: "/lectures" },
       { label: "Attendance", href: "/attendance" },
       { label: "Insights", href: "/insights" },
+      { label: "Integrations", href: "/integrations", isNew: true },
     ],
   },
   {
