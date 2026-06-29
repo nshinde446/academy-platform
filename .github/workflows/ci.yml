@@ -5,7 +5,15 @@ on:
     branches: [master, main, develop, staging]
   pull_request:
     branches: [master, main]
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      # When true (the prod deploy calls it this way), run ONLY the fast unit
+      # tests that actually gate a release — skip coverage re-runs, Playwright
+      # e2e, and security scans. Those still run in full on every PR/push, just
+      # not on the prod critical path. Cuts several minutes off each deploy.
+      fast:
+        type: boolean
+        default: false
 
 jobs:
   backend-tests:
@@ -51,11 +59,13 @@ jobs:
           pytest -v --tb=short
 
       - name: Security scan backend
+        if: ${{ inputs.fast != true }}
         run: |
           pip install bandit
           bandit -r backend/app/ -f json -o bandit-report.json || true
 
       - name: Upload bandit report
+        if: ${{ inputs.fast != true }}
         uses: actions/upload-artifact@v4
         with:
           name: bandit-report
@@ -84,13 +94,14 @@ jobs:
           npm run test:unit
 
       - name: Generate frontend coverage report
+        if: ${{ inputs.fast != true }}
         run: |
           cd frontend
           npm run test:coverage
         continue-on-error: true
 
       - name: Upload frontend coverage
-        if: always()
+        if: ${{ inputs.fast != true && always() }}
         uses: actions/upload-artifact@v4
         with:
           name: frontend-coverage
@@ -99,20 +110,21 @@ jobs:
 
       - name: Install Playwright browsers
         id: playwright-install
+        if: ${{ inputs.fast != true }}
         run: |
           cd frontend
           npx playwright install --with-deps chromium
         continue-on-error: true
 
       - name: Run frontend e2e tests
-        if: steps.playwright-install.outcome == 'success'
+        if: ${{ inputs.fast != true && steps.playwright-install.outcome == 'success' }}
         run: |
           cd frontend
           npm run test:e2e
         continue-on-error: true
 
       - name: Upload Playwright report
-        if: always()
+        if: ${{ inputs.fast != true && always() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
@@ -120,11 +132,13 @@ jobs:
           if-no-files-found: ignore
 
       - name: Security scan frontend
+        if: ${{ inputs.fast != true }}
         run: |
           cd frontend
           npm audit --json > npm-audit-report.json || true
 
       - name: Upload npm audit report
+        if: ${{ inputs.fast != true }}
         uses: actions/upload-artifact@v4
         with:
           name: npm-audit-report
