@@ -6,8 +6,11 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SelectionBar } from "@/components/ui/selection-bar";
 import { useToast } from "@/components/ui/toast";
 import { useUserStore } from "@/store/user-store";
+import { useRowSelection } from "@/hooks/use-row-selection";
+import { runBulkDelete, summarizeBulkDelete } from "@/lib/bulk-delete";
 import {
   useBatches,
   useDeleteMaterial,
@@ -54,6 +57,8 @@ export default function MaterialsPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const toast = useToast();
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const selection = useRowSelection();
 
   const queryFilters = useMemo(
     () => ({
@@ -166,7 +171,20 @@ export default function MaterialsPage() {
     }
   }
 
+  async function handleBulkDeleteConfirm() {
+    const result = await runBulkDelete(selection.selected, (id) =>
+      deleteMutation.mutateAsync(id),
+    );
+    selection.clear();
+    setOpenId(null);
+    const summary = summarizeBulkDelete(result, "material");
+    if (result.failed.length > 0) toast.info(summary);
+    else toast.success(summary);
+  }
+
   const pending = ingestMutation.isPending || deleteMutation.isPending;
+  const allOnPageSelected =
+    sortedItems.length > 0 && sortedItems.every((m) => selection.isSelected(m.id));
 
   return (
     <div className="flex flex-col gap-5">
@@ -239,6 +257,19 @@ export default function MaterialsPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-1.5">
             <div className="flex items-center gap-2">
+              {sortedItems.length > 0 && (
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all materials"
+                    checked={allOnPageSelected}
+                    onChange={() =>
+                      selection.toggleAll(sortedItems.map((m) => m.id))
+                    }
+                  />
+                  Select all
+                </label>
+              )}
               <span className="text-xs text-muted-foreground">
                 {total} material{total !== 1 ? "s" : ""}
               </span>
@@ -294,6 +325,14 @@ export default function MaterialsPage() {
             </div>
           </div>
 
+          <SelectionBar
+            count={selection.count}
+            noun="material"
+            pending={deleteMutation.isPending}
+            onDelete={() => setBulkDeleteOpen(true)}
+            onClear={selection.clear}
+          />
+
           {listQuery.isLoading ? (
             <p className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
               Loading…
@@ -314,6 +353,8 @@ export default function MaterialsPage() {
                   material={m}
                   selected={openMaterial?.id === m.id}
                   onSelect={setOpenId}
+                  checked={selection.isSelected(m.id)}
+                  onToggleCheck={selection.toggle}
                 />
               ))}
             </div>
@@ -326,6 +367,8 @@ export default function MaterialsPage() {
                   selected={openMaterial?.id === m.id}
                   onSelect={setOpenId}
                   isLast={i === sortedItems.length - 1}
+                  checked={selection.isSelected(m.id)}
+                  onToggleCheck={selection.toggle}
                 />
               ))}
             </div>
@@ -360,6 +403,16 @@ export default function MaterialsPage() {
         confirmLabel="Delete"
         destructive
         onConfirm={confirmDelete}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title={`Delete ${selection.count} material${selection.count !== 1 ? "s" : ""}?`}
+        description="Linked questions stay attached and the files remain on disk; this only flags the selected rows as deleted."
+        confirmLabel={`Delete ${selection.count}`}
+        destructive
+        onConfirm={handleBulkDeleteConfirm}
       />
     </div>
   );

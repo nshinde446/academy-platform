@@ -126,6 +126,20 @@ export function useUpdateQuestion(branchId: string | undefined) {
   });
 }
 
+export function useDeleteQuestion(branchId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (questionId: string) => {
+      await apiClient.delete(`/api/v1/questions/${questionId}`, {
+        params: { branch_id: branchId },
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: questionKeys.all });
+    },
+  });
+}
+
 export function useBulkApprove(branchId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({

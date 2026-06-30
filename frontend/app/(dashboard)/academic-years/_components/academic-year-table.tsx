@@ -15,6 +15,9 @@ import type { AcademicYearResponse } from "../_schemas/academic-year";
 interface AcademicYearTableProps {
   academicYears: AcademicYearResponse[];
   onDelete: (year: AcademicYearResponse) => void;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
 }
 
 const IMMUTABLE_TITLE =
@@ -23,12 +26,30 @@ const IMMUTABLE_TITLE =
 export function AcademicYearTable({
   academicYears,
   onDelete,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
 }: AcademicYearTableProps) {
+  const selectable = !!onToggleSelect;
+  const allSelected =
+    selectable &&
+    academicYears.length > 0 &&
+    academicYears.every((y) => selectedIds?.has(y.id));
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>
+            {selectable && (
+              <TableHead className="w-9">
+                <input
+                  type="checkbox"
+                  aria-label="Select all academic years"
+                  checked={allSelected}
+                  onChange={() => onToggleSelectAll?.()}
+                />
+              </TableHead>
+            )}
             <TableHead>Name</TableHead>
             <TableHead>Start</TableHead>
             <TableHead>End</TableHead>
@@ -39,6 +60,16 @@ export function AcademicYearTable({
         <TableBody>
           {academicYears.map((y) => (
             <TableRow key={y.id} title={IMMUTABLE_TITLE}>
+              {selectable && (
+                <TableCell>
+                  <input
+                    type="checkbox"
+                    aria-label={`Select academic year ${y.name}`}
+                    checked={selectedIds?.has(y.id) ?? false}
+                    onChange={() => onToggleSelect?.(y.id)}
+                  />
+                </TableCell>
+              )}
               <TableCell className="font-medium">{y.name}</TableCell>
               <TableCell>{y.start_year}</TableCell>
               <TableCell>{y.end_year}</TableCell>

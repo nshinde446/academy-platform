@@ -22,6 +22,9 @@ interface BatchTableProps {
   academicYears: AcademicYearResponse[];
   onEdit: (batch: BatchResponse) => void;
   onDelete: (batch: BatchResponse) => void;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
 }
 
 function findName<T extends { id: string; name: string }>(
@@ -37,12 +40,28 @@ export function BatchTable({
   academicYears,
   onEdit,
   onDelete,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
 }: BatchTableProps) {
+  const selectable = !!onToggleSelect;
+  const allSelected =
+    selectable && batches.length > 0 && batches.every((b) => selectedIds?.has(b.id));
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>
+            {selectable && (
+              <TableHead className="w-9">
+                <input
+                  type="checkbox"
+                  aria-label="Select all batches"
+                  checked={allSelected}
+                  onChange={() => onToggleSelectAll?.()}
+                />
+              </TableHead>
+            )}
             <TableHead>Name</TableHead>
             <TableHead className="hidden sm:table-cell">Course</TableHead>
             <TableHead className="hidden md:table-cell">Duration</TableHead>
@@ -63,6 +82,16 @@ export function BatchTable({
               startName === endName ? startName : `${startName} → ${endName}`;
             return (
               <TableRow key={b.id}>
+                {selectable && (
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select batch ${b.name}`}
+                      checked={selectedIds?.has(b.id) ?? false}
+                      onChange={() => onToggleSelect?.(b.id)}
+                    />
+                  </TableCell>
+                )}
                 <TableCell className="font-medium">{b.name}</TableCell>
                 <TableCell className="hidden sm:table-cell">
                   {findName(courses, b.course_id)}

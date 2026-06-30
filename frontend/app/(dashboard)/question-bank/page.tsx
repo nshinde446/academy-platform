@@ -4,11 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { useUserStore } from "@/store/user-store";
+import { runBulkDelete, summarizeBulkDelete } from "@/lib/bulk-delete";
 import {
   useBulkApprove,
   useBulkReject,
+  useDeleteQuestion,
   useQuestionCount,
   useQuestionList,
   useSubjectOptions,
@@ -46,6 +49,7 @@ export default function QuestionBankPage() {
 
   const [editTarget, setEditTarget] = useState<QuestionResponse | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const toast = useToast();
 
   const queryFilters = useMemo(
@@ -76,6 +80,7 @@ export default function QuestionBankPage() {
   const updateMutation = useUpdateQuestion(branchId);
   const approveMutation = useBulkApprove(branchId);
   const rejectMutation = useBulkReject(branchId);
+  const deleteMutation = useDeleteQuestion(branchId);
 
   const questions = listQuery.data ?? [];
   const openQuestion =
@@ -155,6 +160,16 @@ export default function QuestionBankPage() {
     }
   }
 
+  async function bulkDelete() {
+    const result = await runBulkDelete(Array.from(bulkSelected), (id) =>
+      deleteMutation.mutateAsync(id),
+    );
+    setBulkSelected(new Set());
+    const summary = summarizeBulkDelete(result, "question");
+    if (result.failed.length > 0) toast.info(summary);
+    else toast.success(summary);
+  }
+
   function handleEdit(q: QuestionResponse) {
     setEditTarget(q);
     setEditOpen(true);
@@ -169,7 +184,10 @@ export default function QuestionBankPage() {
     (approvedCount.data ?? 0) +
     (rejectedCount.data ?? 0);
 
-  const mutationPending = approveMutation.isPending || rejectMutation.isPending;
+  const mutationPending =
+    approveMutation.isPending ||
+    rejectMutation.isPending ||
+    deleteMutation.isPending;
 
   return (
     <div className="flex flex-col gap-5">
@@ -244,6 +262,14 @@ export default function QuestionBankPage() {
                 <div className="ml-auto flex gap-2">
                   <Button
                     size="sm"
+                    variant="destructive"
+                    onClick={() => setBulkDeleteOpen(true)}
+                    disabled={mutationPending}
+                  >
+                    Delete {bulkSelected.size}
+                  </Button>
+                  <Button
+                    size="sm"
                     variant="outline"
                     onClick={bulkReject}
                     disabled={mutationPending}
@@ -313,6 +339,16 @@ export default function QuestionBankPage() {
         }}
         onSubmit={handleEditSubmit}
         isPending={updateMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title={`Delete ${bulkSelected.size} question${bulkSelected.size !== 1 ? "s" : ""}?`}
+        description="This permanently removes the selected questions from the bank. This cannot be undone."
+        confirmLabel={`Delete ${bulkSelected.size}`}
+        destructive
+        onConfirm={bulkDelete}
       />
     </div>
   );
