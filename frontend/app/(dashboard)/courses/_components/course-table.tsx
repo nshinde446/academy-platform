@@ -16,14 +16,39 @@ interface CourseTableProps {
   courses: CourseResponse[];
   onEdit: (course: CourseResponse) => void;
   onDelete: (course: CourseResponse) => void;
+  // Row selection for bulk delete — optional; when omitted the checkbox
+  // column is hidden.
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
 }
 
-export function CourseTable({ courses, onEdit, onDelete }: CourseTableProps) {
+export function CourseTable({
+  courses,
+  onEdit,
+  onDelete,
+  selectedIds,
+  onToggleSelect,
+  onToggleSelectAll,
+}: CourseTableProps) {
+  const selectable = !!onToggleSelect;
+  const allSelected =
+    selectable && courses.length > 0 && courses.every((c) => selectedIds?.has(c.id));
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>
+            {selectable && (
+              <TableHead className="w-9">
+                <input
+                  type="checkbox"
+                  aria-label="Select all courses"
+                  checked={allSelected}
+                  onChange={() => onToggleSelectAll?.()}
+                />
+              </TableHead>
+            )}
             <TableHead>Name</TableHead>
             <TableHead>Code</TableHead>
             <TableHead className="hidden sm:table-cell">Duration</TableHead>
@@ -35,6 +60,16 @@ export function CourseTable({ courses, onEdit, onDelete }: CourseTableProps) {
         <TableBody>
           {courses.map((c) => (
             <TableRow key={c.id}>
+              {selectable && (
+                <TableCell>
+                  <input
+                    type="checkbox"
+                    aria-label={`Select course ${c.name}`}
+                    checked={selectedIds?.has(c.id) ?? false}
+                    onChange={() => onToggleSelect?.(c.id)}
+                  />
+                </TableCell>
+              )}
               <TableCell className="font-medium">{c.name}</TableCell>
               <TableCell>{c.code}</TableCell>
               <TableCell className="hidden sm:table-cell">

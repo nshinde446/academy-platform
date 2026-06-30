@@ -9,6 +9,10 @@ interface ListRowProps {
   selected: boolean;
   onSelect: (id: string) => void;
   isLast?: boolean;
+  // Bulk-delete selection (separate from the preview "selected" highlight).
+  // When omitted, no checkbox is rendered.
+  checked?: boolean;
+  onToggleCheck?: (id: string) => void;
 }
 
 function formatSize(bytes: number): string {
@@ -64,16 +68,30 @@ export function MaterialListRow({
   selected,
   onSelect,
   isLast,
+  checked,
+  onToggleCheck,
 }: ListRowProps) {
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(material.id)}
-      className={`flex w-full items-start gap-3 border-b px-3 py-2.5 text-left transition-colors ${
+    <div
+      className={`flex items-start gap-2 border-b px-3 ${
         isLast ? "border-b-0" : ""
       } ${selected ? "bg-primary/5" : "hover:bg-muted/40"}`}
     >
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
+      {onToggleCheck && (
+        <input
+          type="checkbox"
+          aria-label={`Select material ${material.filename}`}
+          checked={checked ?? false}
+          onChange={() => onToggleCheck(material.id)}
+          className="mt-3.5"
+        />
+      )}
+      <button
+        type="button"
+        onClick={() => onSelect(material.id)}
+        className="flex min-w-0 flex-1 items-start gap-3 py-2.5 text-left"
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">
             {material.filename}
@@ -85,7 +103,8 @@ export function MaterialListRow({
         </div>
         <MetaLine material={material} />
       </div>
-    </button>
+      </button>
+    </div>
   );
 }
 
@@ -94,18 +113,32 @@ export function MaterialGridCard({
   material,
   selected,
   onSelect,
+  checked,
+  onToggleCheck,
 }: Omit<ListRowProps, "isLast">) {
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(material.id)}
-      className={`flex h-full flex-col gap-2 rounded-xl border bg-card p-3 text-left transition-colors ${
-        selected
-          ? "border-primary/40 ring-1 ring-primary/30"
-          : "hover:border-foreground/20 hover:bg-muted/30"
-      }`}
-    >
-      <div className="flex items-center justify-between gap-2">
+    <div className="relative h-full">
+      {onToggleCheck && (
+        <input
+          type="checkbox"
+          aria-label={`Select material ${material.filename}`}
+          checked={checked ?? false}
+          onChange={() => onToggleCheck(material.id)}
+          className="absolute left-2 top-2 z-10"
+        />
+      )}
+      <button
+        type="button"
+        onClick={() => onSelect(material.id)}
+        className={`flex h-full w-full flex-col gap-2 rounded-xl border bg-card p-3 text-left transition-colors ${
+          onToggleCheck ? "pl-7" : ""
+        } ${
+          selected
+            ? "border-primary/40 ring-1 ring-primary/30"
+            : "hover:border-foreground/20 hover:bg-muted/30"
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2">
         <Badge variant="outline" className="shrink-0">
           {CATEGORY_LABEL[material.category]}
         </Badge>
@@ -117,6 +150,7 @@ export function MaterialGridCard({
       <div className="mt-auto">
         <MetaLine material={material} />
       </div>
-    </button>
+      </button>
+    </div>
   );
 }

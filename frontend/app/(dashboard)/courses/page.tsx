@@ -6,6 +6,10 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/page-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SelectionBar } from "@/components/ui/selection-bar";
+import { useToast } from "@/components/ui/toast";
+import { useRowSelection } from "@/hooks/use-row-selection";
+import { runBulkDelete, summarizeBulkDelete } from "@/lib/bulk-delete";
 import {
   useCourses,
   useCreateCourse,
@@ -46,6 +50,10 @@ export default function CoursesPage() {
   const [editTarget, setEditTarget] = useState<CourseResponse | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CourseResponse | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+
+  const toast = useToast();
+  const selection = useRowSelection();
 
   const coursesQuery = useCourses(branchId);
   const createMutation = useCreateCourse(branchId);
@@ -81,6 +89,16 @@ export default function CoursesPage() {
     await deleteMutation.mutateAsync(deleteTarget.id);
   }
 
+  async function handleBulkDeleteConfirm() {
+    const result = await runBulkDelete(selection.selected, (id) =>
+      deleteMutation.mutateAsync(id)
+    );
+    selection.clear();
+    const summary = summarizeBulkDelete(result, "course");
+    if (result.failed.length > 0) toast.info("Bulk delete", summary);
+    else toast.success("Bulk delete", summary);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -107,6 +125,14 @@ export default function CoursesPage() {
         </span>
       </div>
 
+      <SelectionBar
+        count={selection.count}
+        noun="course"
+        pending={deleteMutation.isPending}
+        onDelete={() => setBulkDeleteOpen(true)}
+        onClear={selection.clear}
+      />
+
       {/* Content */}
       {coursesQuery.isLoading ? (
         <p className="text-muted-foreground text-sm">Loading courses...</p>
@@ -121,6 +147,9 @@ export default function CoursesPage() {
           courses={filtered}
           onEdit={handleEdit}
           onDelete={handleDeleteClick}
+          selectedIds={selection.selectedIds}
+          onToggleSelect={selection.toggle}
+          onToggleSelectAll={() => selection.toggleAll(filtered.map((c) => c.id))}
         />
       )}
 
@@ -144,6 +173,16 @@ export default function CoursesPage() {
         confirmLabel="Delete"
         destructive
         onConfirm={handleDeleteConfirm}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title={`Delete ${selection.count} course${selection.count !== 1 ? "s" : ""}?`}
+        description="This cannot be undone. Courses with active batches are skipped and reported."
+        confirmLabel={`Delete ${selection.count}`}
+        destructive
+        onConfirm={handleBulkDeleteConfirm}
       />
     </div>
   );

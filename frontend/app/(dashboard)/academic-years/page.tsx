@@ -6,6 +6,10 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/page-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { SelectionBar } from "@/components/ui/selection-bar";
+import { useToast } from "@/components/ui/toast";
+import { useRowSelection } from "@/hooks/use-row-selection";
+import { runBulkDelete, summarizeBulkDelete } from "@/lib/bulk-delete";
 import {
   useAcademicYears,
   useCreateAcademicYear,
@@ -42,6 +46,10 @@ export default function AcademicYearsPage() {
   const [deleteTarget, setDeleteTarget] = useState<AcademicYearResponse | null>(
     null
   );
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+
+  const toast = useToast();
+  const selection = useRowSelection();
 
   const yearsQuery = useAcademicYears(branchId);
   const createMutation = useCreateAcademicYear(branchId);
@@ -72,6 +80,16 @@ export default function AcademicYearsPage() {
     await deleteMutation.mutateAsync(deleteTarget.id);
   }
 
+  async function handleBulkDeleteConfirm() {
+    const result = await runBulkDelete(selection.selected, (id) =>
+      deleteMutation.mutateAsync(id)
+    );
+    selection.clear();
+    const summary = summarizeBulkDelete(result, "academic year");
+    if (result.failed.length > 0) toast.info("Bulk delete", summary);
+    else toast.success("Bulk delete", summary);
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -98,6 +116,14 @@ export default function AcademicYearsPage() {
         </span>
       </div>
 
+      <SelectionBar
+        count={selection.count}
+        noun="academic year"
+        pending={deleteMutation.isPending}
+        onDelete={() => setBulkDeleteOpen(true)}
+        onClear={selection.clear}
+      />
+
       {/* Content */}
       {yearsQuery.isLoading ? (
         <p className="text-muted-foreground text-sm">
@@ -113,6 +139,9 @@ export default function AcademicYearsPage() {
         <AcademicYearTable
           academicYears={filtered}
           onDelete={handleDeleteClick}
+          selectedIds={selection.selectedIds}
+          onToggleSelect={selection.toggle}
+          onToggleSelectAll={() => selection.toggleAll(filtered.map((y) => y.id))}
         />
       )}
 
@@ -128,6 +157,16 @@ export default function AcademicYearsPage() {
         confirmLabel="Delete"
         destructive
         onConfirm={handleDeleteConfirm}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        title={`Delete ${selection.count} academic year${selection.count !== 1 ? "s" : ""}?`}
+        description="This cannot be undone. Years referenced by existing batches are skipped and reported."
+        confirmLabel={`Delete ${selection.count}`}
+        destructive
+        onConfirm={handleBulkDeleteConfirm}
       />
     </div>
   );
