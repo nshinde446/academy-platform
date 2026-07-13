@@ -112,3 +112,31 @@ async def _run_eto_poll() -> dict:
 def etimeoffice_poll():
     """Beat entrypoint — pull recent eTimeOffice punches for the configured branch."""
     return asyncio.run(_run_eto_poll())
+
+
+# ── SmartOffice cloud poll ──────────────────────────────────────────────────
+# SmartOffice is pull-based (the ZKTeco devices push to its server, we poll its
+# REST API), so like eTimeOffice we poll a short lookback window every tick. The
+# tighter the beat interval, the closer to real time; ingest dedup makes the
+# overlap between polls harmless.
+
+
+async def _run_smartoffice_poll() -> dict:
+    from app.core.config.settings import get_settings
+    from app.modules.attendance.integrations.smartoffice import service as so_service
+
+    settings = get_settings()
+    if not settings.SMARTOFFICE_ENABLED or not settings.SMARTOFFICE_BRANCH_ID:
+        return {"skipped": "SmartOffice disabled or SMARTOFFICE_BRANCH_ID unset"}
+
+    branch_id = uuid.UUID(settings.SMARTOFFICE_BRANCH_ID)
+    async with async_session_factory() as session:
+        summary = await so_service.sync_recent(session, branch_id=branch_id)
+        await session.commit()
+    return summary
+
+
+@celery_app.task(name="attendance.smartoffice_poll")
+def smartoffice_poll():
+    """Beat entrypoint — pull recent SmartOffice punches for the configured branch."""
+    return asyncio.run(_run_smartoffice_poll())

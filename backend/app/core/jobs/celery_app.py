@@ -46,6 +46,13 @@ celery_app.conf.update(
             "task": "attendance.etimeoffice_poll",
             "schedule": crontab(minute="*/10"),
         },
+        # SmartOffice is cloud/pull too — poll every 2 min for near-real-time
+        # attendance. No-op when SMARTOFFICE_ENABLED is false, so always safe to
+        # schedule; dedup makes the overlapping windows harmless.
+        "attendance-smartoffice-poll": {
+            "task": "attendance.smartoffice_poll",
+            "schedule": crontab(minute="*/2"),
+        },
     },
     # Explicit import so the worker registers our tasks without autodiscover.
     imports=("app.modules.attendance.jobs.tasks",),

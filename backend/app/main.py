@@ -26,6 +26,9 @@ from app.modules.attendance.integrations.biomax.iclock import router as iclock_r
 from app.modules.attendance.integrations.etimeoffice.routes import (
     router as etimeoffice_router,
 )
+from app.modules.attendance.integrations.smartoffice.routes import (
+    router as smartoffice_router,
+)
 from app.modules.analytics.api.routes import router as analytics_router
 from app.modules.events.api.routes import router as events_router
 from app.modules.notifications.api.routes import router as notifications_router
@@ -84,6 +87,7 @@ app.include_router(materials_router, prefix=settings.API_V1_PREFIX)
 app.include_router(attendance_router, prefix=settings.API_V1_PREFIX)
 app.include_router(biomax_router, prefix=settings.API_V1_PREFIX)
 app.include_router(etimeoffice_router, prefix=settings.API_V1_PREFIX)
+app.include_router(smartoffice_router, prefix=settings.API_V1_PREFIX)
 # iclock devices POST to a fixed /iclock/* path — no API version prefix.
 app.include_router(iclock_router)
 app.include_router(questions_router, prefix=settings.API_V1_PREFIX)

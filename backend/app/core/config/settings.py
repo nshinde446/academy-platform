@@ -99,6 +99,24 @@ class Settings(BaseSettings):
     # later; for now all allowed devices map here.
     BIOMAX_BRANCH_ID: str = ""
 
+    # SmartOffice (SmartOfficePayroll) cloud middleware — the ZKTeco devices
+    # push to SmartOffice's server and we PULL the aggregated logs from its REST
+    # API (GetDeviceLogs) on a short interval for near-real-time attendance.
+    # When SMARTOFFICE_ENABLED is false the poll job and pull route are no-ops.
+    SMARTOFFICE_ENABLED: bool = False
+    # Base host of the client's SmartOffice deployment, e.g. "http://45.118.183.175:86".
+    SMARTOFFICE_BASE_URL: str = ""
+    # APIKey issued from the SmartOffice web app.
+    SMARTOFFICE_API_KEY: str = ""
+    # How far back each poll re-pulls, to catch punches SmartOffice recorded late.
+    SMARTOFFICE_LOOKBACK_DAYS: int = 1
+    # Branch every SmartOffice punch is attributed to (single-site assumption,
+    # mirroring ETO_BRANCH_ID). Multi-branch serial->branch mapping comes later.
+    SMARTOFFICE_BRANCH_ID: str = ""
+    # Optional device-serial allowlist (comma-separated). Empty = accept every
+    # serial GetDeviceLogs returns; set it to ignore devices from other sites.
+    SMARTOFFICE_DEVICE_SERIALS: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:
