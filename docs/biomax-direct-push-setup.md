@@ -123,6 +123,67 @@ only — the firmware appends `/iclock/...` itself).
   internet. Shore that up, or choose a 4G model for internet-independent push.
 - **Serial must match exactly** what the device sends as `SN` (its Cloud Number).
 
+## First-device test checklist (printable)
+
+A single-device on-site smoke test. Goal: **one real face punch appears on
+`/attendance` as the right student, on the right day, within ~30s.**
+
+### Before you go (from your desk)
+- [ ] Backend reachable at `https://<app-domain>` (open it in a browser).
+- [ ] SSH access to the VPS confirmed.
+- [ ] `BIOMAX_BRANCH_ID` set + verified:
+      `docker exec academy-prod-backend-1 printenv BIOMAX_BRANCH_ID`.
+- [ ] Pick **one test student**; set their `rfid_number` in the roster to a value
+      you'll use as the device User ID (e.g. `9001`).
+- [ ] Have: device admin passcode, institute **WiFi SSID + password**, a
+      phone/laptop to watch `/attendance` and a terminal for backend logs.
+
+### On-site (in order)
+1. [ ] Power the device, connect WiFi (`Menu → Comm/Network → WiFi`) →
+      **WiFi/online icon shows**.
+2. [ ] Read the **Serial / Cloud Number** (`Menu → Comm → Cloud Number` or the
+      back sticker) → write it here: `________________`.
+3. [ ] Add it to the allowlist and reload:
+      ```bash
+      cd <repo>/infra/compose && nano .env.prod   # BIOMAX_DEVICE_SERIALS=<serial>
+      docker compose -p academy-prod -f docker-compose.prod.yml --env-file .env.prod up -d --force-recreate backend
+      docker exec academy-prod-backend-1 printenv BIOMAX_DEVICE_SERIALS
+      ```
+4. [ ] Set the device **clock + timezone to IST** (`Settings → Device → Time`).
+5. [ ] Point it at us (`Comm → Cloud Server Setting` **or** `Settings → Network`):
+      Server Address/IP = **`<app-domain>`**, Port = **`443`**, **Realtime Req =
+      Yes** / Enable Domain Name = On. Save → reboot if asked →
+      **cloud/connected icon shows**.
+6. [ ] Enroll one face with **User ID = the test student's `rfid_number`**
+      (`9001`).
+7. [ ] Start watching:
+      ```bash
+      docker logs -f --tail=20 academy-prod-backend-1 | grep -i iclock
+      ```
+      and open `/attendance` (today, the test student's batch) in a browser.
+8. [ ] **Do a test face punch.**
+
+### Pass criteria
+- [ ] Log shows `GET /iclock/cdata?SN=…` then `POST /iclock/cdata` → `OK: 1`.
+- [ ] `/attendance` shows the test student **PRESENT** within ~30s.
+- [ ] The date/time on the record is correct (IST).
+
+### If it fails — symptom → fix
+| Symptom in log / UI | Cause | Fix |
+|---|---|---|
+| No `GET /iclock` at all | Device can't reach server | WiFi/internet down; port 443 blocked or firmware is HTTP-only (try 80 + nginx rule); wrong domain |
+| `401 Unknown … serial` | Serial not allowlisted | Copy the `SN=` from the log into `BIOMAX_DEVICE_SERIALS`, recreate backend (step 3) |
+| `503 … BRANCH_ID` | `BIOMAX_BRANCH_ID` unset | Set it, recreate backend |
+| `POST … OK: 1` but student not on register | `rfid_number` ≠ device User ID | Align them (step 6 / roster) |
+| Record on the wrong day | Device clock/timezone wrong | Fix step 4 |
+| Connected icon, no punches arrive | Real-time push off | Set `Realtime Req = Yes` (step 5) |
+
+### After a green test
+- [ ] Add every other device's serial to `BIOMAX_DEVICE_SERIALS` (comma-separated).
+- [ ] Enroll all students (`rfid_number` = device User ID).
+- [ ] Decide **HTTPS vs HTTP** for the fleet (if the unit only connected on 80,
+      request the nginx `/iclock` HTTP rule).
+
 ## Fallbacks (if direct push is blocked)
 
 Both feed the same ingest pipeline; no downstream changes.
