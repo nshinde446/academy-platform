@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
 
-export interface EtoStatus {
+export interface SmartOfficeStatus {
   enabled: boolean;
   configured: boolean;
   base_url: string;
@@ -9,7 +9,7 @@ export interface EtoStatus {
   default_branch_id: string | null;
 }
 
-export interface EtoPullResult {
+export interface SmartOfficePullResult {
   rows: number;
   events: number;
   inserted: number;
@@ -20,25 +20,26 @@ export interface EtoPullResult {
   to_date: string;
 }
 
-// eTimeOffice integration status (config presence only — no secrets).
-export function useEtoStatus() {
-  return useQuery<EtoStatus>({
-    queryKey: ["integrations", "etimeoffice", "status"],
+// BioMax SmartOffice integration status (config presence only — no secrets).
+export function useSmartOfficeStatus() {
+  return useQuery<SmartOfficeStatus>({
+    queryKey: ["integrations", "smartoffice", "status"],
     queryFn: async () => {
-      const res = await apiClient.get<EtoStatus>(
-        "/api/v1/attendance/etimeoffice/status",
+      const res = await apiClient.get<SmartOfficeStatus>(
+        "/api/v1/attendance/smartoffice/status",
       );
       return res.data;
     },
   });
 }
 
-// Admin-triggered manual pull for a date range.
-export function useEtoPull(branchId: string | undefined) {
+// Admin-triggered manual cloud pull for a date range (tests the SmartOffice
+// REST API path; the on-prem agent pushes automatically and needs no pull).
+export function useSmartOfficePull(branchId: string | undefined) {
   return useMutation({
     mutationFn: async ({ start, end }: { start: string; end: string }) => {
-      const res = await apiClient.post<EtoPullResult>(
-        "/api/v1/attendance/etimeoffice/pull",
+      const res = await apiClient.post<SmartOfficePullResult>(
+        "/api/v1/attendance/smartoffice/pull",
         undefined,
         { params: { branch_id: branchId, start, end } },
       );
