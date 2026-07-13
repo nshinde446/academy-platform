@@ -3,9 +3,21 @@
 // and triggers a browser download — no backend round-trip needed since
 // the column shape is already documented in each dialog.
 
-// RFC 4180-style escape: quote cells containing comma, quote, or newline.
+// Neutralize spreadsheet formula injection: a cell a spreadsheet would treat as
+// a formula gets a leading apostrophe so it's always rendered as text. This
+// matters because exports now carry user-controlled data (student names, etc.);
+// a name like `=HYPERLINK(...)` or `=cmd|...` would otherwise execute when the
+// admin opens the file in Excel/Sheets. We guard `= + - @` plus the tab/CR that
+// Excel trims to reveal a leading formula char (OWASP CSV-injection guidance).
+function neutralizeFormula(v: string): string {
+  return /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+}
+
+// RFC 4180-style escape: neutralize formula triggers, then quote cells
+// containing comma, quote, or newline.
 export function csvCell(v: string): string {
-  return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+  const safe = neutralizeFormula(v);
+  return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 export function downloadCsvTemplate(
