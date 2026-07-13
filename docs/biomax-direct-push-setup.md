@@ -73,10 +73,13 @@ only — the firmware appends `/iclock/...` itself).
    enter the password (or plug in Ethernet). It needs **internet**.
 3. **Point it at us** — on this BioMax face model the menu is
    **`Network → Push Settings`** (the same Network screen shows `Cloud ID`,
-   `Wi-Fi`, and an **`Https`** toggle). In Push Settings set:
-   - **Server Address / Domain**: **`<app-domain>`** (host only — no `https://`,
-     no `/iclock`; the firmware appends `/iclock/...`)
+   `Wi-Fi`, and an **`Https`** toggle). Push Settings is the same Server-IP +
+   Port pair BioMax's own cloud uses (`www.bmxcloud.in` / `8001`) — just point
+   it at us instead:
+   - **Server Address / Server IP**: **`<app-domain>`** (host only — no
+     `https://`, no `/iclock`; the firmware appends `/iclock/...`)
    - **Server Port**: **`443`**
+   - **Enable Domain Name**: **ON** (lets you enter a domain, not just an IP)
    - **Https**: **ON** (this model supports it — confirmed on the Network screen)
    - Enable push / real-time: **ON** (label may be `Push`, `Enable`, or
      `Realtime`)
