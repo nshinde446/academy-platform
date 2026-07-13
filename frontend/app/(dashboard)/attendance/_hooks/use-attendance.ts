@@ -9,6 +9,14 @@ import type {
   DailyAttendance,
 } from "../_schemas/attendance";
 
+// Live-view refresh cadence. Punches reach the DB within a couple of minutes
+// (SmartOffice/eTimeOffice poll) or seconds (BioMax push); polling the read
+// models keeps the on-screen register/timeline current without a manual reload.
+// react-query pauses these while the tab is backgrounded (refetchIntervalIn-
+// Background defaults to false), so an idle tab costs nothing.
+const LIVE_REGISTER_MS = 12_000;
+const LIVE_TIMELINE_MS = 30_000;
+
 export const attendanceKeys = {
   all: ["attendance"] as const,
   lecture: (branchId: string, lectureId: string) =>
@@ -38,6 +46,7 @@ export function useClassroomRegister(
       return res.data;
     },
     enabled: !!branchId && !!batchId && !!day,
+    refetchInterval: LIVE_REGISTER_MS,
   });
 }
 
@@ -58,6 +67,7 @@ export function useStudentTimeline(
       return res.data;
     },
     enabled: !!branchId && !!studentId && !!start && !!end,
+    refetchInterval: LIVE_TIMELINE_MS,
   });
 }
 
@@ -141,6 +151,7 @@ export function useLectureAttendance(
       return res.data;
     },
     enabled: !!branchId && !!lectureId,
+    refetchInterval: LIVE_REGISTER_MS,
   });
 }
 
