@@ -17,6 +17,28 @@ describe("csvCell", () => {
   it("escapes internal quotes by doubling them", () => {
     expect(csvCell('he said "hi"')).toBe('"he said ""hi"""');
   });
+
+  it("neutralizes a leading formula character with an apostrophe", () => {
+    expect(csvCell("=HYPERLINK(1)")).toBe("'=HYPERLINK(1)");
+    expect(csvCell("+1")).toBe("'+1");
+    expect(csvCell("-2+3")).toBe("'-2+3");
+    expect(csvCell("@cmd")).toBe("'@cmd");
+  });
+
+  it("neutralizes a tab/CR that hides a leading formula", () => {
+    expect(csvCell("\t=1")).toBe("'\t=1");
+    expect(csvCell("\r=1")).toBe("'\r=1");
+  });
+
+  it("still quotes a neutralized cell that also has a comma", () => {
+    // `=cmd,1` → prefixed to `'=cmd,1`, then quoted for the comma.
+    expect(csvCell("=cmd,1")).toBe(`"'=cmd,1"`);
+  });
+
+  it("does not touch a value with a formula char mid-string", () => {
+    expect(csvCell("A=B")).toBe("A=B");
+    expect(csvCell("Rao")).toBe("Rao");
+  });
 });
 
 describe("downloadCsvTemplate", () => {
