@@ -45,6 +45,16 @@ describe("IntegrationsPage", () => {
     expect(screen.getByText(/\/iclock\/cdata$/)).toBeInTheDocument();
   });
 
+  it("links to the device setup guide", () => {
+    render(<IntegrationsPage />);
+    const link = screen.getByRole("link", { name: /setup guide/i });
+    expect(link).toHaveAttribute(
+      "href",
+      expect.stringContaining("biomax-direct-push-setup"),
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
   it("triggers a cloud pull test and shows the result", async () => {
     const user = userEvent.setup();
     pullMutate.mockClear();

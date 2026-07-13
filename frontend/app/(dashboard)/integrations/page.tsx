@@ -17,6 +17,10 @@ import {
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
 
+// Runbook for wiring a device (direct /iclock push, SmartOffice agent, env vars).
+const SETUP_GUIDE_URL =
+  "https://github.com/nshinde446/academy-platform/blob/master/docs/biomax-direct-push-setup.md";
+
 function localISO(d: Date): string {
   const off = d.getTimezoneOffset();
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
@@ -108,6 +112,14 @@ function BiomaxCard({ branchId }: { branchId: string | undefined }) {
                 database. A small on-prem agent reads new punches and pushes them
                 here in near real time — no polling, no ports to open.
               </p>
+              <a
+                href={SETUP_GUIDE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-fit text-sm text-primary underline underline-offset-2 hover:no-underline"
+              >
+                Device setup guide ↗
+              </a>
             </div>
             <StatusBadges status={status} />
           </div>
