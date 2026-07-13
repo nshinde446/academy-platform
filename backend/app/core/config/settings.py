@@ -116,6 +116,12 @@ class Settings(BaseSettings):
     # Optional device-serial allowlist (comma-separated). Empty = accept every
     # serial GetDeviceLogs returns; set it to ignore devices from other sites.
     SMARTOFFICE_DEVICE_SERIALS: str = ""
+    # Shared secret the on-prem agent presents (X-SmartOffice-Token header) when
+    # it pushes rows read from SmartOffice's SQL table to /attendance/smartoffice/
+    # ingest. Empty = agent push disabled (fail-safe: reject rather than accept
+    # spoofed punches). Generate a long random value; keep it only on the agent
+    # PC and this server.
+    SMARTOFFICE_INGEST_TOKEN: str = ""
 
 
 @lru_cache

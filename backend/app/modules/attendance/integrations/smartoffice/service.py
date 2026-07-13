@@ -83,28 +83,16 @@ def _allowed_serials() -> set[str]:
     return {s.strip() for s in raw.split(",") if s.strip()}
 
 
-async def sync_range(
+async def ingest_rows(
     session: AsyncSession,
     *,
     branch_id: uuid.UUID,
-    from_date: date,
-    to_date: date,
-    http_client=None,
+    rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Pull + ingest punches for an inclusive date range. Returns a summary dict.
-
-    Raises ``SmartOfficeError`` if the API call fails (caller decides whether to
-    swallow). Ingest is idempotent (5s dedup), so overlapping ranges across polls
-    are safe."""
-    settings = get_settings()
-    from_dt, to_dt = so_client.day_bounds(from_date, to_date)
-    rows = await so_client.fetch_device_logs(
-        base_url=settings.SMARTOFFICE_BASE_URL,
-        api_key=settings.SMARTOFFICE_API_KEY,
-        from_dt=from_dt,
-        to_dt=to_dt,
-        client=http_client,
-    )
+    """Map raw SmartOffice log rows → events, ingest, and rebuild the touched
+    day cells. Shared by both feeds: the cloud PULL (``sync_range``) and the
+    on-prem agent PUSH (``/smartoffice/ingest``). Idempotent via the 5s dedup, so
+    overlapping/re-sent batches are safe. Returns a summary dict."""
     tz_name = await daily_service.branch_timezone(session, branch_id)
     events = rows_to_events(rows, tz_name, _allowed_serials())
 
@@ -122,9 +110,34 @@ async def sync_range(
         "skipped_no_student": result.skipped_no_student,
         "skipped_duplicate": result.skipped_duplicate,
         "days_rebuilt": rebuilt,
-        "from_date": from_date.isoformat(),
-        "to_date": to_date.isoformat(),
     }
+
+
+async def sync_range(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    from_date: date,
+    to_date: date,
+    http_client=None,
+) -> dict[str, Any]:
+    """Pull + ingest punches for an inclusive date range. Returns a summary dict.
+
+    Raises ``SmartOfficeError`` if the API call fails (caller decides whether to
+    swallow)."""
+    settings = get_settings()
+    from_dt, to_dt = so_client.day_bounds(from_date, to_date)
+    rows = await so_client.fetch_device_logs(
+        base_url=settings.SMARTOFFICE_BASE_URL,
+        api_key=settings.SMARTOFFICE_API_KEY,
+        from_dt=from_dt,
+        to_dt=to_dt,
+        client=http_client,
+    )
+    summary = await ingest_rows(session, branch_id=branch_id, rows=rows)
+    summary["from_date"] = from_date.isoformat()
+    summary["to_date"] = to_date.isoformat()
+    return summary
 
 
 async def sync_recent(session: AsyncSession, *, branch_id: uuid.UUID) -> dict[str, Any]:

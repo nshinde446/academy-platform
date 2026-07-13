@@ -13,7 +13,10 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from typing import Any
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.settings import get_settings
@@ -23,6 +26,30 @@ from app.modules.attendance.integrations.smartoffice.client import SmartOfficeEr
 from app.modules.auth.permissions.rbac import require_roles
 
 router = APIRouter(prefix="/attendance/smartoffice", tags=["attendance"])
+
+
+class SmartOfficeIngestBody(BaseModel):
+    """A batch of raw SmartOffice log rows pushed by the on-prem agent. Each row
+    carries the SmartOffice field names (EmployeeCode / LogDate / SerialNumber /
+    PunchDirection); the server maps + tz-converts + dedups them centrally."""
+
+    rows: list[dict[str, Any]]
+
+
+def _verify_agent_token(provided: str | None) -> None:
+    """Authenticate the on-prem agent via a shared secret (fail-safe: when the
+    token is unset we reject everything rather than accept spoofed punches)."""
+    expected = get_settings().SMARTOFFICE_INGEST_TOKEN
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Agent ingest disabled. Set SMARTOFFICE_INGEST_TOKEN.",
+        )
+    if not provided or provided != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing agent token.",
+        )
 
 
 def _resolve_branch(branch_id: uuid.UUID | None) -> uuid.UUID:
@@ -86,3 +113,19 @@ async def smartoffice_pull(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
         ) from exc
+
+
+@router.post("/ingest")
+async def smartoffice_ingest(
+    body: SmartOfficeIngestBody,
+    branch_id: uuid.UUID | None = Query(None),
+    x_smartoffice_token: str | None = Header(None),
+    session: AsyncSession = Depends(get_db),
+):
+    """Agent PUSH: the on-prem agent reads new rows from SmartOffice's SQL table
+    and POSTs them here. Authenticated by the shared ``X-SmartOffice-Token``
+    header (not a user login — the caller is a machine). Idempotent, so the agent
+    can safely re-send a batch it isn't sure landed."""
+    _verify_agent_token(x_smartoffice_token)
+    resolved = _resolve_branch(branch_id)
+    return await so_service.ingest_rows(session, branch_id=resolved, rows=body.rows)

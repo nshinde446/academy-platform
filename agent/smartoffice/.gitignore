@@ -1,0 +1,4 @@
+# Secrets + local state — never commit these.
+agent.ini
+watermark.json
+*.log

@@ -165,3 +165,82 @@ async def test_sync_range_idempotent(db_session, seed_data, monkeypatch):
     assert first["inserted"] == 1
     assert second["inserted"] == 0          # dedup
     assert second["skipped_duplicate"] == 1
+
+
+# ── agent PUSH path (ingest_rows + /ingest endpoint) ────────────────────────
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_ingest_rows_lands_daily_attendance(db_session, seed_data):
+    """The agent push path (no HTTP fetch) maps + ingests + rebuilds directly."""
+    await _student(db_session, seed_data, "2001")
+
+    summary = await so_service.ingest_rows(
+        db_session,
+        branch_id=seed_data["branch_a"].id,
+        rows=[
+            _row(code="2001", log="2026-05-28 09:55:00", direction="in"),
+            _row(code="2001", log="2026-05-28 15:10:00", direction="out"),
+        ],
+    )
+    assert summary["inserted"] == 2
+    assert summary["days_rebuilt"] == 1
+
+    day = (await db_session.execute(
+        select(DailyAttendance).where(
+            DailyAttendance.attendance_date == date(2026, 5, 28)
+        )
+    )).scalar_one()
+    assert day.day_status == "PRESENT"
+    assert day.signoff == "COMPLETE"
+
+
+def _fake_settings(token: str):
+    return lambda: type("S", (), {"SMARTOFFICE_INGEST_TOKEN": token})()
+
+
+async def test_ingest_endpoint_rejects_without_token(monkeypatch):
+    """No configured token => fail-safe 503 (never silently accept punches)."""
+    from fastapi import HTTPException
+
+    from app.modules.attendance.integrations.smartoffice import routes as so_routes
+
+    monkeypatch.setattr(so_routes, "get_settings", _fake_settings(""))
+    with pytest.raises(HTTPException) as ei:
+        await so_routes.smartoffice_ingest(
+            body=so_routes.SmartOfficeIngestBody(rows=[]),
+            branch_id=uuid.uuid4(), x_smartoffice_token=None, session=None,
+        )
+    assert ei.value.status_code == 503
+
+
+async def test_ingest_endpoint_rejects_bad_token(monkeypatch):
+    from fastapi import HTTPException
+
+    from app.modules.attendance.integrations.smartoffice import routes as so_routes
+
+    monkeypatch.setattr(so_routes, "get_settings", _fake_settings("s3cret"))
+    with pytest.raises(HTTPException) as ei:
+        await so_routes.smartoffice_ingest(
+            body=so_routes.SmartOfficeIngestBody(rows=[]),
+            branch_id=uuid.uuid4(), x_smartoffice_token="wrong", session=None,
+        )
+    assert ei.value.status_code == 401
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_ingest_endpoint_accepts_valid_token(db_session, seed_data, monkeypatch):
+    from app.modules.attendance.integrations.smartoffice import routes as so_routes
+
+    await _student(db_session, seed_data, "2001")
+    monkeypatch.setattr(so_routes, "get_settings", _fake_settings("s3cret"))
+
+    summary = await so_routes.smartoffice_ingest(
+        body=so_routes.SmartOfficeIngestBody(
+            rows=[_row(code="2001", log="2026-05-28 09:55:00")]
+        ),
+        branch_id=seed_data["branch_a"].id,
+        x_smartoffice_token="s3cret",
+        session=db_session,
+    )
+    assert summary["inserted"] == 1
