@@ -35,10 +35,10 @@ The direct-push path needs exactly two backend vars. **Where:** `infra/compose/
 .env.prod` on the Hetzner VPS.
 
 **1a. Get the values**
-- **Device serial** (the `SN` the device sends): on the device, `Menu → Comm/
-  Network → Cloud Number` (or the sticker on the back). Comma-separate multiple
-  devices. If unsure, do a test punch (Part 3) and read the `SN=` value from the
-  backend log.
+- **Device serial** (the `SN` the device sends): on the device's **Network**
+  screen, the **`Cloud ID`** value (e.g. a 16-char hex string like
+  `95068A9657DD5458`). Comma-separate multiple devices. If unsure, do a test
+  punch (Part 3) and read the `SN=` value from the backend log.
 - **Branch UUID**: while logged into the app, open
   `https://<app-domain>/api/v1/auth/me` → copy `branch_roles[0].branch_id`.
 
@@ -71,17 +71,20 @@ only — the firmware appends `/iclock/...` itself).
 1. **Log in as admin** on the device (Menu → admin auth).
 2. **Get it online:** `Menu → Comm/Network → WiFi` → enable, pick the network,
    enter the password (or plug in Ethernet). It needs **internet**.
-3. **Point it at us** — either:
-   - **Layout A (touch / SmartOffice-cloud models): `Comm → Cloud Server Setting`**
-     - `Enable Domain Name`: **ON**
-     - `Server Address`: **`<app-domain>`** (host only — no `https://`, no `/iclock`)
-     - `Server Port`: **`443`**
-     - `Enable HTTPS/SSL`: **ON** (if present, paired with 443)
-     - `Proxy`: **OFF**
-   - **Layout B (`Settings → Network`, per the BioMax firmware manual):**
-     - `Server IP`: **`<app-domain>`** (or its IP)
-     - `Server Port`: **`443`**
-     - `Realtime Req`: **`Yes`**  ← this is what enables real-time push
+3. **Point it at us** — on this BioMax face model the menu is
+   **`Network → Push Settings`** (the same Network screen shows `Cloud ID`,
+   `Wi-Fi`, and an **`Https`** toggle). In Push Settings set:
+   - **Server Address / Domain**: **`<app-domain>`** (host only — no `https://`,
+     no `/iclock`; the firmware appends `/iclock/...`)
+   - **Server Port**: **`443`**
+   - **Https**: **ON** (this model supports it — confirmed on the Network screen)
+   - Enable push / real-time: **ON** (label may be `Push`, `Enable`, or
+     `Realtime`)
+   - `Proxy`: **OFF**
+
+   (Older/other BioMax firmwares instead put this under `Comm → Cloud Server
+   Setting` with `Enable Domain Name` + `Server Address` + `Server Port`, or
+   `Settings → Network → Server IP/Port + Realtime Req: Yes` — same idea.)
 4. **Save** → reboot if prompted. The device should show a **cloud/connected**
    icon once it handshakes.
 5. **Set the clock:** `Settings → Device → Time` — set correct local date/time
@@ -114,11 +117,11 @@ only — the firmware appends `/iclock/...` itself).
 - **One ADMS server per device.** Pointing it here means it won't also feed
   SmartOffice. That's intended (no PC). If the institute still needs SmartOffice
   for payroll, keep SmartOffice and use the agent/pyzk path instead.
-- **HTTP-only firmware.** Some BioMax/ZKTeco firmwares don't do HTTPS. Try `443`
-  first; if it won't connect, the unit is HTTP-only and needs an nginx rule that
-  accepts `/iclock/*` over plain HTTP:80 → backend (punches then travel in
-  plaintext — mitigated by the serial allowlist). Ask the platform admin to add
-  it.
+- **HTTPS support.** This BioMax model exposes an `Https` toggle on the Network
+  screen, so use **443 + Https ON**. (Some older BioMax/ZKTeco firmwares are
+  HTTP-only — if a different unit won't connect on 443, it needs an nginx rule
+  accepting `/iclock/*` over plain HTTP:80 → backend; punches then travel in
+  plaintext, mitigated by the serial allowlist.)
 - **No SIM on the Multibio-900** — it depends on the institute's WiFi/LAN
   internet. Shore that up, or choose a 4G model for internet-independent push.
 - **Serial must match exactly** what the device sends as `SN` (its Cloud Number).
@@ -150,10 +153,9 @@ A single-device on-site smoke test. Goal: **one real face punch appears on
       docker exec academy-prod-backend-1 printenv BIOMAX_DEVICE_SERIALS
       ```
 4. [ ] Set the device **clock + timezone to IST** (`Settings → Device → Time`).
-5. [ ] Point it at us (`Comm → Cloud Server Setting` **or** `Settings → Network`):
-      Server Address/IP = **`<app-domain>`**, Port = **`443`**, **Realtime Req =
-      Yes** / Enable Domain Name = On. Save → reboot if asked →
-      **cloud/connected icon shows**.
+5. [ ] Point it at us (**`Network → Push Settings`**): Server Address =
+      **`<app-domain>`**, Port = **`443`**, **Https = ON**, enable push/realtime.
+      Save → reboot if asked → **cloud/connected icon shows**.
 6. [ ] Enroll one face with **User ID = the test student's `rfid_number`**
       (`9001`).
 7. [ ] Start watching:
