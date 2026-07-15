@@ -1,0 +1,126 @@
+"""BioMax AIData (R6) push: JSON punch parsing, IST→UTC, dev_id gating,
+enrollment-sync ignore, and the end-to-end ingest landing a DailyAttendance row.
+"""
+
+import uuid
+from datetime import date, datetime, timezone
+
+import pytest
+from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.modules.attendance.integrations.biomax import aidata
+from app.modules.attendance.integrations.biomax.service import ingest_punches
+from app.modules.attendance.models.attendance_models import DailyAttendance
+from app.modules.attendance.services import daily_service
+from app.modules.student.models.student_models import Student
+
+
+async def _student(db_session: AsyncSession, seed_data, rfid: str) -> Student:
+    s = Student(
+        id=uuid.uuid4(),
+        branch_id=seed_data["branch_a"].id,
+        academic_year_id=seed_data["academic_year"].id,
+        first_name="Ai", last_name=f"User-{rfid}",
+        enrollment_number=f"AID-{rfid}", rfid_number=rfid,
+        status="active", is_deleted=False,
+    )
+    db_session.add(s)
+    await db_session.commit()
+    return s
+
+
+# ── pure parsing ─────────────────────────────────────────────────────────────
+
+
+def test_parse_punch_ist_to_utc():
+    body = {"userId": "3001", "name": "RAM SIR", "time": "20260528095500",
+            "inOut": "IN", "verifyMode": "Face"}
+    events = aidata.parse_aidata_record(body, "Asia/Kolkata")
+    assert len(events) == 1
+    assert events[0].vendor_user_id == "3001"
+    assert events[0].direction == "IN"
+    # 09:55 IST == 04:25 UTC
+    assert events[0].punch_timestamp == datetime(2026, 5, 28, 4, 25, tzinfo=timezone.utc)
+    assert events[0].device_id == "biomax-aidata"
+
+
+def test_parse_out_direction():
+    body = {"userId": "3001", "time": "20260528151000", "inOut": "OUT"}
+    events = aidata.parse_aidata_record(body, "Asia/Kolkata")
+    assert events[0].direction == "OUT"
+
+
+def test_enrollment_sync_yields_no_punch():
+    # Face-template mirror: no userId/time -> ignored (acked), not ingested.
+    body = {"name": "RAM SIR", "face": "AAQD....", "fps": 3, "photo": "/9j/...."}
+    assert aidata.parse_aidata_record(body, "Asia/Kolkata") == []
+
+
+def test_empty_userid_yields_no_punch():
+    # Real trap seen on-wire: a face enrolled without a numeric User ID.
+    body = {"userId": "", "name": "RAM SIR", "time": "20260617132228", "inOut": "IN"}
+    assert aidata.parse_aidata_record(body, "Asia/Kolkata") == []
+
+
+def test_bad_time_yields_no_punch():
+    body = {"userId": "3001", "time": "not-a-time", "inOut": "IN"}
+    assert aidata.parse_aidata_record(body, "Asia/Kolkata") == []
+
+
+def test_direction_mapping():
+    assert aidata._direction("IN") == "IN"
+    assert aidata._direction("out") == "OUT"
+    assert aidata._direction("0") == "IN"
+    assert aidata._direction("1") == "OUT"
+    assert aidata._direction(None) is None
+    assert aidata._direction("weird") is None
+
+
+# ── dev_id allowlist gating (reused from iclock) ─────────────────────────────
+
+
+def test_require_known_device_rejects_unknown(monkeypatch):
+    import app.modules.attendance.integrations.biomax.iclock as iclock
+    monkeypatch.setattr(
+        iclock, "get_settings",
+        lambda: type("S", (), {"BIOMAX_DEVICE_SERIALS": "AMDB26013800122"})(),
+    )
+    assert aidata._require_known_device("AMDB26013800122") == "AMDB26013800122"
+    with pytest.raises(HTTPException) as exc:
+        aidata._require_known_device("NOPE")
+    assert exc.value.status_code == 401
+    with pytest.raises(HTTPException):
+        aidata._require_known_device(None)
+
+
+# ── end-to-end ingest ───────────────────────────────────────────────────────
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_aidata_ingest_lands_daily_attendance(db_session, seed_data):
+    await _student(db_session, seed_data, "3001")
+    tz_name = await daily_service.branch_timezone(db_session, seed_data["branch_a"].id)
+    events = []
+    for rec in (
+        {"userId": "3001", "time": "20260528095500", "inOut": "IN"},
+        {"userId": "3001", "time": "20260528151000", "inOut": "OUT"},
+    ):
+        events += aidata.parse_aidata_record(rec, tz_name)
+    result = await ingest_punches(db_session, events, seed_data["branch_a"].id)
+    await daily_service.rebuild_after_ingest(
+        db_session, branch_id=seed_data["branch_a"].id,
+        affected=[(a.student_id, a.punch_timestamp) for a in result.affected],
+        tz_name=tz_name,
+    )
+    await db_session.commit()
+
+    assert result.inserted == 2
+    day = (await db_session.execute(
+        select(DailyAttendance).where(
+            DailyAttendance.attendance_date == date(2026, 5, 28)
+        )
+    )).scalar_one()
+    assert day.day_status == "PRESENT"
+    assert day.signoff == "COMPLETE"

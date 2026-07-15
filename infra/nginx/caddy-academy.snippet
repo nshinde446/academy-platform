@@ -17,3 +17,17 @@ api.eduworld-livekit.duckdns.org {
 app.eduworld-livekit.duckdns.org {
     reverse_proxy localhost:3000
 }
+
+# ── Biometric device push (bare-IP, plain HTTP) ──────────────────────────────
+# Some BioMax terminals have NO "domain name" field (IP-only) and/or won't do
+# TLS, so they can't use the HTTPS domain above. They push straight to the
+# server IP over HTTP:80. We route ONLY the device endpoints to the backend:
+#   * /iclock/*     — ZKTeco/ADMS "iclock" devices
+#   * /AIData.aspx  — BioMax R6 / AIFace "AIData" JSON push
+# Trust is by device serial / dev_id allowlist in the backend (BIOMAX_DEVICE_
+# SERIALS), not by network — payload is only an ID + timestamp. Replace the IP
+# if the VPS address changes.
+http://116.203.116.141 {
+    reverse_proxy /iclock/* localhost:8000
+    reverse_proxy /AIData.aspx localhost:8000
+}
