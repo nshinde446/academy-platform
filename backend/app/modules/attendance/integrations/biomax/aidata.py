@@ -57,7 +57,9 @@ from app.modules.attendance.integrations.biomax.service import ingest_punches
 from app.modules.attendance.services import daily_service
 from app.modules.attendance.time_utils import get_tz
 
-logger = logging.getLogger(__name__)
+# Use the app's configured "academy" logger (JSON handler, INFO). A bare
+# getLogger(__name__) sits outside that tree and would be silent.
+logger = logging.getLogger("academy")
 
 # Mounted with NO /api/v1 prefix — device firmware posts to a fixed
 # /AIData.aspx (SmartOffice/bmxcloud compatibility).
