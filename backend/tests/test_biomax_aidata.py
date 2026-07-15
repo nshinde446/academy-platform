@@ -6,7 +6,8 @@ import uuid
 from datetime import date, datetime, timezone
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,6 +94,25 @@ def test_require_known_device_rejects_unknown(monkeypatch):
     assert exc.value.status_code == 401
     with pytest.raises(HTTPException):
         aidata._require_known_device(None)
+
+
+def test_literal_devid_header_is_read(monkeypatch):
+    """Device sends a literal ``dev_id`` header (underscore). FastAPI would
+    convert underscores→hyphens by default and never match — guard the
+    convert_underscores=False fix so the endpoint keeps reading it."""
+    import app.modules.attendance.integrations.biomax.iclock as iclock
+    monkeypatch.setattr(
+        iclock, "get_settings",
+        lambda: type("S", (), {"BIOMAX_DEVICE_SERIALS": "AMDB26013800122"})(),
+    )
+    test_app = FastAPI()
+    test_app.include_router(aidata.router)
+    client = TestClient(test_app)
+    ok = client.get("/AIData.aspx", headers={"dev_id": "AMDB26013800122"})
+    assert ok.status_code == 200
+    assert ok.text == "OK"
+    bad = client.get("/AIData.aspx", headers={"dev_id": "NOPE"})
+    assert bad.status_code == 401
 
 
 # ── end-to-end ingest ───────────────────────────────────────────────────────

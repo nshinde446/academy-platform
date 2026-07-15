@@ -119,7 +119,10 @@ def _ack() -> PlainTextResponse:
 @router.post("/AIData.aspx", response_class=PlainTextResponse)
 async def aidata_push(
     request: Request,
-    dev_id: str | None = Header(None),
+    # The device sends a literal ``dev_id`` header (underscore). FastAPI's
+    # Header() converts underscores→hyphens by default (would look for
+    # ``dev-id`` and never match), so convert_underscores must be off.
+    dev_id: str | None = Header(None, convert_underscores=False),
     session: AsyncSession = Depends(get_db),
 ):
     """Receive one AIData record. Punches are ingested; enrollment syncs are
@@ -163,7 +166,9 @@ async def aidata_push(
 
 
 @router.get("/AIData.aspx", response_class=PlainTextResponse)
-async def aidata_heartbeat(dev_id: str | None = Header(None)):
+async def aidata_heartbeat(
+    dev_id: str | None = Header(None, convert_underscores=False),
+):
     """Some firmwares GET the URL as a connectivity/heartbeat probe. Ack it."""
     _require_known_device(dev_id)
     return _ack()
