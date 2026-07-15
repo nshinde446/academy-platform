@@ -23,6 +23,7 @@ from app.modules.classroom.api.routes import router as classroom_router
 from app.modules.attendance.api.routes import router as attendance_router
 from app.modules.attendance.integrations.biomax.routes import router as biomax_router
 from app.modules.attendance.integrations.biomax.iclock import router as iclock_router
+from app.modules.attendance.integrations.biomax.aidata import router as aidata_router
 from app.modules.attendance.integrations.etimeoffice.routes import (
     router as etimeoffice_router,
 )
@@ -90,6 +91,8 @@ app.include_router(etimeoffice_router, prefix=settings.API_V1_PREFIX)
 app.include_router(smartoffice_router, prefix=settings.API_V1_PREFIX)
 # iclock devices POST to a fixed /iclock/* path — no API version prefix.
 app.include_router(iclock_router)
+# BioMax R6 (AIData) devices POST to a fixed /AIData.aspx — no API version prefix.
+app.include_router(aidata_router)
 app.include_router(questions_router, prefix=settings.API_V1_PREFIX)
 app.include_router(tests_router, prefix=settings.API_V1_PREFIX)
 app.include_router(marks_router, prefix=settings.API_V1_PREFIX)
