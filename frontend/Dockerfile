@@ -17,8 +17,22 @@ WORKDIR /app
 # set here, not at runtime. Override with --build-arg if your backend lives
 # elsewhere; the default points at the `backend` service in our compose stack.
 ARG API_BASE_URL=http://backend:8000
+# Sentry. NEXT_PUBLIC_* is inlined into the client bundle at build time, so the
+# DSN must be present HERE — setting it at runtime does nothing. All default to
+# empty, and the SDK no-ops without a DSN, so an unconfigured build is a normal
+# build that reports nothing.
+ARG NEXT_PUBLIC_SENTRY_DSN=""
+ARG NEXT_PUBLIC_SENTRY_ENVIRONMENT="production"
+ARG NEXT_PUBLIC_SENTRY_RELEASE=""
+ARG SENTRY_ORG=""
+ARG SENTRY_PROJECT=""
 ENV API_BASE_URL=${API_BASE_URL} \
-    NEXT_TELEMETRY_DISABLED=1
+    NEXT_TELEMETRY_DISABLED=1 \
+    NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN} \
+    NEXT_PUBLIC_SENTRY_ENVIRONMENT=${NEXT_PUBLIC_SENTRY_ENVIRONMENT} \
+    NEXT_PUBLIC_SENTRY_RELEASE=${NEXT_PUBLIC_SENTRY_RELEASE} \
+    SENTRY_ORG=${SENTRY_ORG} \
+    SENTRY_PROJECT=${SENTRY_PROJECT}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Mount Next.js's incremental build cache so `next build` can reuse compiled
@@ -26,7 +40,13 @@ COPY . .
 # a layer), and `next start` doesn't need .next/cache at runtime — so the
 # runtime COPY of /app/.next below is unaffected. CI persists this mount across
 # runs via buildkit-cache-dance (see deploy-prod.yml).
-RUN --mount=type=cache,target=/app/.next/cache npm run build
+# SENTRY_AUTH_TOKEN comes in as a BuildKit secret, not an ARG: ARG values are
+# recorded in the image history and would leak the token to anyone who can pull
+# the image. Absent secret => no source map upload, build still succeeds.
+RUN --mount=type=cache,target=/app/.next/cache \
+    --mount=type=secret,id=sentry_auth_token,required=false \
+    SENTRY_AUTH_TOKEN="$(cat /run/secrets/sentry_auth_token 2>/dev/null || true)" \
+    npm run build
 
 FROM node:${NODE_VERSION}-slim AS runtime
 WORKDIR /app

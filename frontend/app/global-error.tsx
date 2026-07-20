@@ -1,15 +1,22 @@
 "use client";
 
+import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
+
 /**
  * Last-resort boundary. Catches errors thrown by the *root layout* itself —
  * at that point `app/layout.tsx` has failed, so this component must supply its
  * own <html> and <body>.
  *
- * Intentionally written with inline styles and no imports: if the root layout
- * blew up, the font loader, the QueryProvider, or the stylesheet itself are all
- * suspects, so this page must render correctly with zero app CSS and zero app
- * components. Every other boundary (app/error.tsx, the dashboard one) is the
- * nicely-styled path; this one only has to work.
+ * The RENDERED output stays inline-styled and component-free on purpose: if the
+ * root layout blew up, the font loader, the QueryProvider and the stylesheet
+ * are all suspects, so this page must display with zero app CSS and zero app
+ * components. Every other boundary is the nicely-styled path; this one only has
+ * to work.
+ *
+ * Reporting is the one exception, and it is wrapped in try/catch — this is the
+ * boundary whose whole job is to render when everything else has failed, so
+ * the reporter must never be able to take it down with them.
  */
 export default function GlobalError({
   error,
@@ -18,6 +25,17 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    try {
+      Sentry.captureException(error, {
+        tags: { boundary: "global", digest: error.digest ?? "none" },
+      });
+    } catch {
+      // Nothing useful to do here — never rethrow from the last boundary.
+    }
+    console.error("[boundary:global]", error);
+  }, [error]);
+
   return (
     <html lang="en">
       <body
