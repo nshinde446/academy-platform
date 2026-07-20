@@ -77,7 +77,7 @@ export function EditBatchDialog({
       <DialogPopup>
         <DialogTitle>Edit Batch</DialogTitle>
         <DialogDescription>
-          Update the batch fields. Course and academic year range can't be
+          Update the batch fields. Course and academic year range can&apos;t be
           changed after creation.
         </DialogDescription>
         <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">

@@ -88,6 +88,22 @@ jobs:
           cd frontend
           npm ci
 
+      # Typecheck and lint are gating (no continue-on-error) and run on the
+      # fast path too — they take seconds and catch a whole class of bug that
+      # the unit suite cannot see.
+      - name: Typecheck frontend
+        run: |
+          cd frontend
+          npm run typecheck
+
+      # Gates on errors. Pre-existing violations of three rules are demoted to
+      # warnings and capped by --max-warnings (see frontend/eslint.config.mjs);
+      # the cap only moves down.
+      - name: Lint frontend
+        run: |
+          cd frontend
+          npm run lint:ci
+
       - name: Run frontend unit tests
         run: |
           cd frontend
