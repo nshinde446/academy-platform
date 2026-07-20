@@ -18,6 +18,61 @@ env:
   FRONTEND_IMAGE_NAME: ghcr.io/${{ github.repository }}-frontend
 
 jobs:
+  # Decide whether THIS deploy needs a human.
+  #
+  # Code-only deploys ship unattended: they are cheap to reverse (SHA-tagged
+  # images + rollback.sh), so a blanket approval gate would just train reflexive
+  # clicking. Deploys carrying an Alembic revision are different — schema
+  # changes are not safely undone by redeploying an old image — so those route
+  # through `production-migrations`, which has a required reviewer.
+  #
+  # NOTE: both environment names must exist in repo settings with the intended
+  # protection rules. GitHub silently auto-creates an UNPROTECTED environment if
+  # the name is unknown, which is precisely how this repo ended up believing it
+  # had an approval gate it did not have. See
+  # docs/delivery-workflow-architecture.md.
+  detect-migrations:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.pick.outputs.environment }}
+      migrations: ${{ steps.pick.outputs.migrations }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect new Alembic revisions in this push
+        id: pick
+        run: |
+          set -euo pipefail
+          BEFORE="${{ github.event.before }}"
+          # `before` is all-zeros on a new branch / force push, and empty on
+          # workflow_dispatch. Fall back to the previous commit, and treat any
+          # failure as "assume migrations" — failing safe means asking a human.
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            BEFORE="$(git rev-parse HEAD~1 2>/dev/null || echo "")"
+          fi
+
+          if [ -z "$BEFORE" ]; then
+            echo "Cannot determine diff base — failing safe, requiring approval."
+            CHANGED="backend/migrations/versions/unknown"
+          else
+            CHANGED="$(git diff --name-only "$BEFORE" "${{ github.sha }}" || echo "backend/migrations/versions/unknown")"
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -q '^backend/migrations/versions/'; then
+            echo "migrations=true" >> "$GITHUB_OUTPUT"
+            echo "environment=production-migrations" >> "$GITHUB_OUTPUT"
+            echo "::notice::Migration detected — deploy requires approval."
+          else
+            echo "migrations=false" >> "$GITHUB_OUTPUT"
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+            echo "::notice::Code-only deploy — shipping unattended."
+          fi
+
   # Re-run the unit tests as a gate, even though CI ran on the PR.
   # Prevents shipping a master commit that someone pushed directly without PR.
   # Runs IN PARALLEL with the image build below — only the deploy job waits on it.
@@ -108,14 +163,14 @@ jobs:
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
-  # Ship it. Waits on BOTH the test gate and BOTH image builds, plus the
-  # `production` environment's required-reviewer approval. Builds above run
-  # without waiting for approval (cheap, harmless); the actual prod mutation
-  # — this SSH deploy — is what the approval gate protects.
+  # Ship it. Waits on the test gate and both image builds. The environment is
+  # chosen by detect-migrations: `production` (unattended) or
+  # `production-migrations` (required reviewer). Builds above run regardless —
+  # they are cheap and harmless; this SSH step is the actual prod mutation.
   deploy:
-    needs: [gate-tests, build-backend, build-frontend]
+    needs: [detect-migrations, gate-tests, build-backend, build-frontend]
     runs-on: ubuntu-latest
-    environment: production   # protect with required reviewers in repo settings
+    environment: ${{ needs.detect-migrations.outputs.environment }}
     steps:
       - uses: actions/checkout@v4
 
@@ -136,8 +191,89 @@ jobs:
             bash infra/scripts/deploy.sh prod \
                 ${{ env.BACKEND_IMAGE_NAME }}:${{ github.sha }} \
                 ${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
-            # Reclaim disk from superseded images now the new ones are running.
-            # Runs only after a successful deploy (set -e above), so the just-
-            # deployed images (in use) are kept and the previous deploys' images
-            # are pruned — the disk-full deploy failure was these piling up.
-            docker image prune -af
+            # NOTE: image pruning moved to AFTER verification — pruning here
+            # would delete the very images rollback.sh needs to restore.
+
+      # deploy.sh already waits on the backend healthcheck, which catches a
+      # container that won't start. It cannot catch an app that starts and then
+      # serves wrongly: a broken nginx rewrite, a frontend 500, auth silently
+      # not enforced. So verify from OUTSIDE the box, against the public host.
+      - name: Verify production
+        id: verify
+        env:
+          BASE_URL: ${{ secrets.PROD_BASE_URL || 'https://app.eduworld-livekit.duckdns.org' }}
+        run: |
+          set -uo pipefail
+          fail=0
+
+          check() {
+            local name="$1" url="$2" want="$3"
+            local got
+            # Retry briefly: nginx/containers may still be settling.
+            for attempt in 1 2 3 4 5; do
+              got="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$url" || echo 000)"
+              [ "$got" = "$want" ] && break
+              sleep 5
+            done
+            if [ "$got" = "$want" ]; then
+              echo "PASS  $name  ($url -> $got)"
+            else
+              echo "FAIL  $name  ($url -> $got, wanted $want)"
+              fail=1
+            fi
+          }
+
+          # Frontend renders through nginx + TLS.
+          check "login page"      "$BASE_URL/login"            200
+          # Backend reachable through the proxy AND auth actually enforced.
+          # A 200 here would mean the API is wide open — worse than a 500.
+          check "authed api 401"  "$BASE_URL/api/v1/students"  401
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Production verification failed — rolling back."
+            exit 1
+          fi
+          echo "Production verification passed."
+
+      # Only runs if verification failed. Restores the images recorded by
+      # deploy.sh before it overwrote them. Code-only: see rollback.sh for why
+      # this is not safe for schema changes, and why those need approval.
+      - name: Roll back on failed verification
+        if: failure() && steps.verify.outcome == 'failure'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            cd /srv/academy/repo
+            export GHCR_USER='${{ github.actor }}'
+            export GHCR_TOKEN='${{ secrets.GITHUB_TOKEN }}'
+            bash infra/scripts/rollback.sh prod
+
+      - name: Warn that a migration deploy was rolled back
+        if: failure() && steps.verify.outcome == 'failure' && needs.detect-migrations.outputs.migrations == 'true'
+        run: |
+          echo "::error::This deploy carried a MIGRATION and was rolled back to the"
+          echo "::error::previous image. The schema was NOT reverted. Verify the"
+          echo "::error::database state by hand before deploying again."
+          exit 1
+
+      # Reclaim disk only once the new release is verified good — pruning
+      # earlier would delete the images rollback depends on. The disk-full
+      # deploy failure was these piling up, so this still has to happen.
+      - name: Prune superseded images
+        if: success()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            # Keep the rollback target: prune dangling layers only, not every
+            # unused tagged image (`-a` would remove the previous release).
+            docker image prune -f

@@ -55,6 +55,21 @@ if [[ ! -f "$ENV_FILE" ]]; then
     exit 3
 fi
 
+# Record the images we are about to REPLACE, so a failed verification can put
+# them back (see rollback.sh). Written before the env file is rewritten, because
+# that rewrite is what destroys the old values. Skipped on the very first deploy,
+# when there is nothing to roll back to.
+PREV_BACKEND="$(grep -E '^BACKEND_IMAGE=' "$ENV_FILE" | cut -d= -f2- || true)"
+PREV_FRONTEND="$(grep -E '^FRONTEND_IMAGE=' "$ENV_FILE" | cut -d= -f2- || true)"
+if [[ -n "$PREV_BACKEND" && -n "$PREV_FRONTEND" ]]; then
+    printf 'BACKEND_IMAGE=%s\nFRONTEND_IMAGE=%s\n' \
+        "$PREV_BACKEND" "$PREV_FRONTEND" > ".prev-images.$ENV"
+    chmod 600 ".prev-images.$ENV"
+    echo "==> recorded rollback target: $PREV_BACKEND / $PREV_FRONTEND"
+else
+    echo "==> no previous images recorded (first deploy?) — rollback unavailable"
+fi
+
 # Inject the new image tags into the env file used by compose for image
 # substitution. Re-writes the BACKEND_IMAGE / FRONTEND_IMAGE lines atomically.
 tmp=$(mktemp)

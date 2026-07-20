@@ -42,8 +42,19 @@ push to `master`.
 
 5. **Deploy is automatic.** Pushing to `master` triggers
    `Deploy / production`: it re-runs the suites as a `gate-tests` job, builds
-   backend + frontend images (tagged by SHA), waits for the `production`
-   environment approval, then SSH-deploys to the VPS.
+   backend + frontend images (tagged by SHA), SSH-deploys to the VPS, then
+   **verifies the public host and rolls back automatically if that fails**.
+
+   **A code-only deploy does not wait for anyone.** Merging to `master` ships
+   to production. Only deploys that add an Alembic revision under
+   `backend/migrations/versions/` pause for approval, via the
+   `production-migrations` environment.
+
+   > ⚠️ Until 2026-07-20 this document claimed *every* prod deploy waited for a
+   > required-reviewer approval. It did not — the `production` environment had
+   > no protection rules configured, so every merge shipped straight to the VPS.
+   > The gate is now real but deliberately narrow; see
+   > `docs/delivery-workflow-architecture.md` for why.
 
 6. **Verify prod** after the deploy completes — confirm the run succeeded and do
    a lightweight read-only reachability check (e.g. `GET /login` → 200,
