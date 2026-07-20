@@ -20,21 +20,32 @@ Two message kinds arrive on the same URL:
   ``photo``). Acknowledged and **ignored** — we never persist biometric
   templates (PII), and there's no student mapping on them.
 
-Observed on-wire punch body (base64 blobs elided)::
+Observed on-wire punch (base64 blobs elided)::
 
     POST /AIData.aspx HTTP/1.0
+    User-Agent: Mozilla/4.0
+    Content-Type: application/json
+    request_code: realtime_glog
+    trans_id: RTLogSend
     dev_id: AMDB26013800122
     dev_model: R6
-    Content-Type: application/json
 
     {"userId":"1001","name":"RAM SIR","time":"20260617132228",
      "inOut":"IN","ioMode":10,"doorMode":"open","verifyMode":"Face",
      "workCode":1,"logPhoto":"<jpeg>"}
 
+``request_code`` names the message: ``realtime_glog`` (punch) or
+``realtime_enroll_data`` (enrollment mirror).
+
+THE ACK IS IN THE RESPONSE HEADERS, NOT THE BODY — see ``_ack``. This was
+reverse-engineered from BioMax's own SmartOffice receiver by replaying captured
+records at it and reading what it returned; there is no public spec. Getting it
+wrong does not fail loudly: the device simply re-uploads its whole database
+every few seconds forever and never reports live scans.
+
 Provisioning (server → device: create/delete users so 1000s of students never
-enrol by hand) is a future phase that rides on the HTTP *response* to these
-POSTs. The response is deliberately isolated in ``_ack`` so those commands can
-be added later without touching parsing/ingest.
+enrol by hand) rides the ``cmd_code`` response header, which is why ``_ack``
+owns the whole response.
 """
 
 from __future__ import annotations
@@ -44,7 +55,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
@@ -111,24 +122,46 @@ def parse_aidata_record(body: dict, tz_name: str | None) -> list[PunchEvent]:
     )]
 
 
-def _ack() -> PlainTextResponse:
-    """Acknowledgement the device reads as "delivered" so it advances its cursor
-    and stops re-sending. Isolated here so the future provisioning phase can
-    piggyback create/delete-user commands on this response."""
-    return PlainTextResponse("OK")
+def _ack() -> Response:
+    """Acknowledgement that makes the device mark a record delivered, delete it
+    and advance. It lives ENTIRELY IN HEADERS — the R6 never reads the body.
+
+    * ``response_code: OK`` — the ack itself.
+    * ``cmd_code`` / ``trans_id`` — **must be empty**. A non-empty value means
+      "the server has a command for you", so the device re-syncs its whole
+      database instead of clearing its log. Echoing the request's ``trans_id``
+      back is exactly what pinned a device in an endless re-upload loop.
+
+    Anything else — a different ``response_code``, or a non-2xx — makes the
+    device KEEP the record and retry. That is our fail-safe: never ack a punch
+    we did not actually store (see ``aidata_push``), or it is lost forever.
+
+    ``cmd_code`` is the future server→device provisioning channel.
+    """
+    return Response(
+        content=b"",
+        media_type="application/octet-stream",
+        headers={"response_code": "OK", "cmd_code": "", "trans_id": ""},
+    )
 
 
-@router.post("/AIData.aspx", response_class=PlainTextResponse)
+@router.post("/AIData.aspx")
 async def aidata_push(
     request: Request,
-    # The device sends a literal ``dev_id`` header (underscore). FastAPI's
-    # Header() converts underscores→hyphens by default (would look for
-    # ``dev-id`` and never match), so convert_underscores must be off.
+    # The device sends literal ``dev_id`` / ``request_code`` headers
+    # (underscores). FastAPI's Header() converts underscores→hyphens by default
+    # (would look for ``dev-id`` and never match), so convert_underscores is off.
     dev_id: str | None = Header(None, convert_underscores=False),
+    request_code: str | None = Header(None, convert_underscores=False),
     session: AsyncSession = Depends(get_db),
 ):
     """Receive one AIData record. Punches are ingested; enrollment syncs are
-    acked and ignored. Reply is always a plain ack (see ``_ack``)."""
+    acked and ignored.
+
+    We only ack once the punch is durably stored — if ingest raises we return
+    500 so the device RETAINS the record and retries. Acking first would make
+    the device delete its only copy (e.g. mid-deploy), losing it for good.
+    """
     _require_known_device(dev_id)
 
     raw = await request.body()
@@ -142,23 +175,36 @@ async def aidata_push(
 
     # Log the shape (keys only — never the base64 face/photo PII) for triage.
     logger.info(
-        "AIData from %s: keys=%s userId=%r time=%r",
-        dev_id, sorted(payload.keys()), payload.get("userId"), payload.get("time"),
+        "AIData %s from %s: keys=%s userId=%r time=%r",
+        request_code or "?", dev_id, sorted(payload.keys()),
+        payload.get("userId"), payload.get("time"),
     )
 
     branch_id = _resolve_branch()
     tz_name = await daily_service.branch_timezone(session, branch_id)
     events = parse_aidata_record(payload, tz_name)
     if not events:
-        return _ack()  # enrollment sync / heartbeat — nothing to ingest
+        # Enrollment sync / heartbeat, or an unusable record (blank userId, bad
+        # time). Ack anyway: there is nothing to store, and refusing would make
+        # the device retry it forever and head-of-line block real punches.
+        return _ack()
 
-    result = await ingest_punches(session, events, branch_id)
-    await daily_service.rebuild_after_ingest(
-        session,
-        branch_id=branch_id,
-        affected=[(a.student_id, a.punch_timestamp) for a in result.affected],
-        tz_name=tz_name,
-    )
+    try:
+        result = await ingest_punches(session, events, branch_id)
+        await daily_service.rebuild_after_ingest(
+            session,
+            branch_id=branch_id,
+            affected=[(a.student_id, a.punch_timestamp) for a in result.affected],
+            tz_name=tz_name,
+        )
+    except Exception:
+        # Do NOT ack — the device keeps the punch and re-sends it later.
+        logger.exception(
+            "AIData ingest failed for %s@%s — not acking so the device retries",
+            events[0].vendor_user_id, events[0].punch_timestamp,
+        )
+        return Response(status_code=500)
+
     logger.info(
         "AIData punch %s@%s -> inserted=%d skipped_no_student=%d",
         events[0].vendor_user_id, events[0].punch_timestamp,
@@ -167,7 +213,7 @@ async def aidata_push(
     return _ack()
 
 
-@router.get("/AIData.aspx", response_class=PlainTextResponse)
+@router.get("/AIData.aspx")
 async def aidata_heartbeat(
     dev_id: str | None = Header(None, convert_underscores=False),
 ):
