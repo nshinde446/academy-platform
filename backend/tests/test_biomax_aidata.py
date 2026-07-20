@@ -110,9 +110,66 @@ def test_literal_devid_header_is_read(monkeypatch):
     client = TestClient(test_app)
     ok = client.get("/AIData.aspx", headers={"dev_id": "AMDB26013800122"})
     assert ok.status_code == 200
-    assert ok.text == "OK"
     bad = client.get("/AIData.aspx", headers={"dev_id": "NOPE"})
     assert bad.status_code == 401
+
+
+# ── the ack contract (headers, not body) ─────────────────────────────────────
+
+
+def test_ack_is_carried_in_response_headers_not_body():
+    """The R6 reads the ack from HEADERS and ignores the body. Returning "OK"
+    as the body (our original bug) leaves the device re-uploading forever."""
+    resp = aidata._ack()
+    assert resp.headers["response_code"] == "OK"
+    assert resp.body == b""
+
+
+def test_ack_leaves_cmd_code_and_trans_id_empty():
+    """A non-empty cmd_code/trans_id means "server has a command for you" — the
+    device then re-syncs its whole DB instead of clearing its log. Echoing back
+    the request's trans_id is what pinned a real device in an endless loop."""
+    resp = aidata._ack()
+    assert resp.headers["cmd_code"] == ""
+    assert resp.headers["trans_id"] == ""
+
+
+def test_ingest_failure_is_not_acked(monkeypatch):
+    """Never ack a punch we failed to store: the device deletes its only copy
+    on ack, so acking through an outage (e.g. mid-deploy) loses it for good.
+    On failure we 500 and the device retries."""
+    import app.modules.attendance.integrations.biomax.iclock as iclock
+    from app.core.database.session import get_db
+
+    monkeypatch.setattr(
+        iclock, "get_settings",
+        lambda: type("S", (), {"BIOMAX_DEVICE_SERIALS": "AMDB26013800122"})(),
+    )
+    monkeypatch.setattr(aidata, "_resolve_branch", lambda: uuid.uuid4())
+
+    async def _tz(*a, **k):
+        return "Asia/Kolkata"
+
+    async def _boom(*a, **k):
+        raise RuntimeError("database is down")
+
+    monkeypatch.setattr(daily_service, "branch_timezone", _tz)
+    monkeypatch.setattr(aidata, "ingest_punches", _boom)
+
+    test_app = FastAPI()
+    test_app.include_router(aidata.router)
+
+    async def _fake_db():
+        yield None
+
+    test_app.dependency_overrides[get_db] = _fake_db
+    resp = TestClient(test_app).post(
+        "/AIData.aspx",
+        headers={"dev_id": "AMDB26013800122", "request_code": "realtime_glog"},
+        json={"userId": "3001", "time": "20260528095500", "inOut": "IN"},
+    )
+    assert resp.status_code == 500
+    assert "response_code" not in resp.headers
 
 
 # ── end-to-end ingest ───────────────────────────────────────────────────────
