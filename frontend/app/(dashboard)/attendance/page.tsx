@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { useUserStore } from "@/store/user-store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -16,8 +15,6 @@ import type { LectureResponse } from "../lectures/_schemas/lecture";
 import {
   useLectureAttendance,
   useMarkAttendance,
-  useSyncAttendanceSource,
-  type SyncSource,
 } from "./_hooks/use-attendance";
 import type {
   AttendanceRecord,
@@ -48,13 +45,6 @@ function formatLectureLabel(
   return `${when} · ${batchName || "Batch"} · ${l.lecture_status}`;
 }
 
-// Local YYYY-MM-DD for a date (the lecture's own calendar day in the viewer's
-// timezone) — used to scope an eTimeOffice pull to that single day.
-function localISO(d: Date): string {
-  const off = d.getTimezoneOffset();
-  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
-}
-
 function isToday(iso: string): boolean {
   const d = new Date(iso);
   const now = new Date();
@@ -68,8 +58,6 @@ function isToday(iso: string): boolean {
 export default function AttendancePage() {
   const user = useUserStore((s) => s.user);
   const branchId = user?.branch_roles?.[0]?.branch_id;
-  // Shown next to the source buttons so the admin knows whose data they pull.
-  const branchName = user?.branch_roles?.[0]?.branch_name;
 
   const lecturesQuery = useLectures(branchId);
   const batchesQuery = useBatchesForLectures(branchId);
@@ -84,7 +72,6 @@ export default function AttendancePage() {
   const [selectedLectureId, setSelectedLectureId] = useState("");
   const [pendingStudentId, setPendingStudentId] = useState<string | null>(null);
   const [isBulk, setIsBulk] = useState(false);
-  const [confirmSource, setConfirmSource] = useState<SyncSource | null>(null);
   const toast = useToast();
 
   const lookupBatchName = (id: string) =>
@@ -119,7 +106,6 @@ export default function AttendancePage() {
 
   const attendanceQuery = useLectureAttendance(branchId, effectiveLectureId || undefined);
   const markMutation = useMarkAttendance(branchId, effectiveLectureId || undefined);
-  const syncMutation = useSyncAttendanceSource(branchId, effectiveLectureId || undefined);
 
   const recordByStudent = useMemo(() => {
     const map = new Map<string, AttendanceRecord>();
@@ -211,74 +197,24 @@ export default function AttendancePage() {
     }
   }
 
-  async function handleSync() {
-    const source = confirmSource;
-    setConfirmSource(null);
-    if (!source || !selectedLecture) return;
-    setIsBulk(true);
-    try {
-      // Pull/process the lecture's own local day.
-      const day = localISO(new Date(selectedLecture.scheduled_start));
-      const res = await syncMutation.mutateAsync({ source, day });
-      const label = source === "etimeoffice" ? "eTimeOffice" : "BioMax";
-      toast.success(
-        `${label} sync for ${branchName ?? "this branch"} — ${res.length} record(s) updated.`,
-      );
-    } catch (err) {
-      toast.error(errorOf(err));
-    } finally {
-      setIsBulk(false);
-    }
-  }
-
-  const busy = isBulk || markMutation.isPending || syncMutation.isPending;
+  const busy = isBulk || markMutation.isPending;
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Attendance"
-        description="Mark a lecture roster by hand, or aggregate biometric punches once devices are live. Marks upsert per student — changing one overwrites the previous status."
+        description="Mark a lecture roster by hand. Biometric punches from the BioMax device arrive automatically — no manual pull needed. Marks upsert per student, and changing one overwrites the previous status."
         actions={
           view === "lecture" ? (
-            <>
-              {branchName && (
-                <span className="mr-1 hidden text-xs text-muted-foreground sm:inline">
-                  Pull for{" "}
-                  <span className="font-medium text-foreground">
-                    {branchName}
-                  </span>
-                </span>
-              )}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!selectedLecture || roster.length === 0 || busy}
-                onClick={handleMarkAllPresent}
-              >
-                Mark all present
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!selectedLecture || busy}
-                onClick={() => setConfirmSource("etimeoffice")}
-                title="Pull this lecture's day from the eTimeOffice cloud"
-              >
-                eTimeOffice
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!selectedLecture || busy}
-                onClick={() => setConfirmSource("biomax")}
-                title="Process BioMax device punches for this lecture"
-              >
-                BioMax
-              </Button>
-            </>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!selectedLecture || roster.length === 0 || busy}
+              onClick={handleMarkAllPresent}
+            >
+              Mark all present
+            </Button>
           ) : undefined
         }
       >
@@ -388,30 +324,6 @@ export default function AttendancePage() {
         />
       )}
 
-      <ConfirmDialog
-        open={confirmSource !== null}
-        onOpenChange={(open) => {
-          if (!open) setConfirmSource(null);
-        }}
-        title={
-          confirmSource === "etimeoffice"
-            ? "Pull from eTimeOffice?"
-            : "Process BioMax punches?"
-        }
-        description={
-          confirmSource === "etimeoffice"
-            ? `Pull this lecture's day from the eTimeOffice cloud for ${
-                branchName ?? "this branch"
-              }, then mark the roster (PRESENT/LATE/ABSENT). Students you've already marked are left untouched.`
-            : `Aggregate BioMax device punches already received for ${
-                branchName ?? "this branch"
-              } into this lecture's roster (PRESENT/LATE/ABSENT). Manual marks are preserved.`
-        }
-        confirmLabel={
-          confirmSource === "etimeoffice" ? "Pull & apply" : "Process"
-        }
-        onConfirm={handleSync}
-      />
       </>
       )}
     </div>
