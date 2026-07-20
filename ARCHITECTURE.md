@@ -109,9 +109,15 @@ Trunk-based on `master`, via **GitHub Actions**.
   3. **SSH deploy** (`appleboy/ssh-action`) into the VPS: `git reset --hard
      origin/master`, then `infra/scripts/deploy.sh` pulls the SHA-tagged images
      and recreates the stack; superseded images are pruned.
-  - The SSH deploy (the only prod mutation) is gated behind the `production`
-    environment's **required-reviewer approval**; the image builds run ahead of
-    approval since they're cheap and harmless.
+  4. **Verify** the public host from outside (`/login` → 200, an authed API
+     route → 401). On failure the deploy **rolls back automatically** to the
+     previous images (`infra/scripts/rollback.sh`).
+  - **Approval is required only for deploys that carry a database migration.**
+    A push touching `backend/migrations/versions/` routes through the
+    `production-migrations` environment, which has a required reviewer; every
+    other deploy ships unattended through `production`, protected by the test
+    gate plus verify-and-rollback. Rationale — and the incident that produced
+    this design — in `docs/delivery-workflow-architecture.md`.
 
 ## External integrations
 
