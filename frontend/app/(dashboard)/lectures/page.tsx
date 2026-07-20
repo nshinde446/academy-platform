@@ -42,6 +42,8 @@ import {
   useUpdateActuals,
   useClassrooms,
   useTeachers,
+  useHolidays,
+  useTeacherLeaves,
 } from "./_hooks/use-lectures";
 import type {
   LectureActuals,
@@ -77,6 +79,7 @@ import { HolidaysDialog } from "./_components/holidays-dialog";
 import { PendingActualsPanel } from "./_components/pending-actuals-panel";
 import { MakeupQueuePanel } from "./_components/makeup-queue-panel";
 import { CalendarWeekView } from "./_components/calendar-week-view";
+import { CalendarDayView } from "./_components/calendar-day-view";
 import { TeacherLeaveDialog } from "./_components/teacher-leave-dialog";
 
 const SELECT_CLASS =
@@ -151,6 +154,12 @@ function startOfWeekMonday(d: Date): Date {
   return x;
 }
 
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
 function addDaysDate(d: Date, n: number): Date {
   const x = new Date(d);
   x.setDate(x.getDate() + n);
@@ -203,7 +212,10 @@ function LecturesPageBody() {
   const searchParams = useSearchParams();
   const view = searchParams.get("view");
   const isMsa = view === "msa";
-  const isCalendar = view === "calendar";
+  // "calendar" is the legacy name for the week grid — keep old links working.
+  const isWeek = view === "week" || view === "calendar";
+  const isDay = view === "day";
+  const isCalendar = isWeek || isDay;
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
@@ -248,13 +260,29 @@ function LecturesPageBody() {
   const [weekStart, setWeekStart] = useState<Date>(() =>
     startOfWeekMonday(new Date()),
   );
-  const calFrom = weekStart.toISOString();
-  const calTo = addDaysDate(weekStart, 7).toISOString();
+  // Calendar day view — local midnight of the day currently shown.
+  const [dayStart, setDayStart] = useState<Date>(() => startOfDay(new Date()));
+
+  // One range query serves both grids; the window just narrows for Day.
+  const rangeFrom = isDay ? dayStart : weekStart;
+  const rangeTo = addDaysDate(rangeFrom, isDay ? 1 : 7);
   const calendarQuery = useLecturesInRange(
     branchId,
-    isCalendar ? calFrom : "",
-    isCalendar ? calTo : "",
+    isCalendar ? rangeFrom.toISOString() : "",
+    isCalendar ? rangeTo.toISOString() : "",
   );
+
+  // Holidays and teacher leave are overlaid on the day agenda so a scheduler
+  // sees why a slot should stay empty before they fill it.
+  const holidaysQuery = useHolidays(isCalendar ? branchId : undefined);
+  const leavesQuery = useTeacherLeaves(isCalendar ? branchId : undefined);
+
+  // Slot clicked in the day agenda → open the scheduler pre-filled.
+  const [slotPrefill, setSlotPrefill] = useState<{
+    start: Date;
+    end: Date;
+  } | null>(null);
+  const [slotDialogOpen, setSlotDialogOpen] = useState(false);
 
   const lecturesQuery = useLectures(branchId);
   const pendingActualsQuery = usePendingActuals(branchId);
@@ -686,7 +714,9 @@ function LecturesPageBody() {
       <PageHeader
         title="Lectures"
         description={
-          isCalendar
+          isDay
+            ? "One day's agenda with holidays, teacher leave, and conflicts surfaced. Click a free slot to schedule into it."
+            : isWeek
             ? "Week-at-a-glance grid of every batch's scheduled lectures."
             : isMsa
               ? "Schedule, attendance, and one-click DPP generation off completed lectures."
@@ -694,20 +724,18 @@ function LecturesPageBody() {
         }
         actions={headerActions}
       >
-        <p className="text-xs text-muted-foreground">
+        <p className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
           {[
-            { key: "full", label: "Full", href: "/lectures" },
-            { key: "msa", label: "Simplified", href: "/lectures?view=msa" },
-            {
-              key: "calendar",
-              label: "Calendar",
-              href: "/lectures?view=calendar",
-            },
+            // "List" covers both list layouts; how dense that list is, is the
+            // separate Compact switch below — not a third top-level view.
+            { key: "list", label: "List", href: "/lectures" },
+            { key: "week", label: "Week", href: "/lectures?view=week" },
+            { key: "day", label: "Day", href: "/lectures?view=day" },
           ].map((v, i) => {
             const active =
-              (v.key === "full" && !isMsa && !isCalendar) ||
-              (v.key === "msa" && isMsa) ||
-              (v.key === "calendar" && isCalendar);
+              (v.key === "list" && !isCalendar) ||
+              (v.key === "week" && isWeek) ||
+              (v.key === "day" && isDay);
             return (
               <span key={v.key}>
                 {i > 0 && " · "}
@@ -721,10 +749,46 @@ function LecturesPageBody() {
               </span>
             );
           })}
+          {!isCalendar && (
+            <Link
+              href={isMsa ? "/lectures" : "/lectures?view=msa"}
+              aria-pressed={isMsa}
+              className={
+                "ml-2 rounded border px-1.5 py-0.5 " +
+                (isMsa
+                  ? "border-foreground/30 font-medium text-foreground"
+                  : "border-border underline")
+              }
+            >
+              Compact
+            </Link>
+          )}
         </p>
       </PageHeader>
 
-      {isCalendar ? (
+      {isDay ? (
+        <CalendarDayView
+          lectures={calendarQuery.data ?? []}
+          batches={batches}
+          teachers={teachers}
+          subjects={allSubjects}
+          classrooms={classrooms}
+          holidays={holidaysQuery.data ?? []}
+          leaves={leavesQuery.data ?? []}
+          day={dayStart}
+          onPrev={() => setDayStart((d) => addDaysDate(d, -1))}
+          onNext={() => setDayStart((d) => addDaysDate(d, 1))}
+          onToday={() => setDayStart(startOfDay(new Date()))}
+          onScheduleAt={(start, end) => {
+            // A gap can run for hours; default the lecture to one hour of it
+            // rather than pre-filling an eight-hour block the user must undo.
+            const oneHour = new Date(start.getTime() + 60 * 60_000);
+            setSlotPrefill({ start, end: oneHour < end ? oneHour : end });
+            setSlotDialogOpen(true);
+          }}
+          isLoading={calendarQuery.isLoading}
+        />
+      ) : isWeek ? (
         <CalendarWeekView
           lectures={calendarQuery.data ?? []}
           batches={batches}
@@ -1078,6 +1142,24 @@ function LecturesPageBody() {
         }}
         onSubmit={handleActualsSubmit}
         isPending={actualsMutation.isPending}
+      />
+
+      {/* Trigger-less twin of the header dialog, opened by clicking a free
+          slot in the day agenda with that window pre-filled. */}
+      <CreateLectureDialog
+        branchId={branchId}
+        batches={batches}
+        classrooms={classrooms}
+        onSubmit={handleCreate}
+        isPending={createMutation.isPending}
+        hideTrigger
+        open={slotDialogOpen}
+        onOpenChange={(o) => {
+          setSlotDialogOpen(o);
+          if (!o) setSlotPrefill(null);
+        }}
+        prefillStart={slotPrefill?.start ?? null}
+        prefillEnd={slotPrefill?.end ?? null}
       />
 
       <GenerateDppModal

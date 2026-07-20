@@ -29,6 +29,17 @@ interface CreateLectureDialogProps {
   classrooms: ClassroomSummary[];
   onSubmit: (data: LectureCreate) => Promise<void> | void;
   isPending: boolean;
+  /** Hide the built-in trigger when the dialog is driven from elsewhere. */
+  hideTrigger?: boolean;
+  /** Controlled open state. Omit to let the dialog own it. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * Pre-fill the time window — used when a calendar slot is clicked. Applied
+   * each time the dialog opens with a new window.
+   */
+  prefillStart?: Date | null;
+  prefillEnd?: Date | null;
 }
 
 const SELECT_CLASS =
@@ -66,8 +77,18 @@ export function CreateLectureDialog({
   classrooms,
   onSubmit,
   isPending,
+  hideTrigger,
+  open: openProp,
+  onOpenChange,
+  prefillStart,
+  prefillEnd,
 }: CreateLectureDialogProps) {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = (next: boolean) => {
+    setOpenState(next);
+    onOpenChange?.(next);
+  };
   const [batchId, setBatchId] = useState("");
   const [teacherId, setTeacherId] = useState("");
   const [subjectId, setSubjectId] = useState("");
@@ -108,7 +129,24 @@ export function CreateLectureDialog({
     setTeacherId("");
   }, [subjectId]);
 
+  // Apply a calendar-slot pre-fill. Derived during render rather than in an
+  // effect so the first paint already shows the clicked window.
+  const prefillKey = prefillStart
+    ? `${prefillStart.getTime()}-${prefillEnd?.getTime() ?? ""}`
+    : "";
+  const [appliedPrefill, setAppliedPrefill] = useState("");
+  if (open && prefillKey && prefillKey !== appliedPrefill) {
+    setAppliedPrefill(prefillKey);
+    setStart(toDatetimeLocal(prefillStart!));
+    setEnd(
+      prefillEnd
+        ? toDatetimeLocal(prefillEnd)
+        : defaultEnd(toDatetimeLocal(prefillStart!)),
+    );
+  }
+
   function reset() {
+    setAppliedPrefill("");
     setBatchId("");
     setTeacherId("");
     setSubjectId("");
@@ -184,11 +222,13 @@ export function CreateLectureDialog({
         if (!isOpen) reset();
       }}
     >
-      <DialogTrigger
-        render={
-          <Button onClick={() => setOpen(true)}>Schedule Lecture</Button>
-        }
-      />
+      {!hideTrigger && (
+        <DialogTrigger
+          render={
+            <Button onClick={() => setOpen(true)}>Schedule Lecture</Button>
+          }
+        />
+      )}
       <DialogPopup className="max-w-2xl">
         <DialogTitle>Schedule Lecture</DialogTitle>
         <DialogDescription>
