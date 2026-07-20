@@ -17,6 +17,16 @@
 #   * The rollback target is a single step back. Two consecutive bad deploys
 #     leave .prev-images pointing at the first bad one; recover by passing an
 #     explicit SHA to deploy.sh.
+#   * Run by hand there is no GHCR_TOKEN, so deploy.sh cannot log in to the
+#     registry. That is fine — the target images are already on the host, and
+#     deploy.sh now continues on a pull failure when it can prove both images
+#     are present locally. It does NOT need credentials to roll back.
+#
+# If this fails partway, check for drift before retrying: deploy.sh rewrites
+# .env.<env> and .prev-images.<env> BEFORE it restarts anything, so an abort
+# after that point leaves the env file naming images that are not running. A
+# later `docker compose up` would then silently switch releases. Compare
+# `grep IMAGE= .env.<env>` against `docker ps` and reconcile by hand.
 
 set -euo pipefail
 
