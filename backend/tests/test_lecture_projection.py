@@ -161,3 +161,79 @@ async def test_process_raw_punches_delegates_to_day_layer(db_session, seed_data)
         select(AttendanceRecord).where(AttendanceRecord.lecture_id == lecture.id)
     )).scalars().all()
     assert len(stored) == 1
+
+
+# ── auto-projection on ingest ───────────────────────────────────────────────
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_ingest_auto_projects_onto_lecture_roster(db_session, seed_data):
+    """A punch must reach the lecture roster on its own. Projection used to be
+    triggered by a button in the UI; biometric punches now arrive continuously,
+    so `rebuild_after_ingest` (the shared funnel for every feeder) projects
+    Layer 1 -> Layer 2 itself."""
+    s1 = seed_data["student"]
+    s2 = await _second_student(db_session, seed_data)
+    lecture = await _setup_lecture_and_batch(db_session, seed_data, [s1, s2])
+
+    punch = datetime(2026, 6, 22, 3, 59, tzinfo=timezone.utc)  # on time
+    db_session.add(RawPunchLog(
+        device_id="dev1", student_id=s1.id, punch_timestamp=punch,
+        direction="IN", branch_id=seed_data["branch_a"].id,
+    ))
+    await db_session.flush()
+
+    await daily_service.rebuild_after_ingest(
+        db_session,
+        branch_id=seed_data["branch_a"].id,
+        affected=[(s1.id, punch)],
+        tz_name="Asia/Kolkata",
+    )
+
+    recs = {
+        r.student_id: r
+        for r in (await db_session.execute(
+            select(AttendanceRecord).where(AttendanceRecord.lecture_id == lecture.id)
+        )).scalars().all()
+    }
+    # The punching student is PRESENT, and their batch-mate still gets an ABSENT
+    # row — no manual step involved.
+    assert recs[s1.id].attendance_status == "PRESENT"
+    assert recs[s1.id].source == "BIOMETRIC"
+    assert recs[s1.id].marked_by is None  # system-derived, not a human mark
+    assert recs[s2.id].attendance_status == "ABSENT"
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_ingest_projection_skips_other_days(db_session, seed_data):
+    """Only the punched day is projected — a lecture on another day must not be
+    touched, or every punch would rewrite the whole term."""
+    s1 = seed_data["student"]
+    await _setup_lecture_and_batch(db_session, seed_data, [s1])
+    other = Lecture(
+        teacher_id=seed_data["teacher"].id, batch_id=seed_data["batch"].id,
+        subject_id=seed_data["subject"].id,
+        academic_year_id=seed_data["academic_year"].id,
+        scheduled_start=START + timedelta(days=3),
+        scheduled_end=END + timedelta(days=3),
+        branch_id=seed_data["branch_a"].id, status="active", is_deleted=False,
+    )
+    db_session.add(other)
+    await db_session.flush()
+
+    punch = datetime(2026, 6, 22, 3, 59, tzinfo=timezone.utc)
+    db_session.add(RawPunchLog(
+        device_id="dev1", student_id=s1.id, punch_timestamp=punch,
+        direction="IN", branch_id=seed_data["branch_a"].id,
+    ))
+    await db_session.flush()
+
+    await daily_service.rebuild_after_ingest(
+        db_session, branch_id=seed_data["branch_a"].id,
+        affected=[(s1.id, punch)], tz_name="Asia/Kolkata",
+    )
+
+    rows = (await db_session.execute(
+        select(AttendanceRecord).where(AttendanceRecord.lecture_id == other.id)
+    )).scalars().all()
+    assert rows == []
