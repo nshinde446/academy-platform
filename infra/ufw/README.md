@@ -8,7 +8,16 @@ The VPS runs UFW (Uncomplicated Firewall) and allows only what the platform need
 22/tcp   ALLOW   IN    Anywhere    # ssh
 80/tcp   ALLOW   IN    Anywhere    # http (nginx, also for certbot http-01)
 443/tcp  ALLOW   IN    Anywhere    # https (nginx)
+8099/tcp ALLOW   IN    Anywhere    # aidata-proxy — BioMax terminals push here
 ```
+
+`8099` is the **only** other public port. It is served by `aidata-proxy`, which
+answers exactly one path (`/AIData.aspx`) and forwards to the backend; the rest
+of the API is never reachable over plain HTTP. The terminals speak plain HTTP
+only and ack on case-sensitive headers that Caddy would rewrite, so they cannot
+be served on 80/443 — see `docs/biomax-attendance.md`. The payload is just an ID
+and a timestamp, and the backend still enforces its `dev_id` allowlist. If you
+can pin the institute's public IP, narrow it: `sudo ufw allow from <ip> to any port 8099 proto tcp`.
 
 Everything else (Postgres 5432, Redis 6379, app port 8000/8001, monitoring 9090/9093/3001/5555) MUST stay closed to the public — they're reachable only via Docker's bridge network or `127.0.0.1`.
 

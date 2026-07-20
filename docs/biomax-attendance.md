@@ -5,15 +5,25 @@ end to end. A student scans their face at the device; a few seconds later the ro
 appears on `/attendance`. No PC, no SmartOffice, no manual pull.
 
 ```
- BioMax R6            HTTP POST /AIData.aspx          FastAPI                     Postgres
- (on the wall)  ──────────────────────────────►  aidata.py  ──► ingest_punches ──► raw_punch_logs
-  face scan          plain HTTP, port 80          (allowlist)        │                  │
-                                                                    └─ rebuild_after_ingest
-                                                                                       │
-                                                                            daily_attendance
-                                                                                       │
-                                                                          /attendance (auto-refresh)
+ BioMax R6         POST /AIData.aspx      aidata-proxy        FastAPI            Postgres
+ (on the wall) ──────────────────────►  (port 8099)  ──────► aidata.py ──► raw_punch_logs
+  face scan        plain HTTP :8099      speaks the         (allowlist)         │
+                                         device dialect          │              │
+                                              ▲                  └─ rebuild_after_ingest
+                                              │                                 │
+                                     acks only after the app          daily_attendance
+                                     confirms it stored it                      │
+                                                                  /attendance (auto-refresh)
 ```
+
+**Why the proxy exists:** the device acks on case-sensitive response headers,
+and Caddy (Go) canonicalises header keys (`response_code` → `Response_code`),
+which the device rejects. Go offers no way to emit a non-canonical key, so the
+terminal cannot be served through Caddy. `infra/aidata-proxy/` is a small
+stdlib-only service on its own port that speaks the device's dialect verbatim
+and forwards to the app. It serves **only** `/AIData.aspx`, so the rest of the
+API is never exposed over plain HTTP, and it runs as a compose service
+(`restart: unless-stopped`) so it survives crashes and reboots.
 
 > **Which doc do I want?**
 > This one — the R6 speaks BioMax's proprietary **AIData** protocol.
@@ -144,10 +154,13 @@ network. The payload is just an ID + timestamp.
 | Setting | Value |
 |---|---|
 | Server / Push IP | `116.203.116.141` |
-| Port | `80` |
+| Port | **`8099`** (the `aidata-proxy` port — **not** 80) |
 | HTTPS / SSL | **OFF** |
 | Real-time | **ON** |
 | Cloud ID | `AMDB26013800122` (hardware, don't change) |
+
+Port `8099` matters: on port 80 the device is served by Caddy, whose header
+canonicalisation breaks the ack and leaves the terminal re-uploading forever.
 
 Also required:
 
@@ -242,10 +255,9 @@ outages delay data, they don't lose it.
   identified and `_ack()` is deliberately the single place that owns the
   response, but the command vocabulary is still unknown — it can be captured
   from SmartOffice the same way the ack was.
-- **Header case is unresolved.** Caddy canonicalises `response_code` →
-  `Response_code`. HTTP headers are case-insensitive per spec, but this firmware
-  is primitive (HTTP/1.0, `Mozilla/4.0`) and was never cleanly proven tolerant.
-  If punches stop after routing through Caddy, this is the first suspect; the
-  fallback is to give the device a port that reaches the backend directly.
+- **Header case is settled — the device IS case-sensitive.** Routing it through
+  Caddy was tried and reproducibly re-loops: HTTP headers are case-insensitive
+  per spec, but this firmware is not. Hence `aidata-proxy` and port `8099`.
+  If you ever point the device back at port 80, attendance will silently stall.
 - **One branch.** `BIOMAX_BRANCH_ID` is a single value; multi-branch needs a
   per-`dev_id` → branch map.

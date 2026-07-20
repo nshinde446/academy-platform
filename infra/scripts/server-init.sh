@@ -49,6 +49,10 @@ sudo ufw default allow outgoing
 sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
+# BioMax face terminals push attendance here (aidata-proxy). They speak plain
+# HTTP only and ack on case-sensitive headers Caddy would rewrite, so they can't
+# use 80/443. Serves one path only. See docs/biomax-attendance.md.
+sudo ufw allow 8099/tcp
 sudo ufw --force enable
 
 echo "==> unattended security updates"

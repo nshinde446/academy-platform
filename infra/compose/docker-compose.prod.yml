@@ -92,6 +92,32 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
+  # BioMax R6 face terminals ack on case-sensitive response headers, which Caddy
+  # (Go) canonicalises and thereby breaks — so the device cannot be served
+  # through it. This stdlib-only proxy speaks the device's dialect on its own
+  # port and forwards to `backend` for ingest. It exposes ONLY /AIData.aspx, so
+  # the rest of the API is never reachable over plain HTTP. Point the device's
+  # push settings at <server-ip>:8099. See docs/biomax-attendance.md.
+  aidata-proxy:
+    image: python:3.12-slim
+    restart: unless-stopped
+    command: ["python", "-u", "/app/aidata_proxy.py"]
+    environment:
+      AIDATA_UPSTREAM: http://backend:8000/AIData.aspx
+      AIDATA_PORT: "8099"
+    volumes:
+      - ../aidata-proxy/aidata_proxy.py:/app/aidata_proxy.py:ro
+    depends_on:
+      backend: { condition: service_healthy }
+    ports:
+      # Public on purpose — the terminal pushes here directly (plain HTTP, the
+      # only thing this firmware speaks). Payload is just an ID + timestamp and
+      # the backend still enforces its dev_id allowlist.
+      - "8099:8099"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
   worker:
     image: ${BACKEND_IMAGE}
     restart: unless-stopped
