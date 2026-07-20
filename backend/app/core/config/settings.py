@@ -46,6 +46,17 @@ class Settings(BaseSettings):
             return [o.strip() for o in s.split(",") if o.strip()]
         return v
 
+    # --- Error reporting (Sentry) ---
+    # Empty DSN disables reporting entirely, which is the correct state for
+    # local dev and CI. See app/core/observability/sentry.py.
+    SENTRY_DSN: str = ""
+    # Release identifier, so a stack trace maps to a deployed commit. The
+    # deploy sets this to the image SHA.
+    SENTRY_RELEASE: str = ""
+    # Performance tracing is off by default — errors are the point, and traces
+    # are the expensive part of the quota.
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0
+
     ATTENDANCE_GRACE_PERIOD_MINUTES: int = 10
     ATTENDANCE_DUPLICATE_WINDOW_MINUTES: int = 5
     # Day-attendance (biometric) — see docs/biometric-attendance-design.md.

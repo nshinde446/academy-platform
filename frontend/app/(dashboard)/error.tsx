@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
 
 import { ErrorState } from "@/components/ui/error-state";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,12 @@ export default function DashboardError({
   reset: () => void;
 }) {
   useEffect(() => {
+    // Report before logging: the console line is only visible to whoever has
+    // devtools open, which in production is nobody. `digest` is attached as a
+    // tag so the reference shown to the user resolves to this event.
+    Sentry.captureException(error, {
+      tags: { boundary: "dashboard", digest: error.digest ?? "none" },
+    });
     console.error("[boundary:dashboard]", error);
   }, [error]);
 

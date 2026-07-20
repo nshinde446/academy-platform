@@ -14,6 +14,7 @@ from app.core.middleware.exception_handler import (
 )
 from app.core.middleware.metrics import MetricsMiddleware, get_metrics_text
 from app.core.middleware.request_id import RequestIDMiddleware
+from app.core.observability.sentry import init_sentry
 from app.modules.academic.api.routes import router as academic_router
 from app.modules.academic.api.syllabus_routes import router as syllabus_router
 from app.modules.auth.api.routes import router as auth_router
@@ -46,6 +47,10 @@ from app.modules.teacher.api.routes import router as teacher_router
 
 settings = get_settings()
 logger = setup_logging()
+
+# Must run before the app is constructed so the SDK can patch Starlette/FastAPI
+# internals. No-ops when SENTRY_DSN is unset (local dev, CI).
+init_sentry()
 
 
 @asynccontextmanager
