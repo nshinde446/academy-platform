@@ -174,7 +174,71 @@ async def rebuild_after_ingest(
         await rebuild_daily(
             session, student_id=student_id, branch_id=branch_id, day=day, tz_name=tz_name
         )
+    # Layer 2 follows immediately, so a punch shows up on the lecture roster and
+    # not only in the day register.
+    await project_after_ingest(
+        session, branch_id=branch_id, cells=cells, tz_name=tz_name
+    )
     return len(cells)
+
+
+async def project_after_ingest(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    cells: set[tuple[uuid.UUID, date]],
+    tz_name: str,
+) -> int:
+    """Refresh the lecture rosters touched by an ingest (Layer 1 -> Layer 2).
+
+    Scoped deliberately: only lectures on an affected local day, and only for
+    batches an affected student actually belongs to — projecting the whole
+    branch on every punch would be needlessly expensive. Returns the number of
+    lectures projected.
+
+    ``project_day_onto_lecture`` rewrites every student in the lecture's batch,
+    so each lecture is projected once regardless of how many of its students
+    punched. Manual marks are still never overwritten.
+    """
+    by_day: dict[date, set[uuid.UUID]] = {}
+    for student_id, day in cells:
+        by_day.setdefault(day, set()).add(student_id)
+
+    projected = 0
+    for day, student_ids in by_day.items():
+        start, end = day_bounds(day, tz_name)
+        batch_ids = list((await session.execute(
+            select(StudentBatchMapping.batch_id)
+            .where(
+                StudentBatchMapping.student_id.in_(student_ids),
+                StudentBatchMapping.is_deleted == False,
+            )
+            .distinct()
+        )).scalars().all())
+        if not batch_ids:
+            continue
+
+        lecture_ids = list((await session.execute(
+            select(Lecture.id).where(
+                Lecture.branch_id == branch_id,
+                Lecture.batch_id.in_(batch_ids),
+                Lecture.scheduled_start >= start,
+                Lecture.scheduled_start < end,
+                Lecture.is_deleted == False,
+            )
+        )).scalars().all())
+
+        for lecture_id in lecture_ids:
+            # marked_by=None — nobody marked this, the system derived it.
+            await project_day_onto_lecture(
+                session,
+                lecture_id=lecture_id,
+                branch_id=branch_id,
+                current_user_id=None,
+                tz_name=tz_name,
+            )
+            projected += 1
+    return projected
 
 
 async def _scheduled_batch_ids(
@@ -620,7 +684,7 @@ async def project_day_onto_lecture(
     *,
     lecture_id: uuid.UUID,
     branch_id: uuid.UUID,
-    current_user_id: uuid.UUID,
+    current_user_id: uuid.UUID | None,
     tz_name: str | None = None,
 ) -> list:
     """Write an ``attendance_records`` row for EVERY student in the lecture's
