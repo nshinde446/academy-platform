@@ -1,0 +1,39 @@
+{
+  "$comment": [
+    "Expected GitHub repository configuration, asserted in CI by",
+    ".github/scripts/check_config_drift.py. This file is the source of truth:",
+    "if the live repo diverges from it, the config-drift workflow fails.",
+    "",
+    "This exists because a control described only in prose is indistinguishable",
+    "from one that does not exist. On 2026-07-20 both ARCHITECTURE.md and",
+    "docs/git-and-deploy-workflow.md claimed a required-reviewer gate on prod",
+    "deploys while the `production` environment had no protection rules at all,",
+    "and nothing noticed for as long as the config existed. This job is the",
+    "thing that would have noticed. See docs/delivery-workflow-architecture.md.",
+    "",
+    "To CHANGE the real config: change it on GitHub AND update this file in the",
+    "same PR. The checker asserts only the keys declared here; it ignores repo",
+    "settings and environments this file does not mention (e.g. the Vercel-",
+    "managed Preview/Production environments), so it never fights integrations."
+  ],
+  "branch_protection": {
+    "master": {
+      "required_status_checks": {
+        "strict": true,
+        "contexts": ["backend-tests", "frontend-tests"]
+      },
+      "allow_force_pushes": false,
+      "allow_deletions": false
+    }
+  },
+  "environments": {
+    "production": {
+      "$comment": "Deliberately UNPROTECTED. Code-only deploys ship unattended; the human gate is on migrations only. Do not add required_reviewers here — add it via production-migrations.",
+      "required_reviewers": false
+    },
+    "production-migrations": {
+      "$comment": "The real gate. A deploy touching backend/migrations/versions/ routes here (see deploy-prod.yml detect-migrations).",
+      "required_reviewers": true
+    }
+  }
+}

@@ -1,0 +1,44 @@
+name: Config Drift
+
+# Asserts that live repo configuration (branch protection, deployment
+# environment gates) still matches .github/config-spec.json. Exists because a
+# control described only in prose is indistinguishable from one that does not
+# exist — see docs/delivery-workflow-architecture.md.
+
+on:
+  # Catch drift introduced by hand in repo settings, even when no code changes.
+  schedule:
+    - cron: "17 6 * * *" # 06:17 UTC daily
+  # Verify immediately when the spec, the checker, or the deploy pipeline moves.
+  push:
+    branches: [master]
+    paths:
+      - ".github/config-spec.json"
+      - ".github/scripts/check_config_drift.py"
+      - ".github/workflows/config-drift.yml"
+      - ".github/workflows/deploy-prod.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - ".github/config-spec.json"
+      - ".github/scripts/check_config_drift.py"
+      - ".github/workflows/config-drift.yml"
+      - ".github/workflows/deploy-prod.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  # Reading branch protection requires administration:read. Without it the
+  # checker cannot see the config and fails loudly rather than passing blind.
+  administration: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check config drift
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .github/scripts/check_config_drift.py
