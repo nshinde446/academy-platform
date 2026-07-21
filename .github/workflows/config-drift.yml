@@ -28,9 +28,6 @@ on:
 
 permissions:
   contents: read
-  # Reading branch protection requires administration:read. Without it the
-  # checker cannot see the config and fails loudly rather than passing blind.
-  administration: read
 
 jobs:
   check:
@@ -40,5 +37,13 @@ jobs:
 
       - name: Check config drift
         env:
-          GH_TOKEN: ${{ github.token }}
+          # The built-in Actions token can read environments but NOT branch
+          # protection (that needs repo-admin, which the token cannot be
+          # granted — `administration` is not even a valid workflow permission).
+          # Environment gates — the control that caught the original incident —
+          # are asserted with the built-in token. To also verify branch
+          # protection, add a CONFIG_AUDIT_TOKEN secret: a fine-grained PAT with
+          # `administration: read`. Without it the branch-protection half is
+          # reported as a warning, not a failure.
+          GH_TOKEN: ${{ secrets.CONFIG_AUDIT_TOKEN || github.token }}
         run: python .github/scripts/check_config_drift.py

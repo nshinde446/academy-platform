@@ -30,7 +30,12 @@ SPEC_PATH = Path(__file__).resolve().parents[1] / "config-spec.json"
 
 
 class DriftError(Exception):
-    """A single mismatch between spec and live config."""
+    """The check could not run at all (e.g. a required read was denied)."""
+
+
+# Sentinel: an endpoint the token is not permitted to read. Distinct from a
+# 404 (returns None) and from a real answer.
+PERMISSION_DENIED = object()
 
 
 def _strip_comments(value: Any) -> Any:
@@ -46,8 +51,15 @@ def _strip_comments(value: Any) -> Any:
     return value
 
 
-def _gh_api(path: str) -> Any:
-    """Call `gh api <path>`; return parsed JSON, or None on a 404."""
+def _gh_api(path: str, *, soft_on_denied: bool = False) -> Any:
+    """Call `gh api <path>`.
+
+    Returns parsed JSON, or ``None`` on a 404. On a permission denial (403),
+    returns ``PERMISSION_DENIED`` when ``soft_on_denied`` is set (the caller
+    downgrades it to a warning) and otherwise raises ``DriftError`` — because a
+    check that silently can't see the config is the exact blind spot this job
+    exists to remove.
+    """
     result = subprocess.run(
         ["gh", "api", path],
         capture_output=True,
@@ -57,19 +69,36 @@ def _gh_api(path: str) -> Any:
         stderr = result.stderr.strip()
         if "Not Found" in stderr or "HTTP 404" in stderr:
             return None
-        # A 403 here almost always means the token lacks administration:read.
-        # Treat inability to VERIFY as failure — a check that silently can't
-        # see the config is exactly the blind spot this job exists to remove.
-        raise DriftError(
-            f"could not read `{path}` (is the workflow token granted "
-            f"administration: read?):\n{stderr}"
+        is_denied = (
+            "HTTP 403" in stderr
+            or "Must have admin" in stderr
+            or "Resource not accessible" in stderr
         )
+        if is_denied and soft_on_denied:
+            return PERMISSION_DENIED
+        raise DriftError(f"could not read `{path}`:\n{stderr}")
     return json.loads(result.stdout)
 
 
-def check_branch_protection(spec: dict[str, Any], drifts: list[str]) -> None:
+def check_branch_protection(
+    spec: dict[str, Any], drifts: list[str], warnings: list[str]
+) -> None:
     for branch, want in spec.items():
-        live = _gh_api(f"repos/{REPO}/branches/{branch}/protection")
+        # Reading branch protection requires repo-admin, which the built-in
+        # Actions token cannot be granted. Supply a fine-grained PAT with
+        # `administration: read` as the CONFIG_AUDIT_TOKEN secret to enable this
+        # half of the check; without it, branch protection is left unverified
+        # (loudly) rather than blocking the build.
+        live = _gh_api(
+            f"repos/{REPO}/branches/{branch}/protection", soft_on_denied=True
+        )
+        if live is PERMISSION_DENIED:
+            warnings.append(
+                f"branch `{branch}`: protection NOT verified — the token lacks "
+                f"admin read. Add a CONFIG_AUDIT_TOKEN secret (fine-grained PAT, "
+                f"administration: read) to enable branch-protection drift checks."
+            )
+            continue
         if live is None:
             drifts.append(
                 f"branch `{branch}`: expected protection, but the branch has "
@@ -106,6 +135,9 @@ def check_branch_protection(spec: dict[str, Any], drifts: list[str]) -> None:
 
 def check_environments(spec: dict[str, Any], drifts: list[str]) -> None:
     for env, want in spec.items():
+        # Environments ARE readable with the built-in token, so this half of the
+        # check works with zero configuration — and it is the half that catches
+        # the incident that motivated this job (a missing reviewer gate).
         live = _gh_api(f"repos/{REPO}/environments/{env}")
         if live is None:
             drifts.append(
@@ -137,13 +169,19 @@ def check_environments(spec: dict[str, Any], drifts: list[str]) -> None:
 def main() -> int:
     spec = _strip_comments(json.loads(SPEC_PATH.read_text(encoding="utf-8")))
     drifts: list[str] = []
+    warnings: list[str] = []
 
     try:
-        check_branch_protection(spec.get("branch_protection", {}), drifts)
+        check_branch_protection(
+            spec.get("branch_protection", {}), drifts, warnings
+        )
         check_environments(spec.get("environments", {}), drifts)
     except DriftError as exc:
         print(f"::error::config-drift check could not run: {exc}")
         return 2
+
+    for w in warnings:
+        print(f"::warning::{w}")
 
     if drifts:
         print("::error::Repository config has DRIFTED from .github/config-spec.json:")
@@ -155,7 +193,10 @@ def main() -> int:
         )
         return 1
 
-    print("Repository config matches .github/config-spec.json. No drift.")
+    verified = "environment gates" + (
+        "" if warnings else " and branch protection"
+    )
+    print(f"Repository config matches .github/config-spec.json ({verified}).")
     return 0
 
 

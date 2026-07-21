@@ -190,8 +190,10 @@ Implemented as:
   Inability to *read* the config is itself a failure — a check that can't see
   the config is the blind spot this job removes.
 - **`.github/workflows/config-drift.yml`** — daily, plus on any change to the
-  spec/checker/deploy pipeline, plus manual. Granted `administration: read`
-  because reading branch protection requires it.
+  spec/checker/deploy pipeline, plus manual. Environment gates are asserted with
+  the built-in token; branch protection needs repo-admin read, which the
+  Actions token cannot be granted, so that half is opt-in via a
+  `CONFIG_AUDIT_TOKEN` PAT secret and reported as a warning until one is added.
 
 The spec deliberately records that `production` must stay *unprotected* and
 `production-migrations` must keep its reviewer, so re-introducing a blanket gate
