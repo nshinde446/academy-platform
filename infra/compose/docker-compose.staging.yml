@@ -103,6 +103,14 @@ services:
     # Celery app is app.core.jobs.celery_app:celery_app. Beat (`-B`) is left off
     # here too so staging matches prod.
     command: ["celery", "-A", "app.core.jobs.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
+    # See docker-compose.prod.yml — override the image's HTTP HEALTHCHECK, which
+    # the worker (no web server) can never satisfy, with a Celery liveness ping.
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.jobs.celery_app.celery_app inspect ping -d celery@$$(hostname) || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
