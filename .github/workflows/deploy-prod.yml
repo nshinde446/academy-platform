@@ -198,6 +198,52 @@ jobs:
       # container that won't start. It cannot catch an app that starts and then
       # serves wrongly: a broken nginx rewrite, a frontend 500, auth silently
       # not enforced. So verify from OUTSIDE the box, against the public host.
+      # Runs BEFORE the HTTP probes because it catches a different failure: a
+      # service that never came up at all. The probes only exercise backend and
+      # frontend, so the Celery worker crash-looped through 30 deploys while
+      # every one of them reported green.
+      - name: Verify no service is crash-looping
+        id: verify_services
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
+          script: |
+            set -uo pipefail
+            fail=0
+
+            # `restarting` and `dead` are always wrong. `exited` is not checked
+            # here because the one-shot `migrate` service exits 0 by design.
+            bad="$(docker ps -a \
+              --filter 'label=com.docker.compose.project=academy-prod' \
+              --format '{{.Names}} {{.State}}' \
+              | awk '$2 == "restarting" || $2 == "dead" { print }')"
+
+            if [ -n "$bad" ]; then
+              echo "FAIL  crash-looping or dead containers:"
+              echo "$bad"
+              fail=1
+            fi
+
+            # These two must be up, not merely not-restarting.
+            for svc in academy-prod-backend-1 academy-prod-frontend-1; do
+              state="$(docker inspect -f '{{.State.Status}}' "$svc" 2>/dev/null || echo missing)"
+              if [ "$state" = "running" ]; then
+                echo "PASS  $svc is running"
+              else
+                echo "FAIL  $svc is '$state', wanted running"
+                fail=1
+              fi
+            done
+
+            if [ "$fail" -ne 0 ]; then
+              echo "Service-state verification failed — rolling back."
+              exit 1
+            fi
+            echo "Service-state verification passed."
+
       - name: Verify production
         id: verify
         env:
@@ -239,7 +285,7 @@ jobs:
       # deploy.sh before it overwrote them. Code-only: see rollback.sh for why
       # this is not safe for schema changes, and why those need approval.
       - name: Roll back on failed verification
-        if: failure() && steps.verify.outcome == 'failure'
+        if: failure() && (steps.verify.outcome == 'failure' || steps.verify_services.outcome == 'failure')
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -254,7 +300,7 @@ jobs:
             bash infra/scripts/rollback.sh prod
 
       - name: Warn that a migration deploy was rolled back
-        if: failure() && steps.verify.outcome == 'failure' && needs.detect-migrations.outputs.migrations == 'true'
+        if: failure() && (steps.verify.outcome == 'failure' || steps.verify_services.outcome == 'failure') && needs.detect-migrations.outputs.migrations == 'true'
         run: |
           echo "::error::This deploy carried a MIGRATION and was rolled back to the"
           echo "::error::previous image. The schema was NOT reverted. Verify the"

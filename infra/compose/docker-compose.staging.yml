@@ -99,7 +99,10 @@ services:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    command: ["celery", "-A", "app.worker", "worker", "--loglevel=info", "--concurrency=1"]
+    # See the note in docker-compose.prod.yml — `app.worker` never existed; the
+    # Celery app is app.core.jobs.celery_app:celery_app. Beat (`-B`) is left off
+    # here too so staging matches prod.
+    command: ["celery", "-A", "app.core.jobs.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }

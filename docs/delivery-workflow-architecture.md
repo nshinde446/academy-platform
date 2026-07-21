@@ -93,6 +93,15 @@ failure fails the deploy:
 - `GET /api/v1/<authed>` without a cookie → 401 (backend reachable through the
   proxy; auth is enforced, not merely present)
 - backend healthcheck → 200 on the internal port
+- no container in the compose project is `restarting` or `dead`, and backend
+  and frontend are both `running`
+
+That last check exists because HTTP probes only exercise the services that
+answer HTTP. The Celery worker crash-looped on a bad `-A` module path through
+roughly thirty deploys, and every one of them verified green: `deploy.sh` waits
+only on the backend healthcheck, and both probes hit backend/frontend. A
+service that never starts is invisible to a check that only asks whether the
+site responds.
 
 ### 6. Rollback is a first-class path
 
@@ -100,6 +109,20 @@ Images are already SHA-tagged, which is the hard part. What was missing is a
 recorded previous-good tag and a one-command path back to it. On verification
 failure the pipeline redeploys the last known-good images automatically; the
 same path is available manually via `workflow_dispatch`.
+
+**Rollback must not depend on the registry.** The first hand-run drill
+(2026-07-21) failed: `rollback.sh` execs `deploy.sh`, which pulled before
+restarting, and the hand-run path has no `GHCR_TOKEN`, so the pull was denied
+and the rollback aborted with exit 18. The pull was never necessary — a
+rollback target was running minutes earlier and is by definition already on the
+host. `deploy.sh` now continues past a pull failure when it can prove both
+images are present locally, and fails loudly when it cannot.
+
+That drill also exposed the failure mode to check for: `deploy.sh` rewrites
+`.env.<env>` and `.prev-images.<env>` *before* restarting anything, so an abort
+between those two points leaves the env file naming images that are not
+running, and a later `docker compose up` would silently switch releases.
+Reconcile both files against `docker ps` after any failed rollback.
 
 **Code rollback is trivial. Schema rollback is not.** That asymmetry is why
 migrations get their own rules.
