@@ -144,6 +144,18 @@ services:
     # that is a production behaviour change that deserves its own decision, not
     # a side effect of fixing a crash loop. See docs/git-and-deploy-workflow.md.
     command: ["celery", "-A", "app.core.jobs.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    # Override the image's inherited HEALTHCHECK. backend/Dockerfile defines a
+    # `curl http://127.0.0.1:8000/health` probe for the web server; the worker
+    # runs no HTTP server, so that probe can never pass and the container sat
+    # permanently `unhealthy` the moment it finally started. Ask Celery instead:
+    # `inspect ping` against this container's own node returns 0 only if the
+    # worker is alive and talking to the broker.
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.jobs.celery_app.celery_app inspect ping -d celery@$$(hostname) || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
