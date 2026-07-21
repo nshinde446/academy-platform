@@ -178,8 +178,26 @@ The control that would have caught the missing approval gate: a CI job that
 asserts live repository configuration matches a committed spec — branch
 protection, required status checks, environment protection rules.
 
-Any divergence between what this repo *claims* and what GitHub *enforces* should
-fail a build, not wait to be discovered.
+Any divergence between what this repo *claims* and what GitHub *enforces*
+fails a build, rather than waiting to be discovered.
+
+Implemented as:
+- **`.github/config-spec.json`** — the committed source of truth. To change the
+  real config, change it on GitHub *and* update this file in the same PR.
+- **`.github/scripts/check_config_drift.py`** — reads live config via `gh api`
+  and fails on any mismatch. Asserts only keys the spec declares, so
+  integration-managed environments (Vercel's Preview/Production) never trip it.
+  Inability to *read* the config is itself a failure — a check that can't see
+  the config is the blind spot this job removes.
+- **`.github/workflows/config-drift.yml`** — daily, plus on any change to the
+  spec/checker/deploy pipeline, plus manual. Environment gates are asserted with
+  the built-in token; branch protection needs repo-admin read, which the
+  Actions token cannot be granted, so that half is opt-in via a
+  `CONFIG_AUDIT_TOKEN` PAT secret and reported as a warning until one is added.
+
+The spec deliberately records that `production` must stay *unprotected* and
+`production-migrations` must keep its reviewer, so re-introducing a blanket gate
+(or dropping the migration gate) both count as drift.
 
 ---
 
@@ -203,7 +221,7 @@ path of an incident fix.
 | 1 | Error reporting (Sentry, both tiers, PII-scrubbed) | see `docs/platform-hardening-roadmap.md` H3 |
 | 2 | Post-deploy verification + auto-rollback | this change |
 | 3 | Migration-gated prod approval + corrected docs | this change |
-| 4 | Config-drift assertion job | planned |
+| 4 | Config-drift assertion job | done — `.github/config-spec.json` + checker + workflow |
 | 5 | Fast/full test split | planned |
 | 6 | Staging in the path + e2e smoke | planned |
 | 7 | Migration rules + verified backup restores | partially — rules documented, backup wiring planned |
