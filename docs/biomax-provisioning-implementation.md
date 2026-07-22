@@ -72,6 +72,37 @@ there — it becomes the source of truth the code cites.
 > If Phase 0 fails to produce a confirmed format, **the feature is not
 > buildable** on our side and the plan stops here. Do not proceed on guesses.
 
+### 0.4 Runbook — flipping relay mode for a live session
+
+Relay mode ships in `aidata-proxy` (the `AIDATA_RELAY_UPSTREAM` toggle, off by
+default). To run a capture session, on the VPS (`/srv/academy/repo`):
+
+```bash
+# 1. Make sure the proxy has the relay-capable code.
+git -C /srv/academy/repo pull
+
+# 2. Turn relay ON for one service only, pointed at SmartOffice.
+AIDATA_RELAY_UPSTREAM=http://103.171.50.109:8080/AIData.aspx \
+  docker compose -p academy-prod -f infra/compose/docker-compose.prod.yml \
+  up -d --no-deps aidata-proxy
+docker logs --tail 3 academy-prod-aidata-proxy-1   # should log "RELAY/CAPTURE MODE"
+
+# 3. Watch captures while an admin adds/edits/deletes a user in SmartOffice.
+docker logs -f academy-prod-aidata-proxy-1 2>&1 | grep CAPTURE
+
+# 4. When done, turn relay OFF and return to normal ingest.
+docker compose -p academy-prod -f infra/compose/docker-compose.prod.yml \
+  up -d --no-deps --force-recreate aidata-proxy
+```
+
+Each `CAPTURE` line is one biometric-redacted JSON leg
+(`device->smartoffice` / `smartoffice->device`) with status, original-case
+headers, and the redacted body — that is where the `cmd_code` command appears.
+
+**Session is interactive and on-site:** it needs the device on the institute
+LAN, SSH to the VPS with the local key, and a person adding a user in
+SmartOffice's admin UI — it cannot run as an autonomous/cloud job.
+
 ---
 
 ## Phase 1 — data model
