@@ -1,0 +1,49 @@
+name: Config Drift
+
+# Asserts that live repo configuration (branch protection, deployment
+# environment gates) still matches .github/config-spec.json. Exists because a
+# control described only in prose is indistinguishable from one that does not
+# exist — see docs/delivery-workflow-architecture.md.
+
+on:
+  # Catch drift introduced by hand in repo settings, even when no code changes.
+  schedule:
+    - cron: "17 6 * * *" # 06:17 UTC daily
+  # Verify immediately when the spec, the checker, or the deploy pipeline moves.
+  push:
+    branches: [master]
+    paths:
+      - ".github/config-spec.json"
+      - ".github/scripts/check_config_drift.py"
+      - ".github/workflows/config-drift.yml"
+      - ".github/workflows/deploy-prod.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - ".github/config-spec.json"
+      - ".github/scripts/check_config_drift.py"
+      - ".github/workflows/config-drift.yml"
+      - ".github/workflows/deploy-prod.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check config drift
+        env:
+          # The built-in Actions token can read environments but NOT branch
+          # protection (that needs repo-admin, which the token cannot be
+          # granted — `administration` is not even a valid workflow permission).
+          # Environment gates — the control that caught the original incident —
+          # are asserted with the built-in token. To also verify branch
+          # protection, add a CONFIG_AUDIT_TOKEN secret: a fine-grained PAT with
+          # `administration: read`. Without it the branch-protection half is
+          # reported as a warning, not a failure.
+          GH_TOKEN: ${{ secrets.CONFIG_AUDIT_TOKEN || github.token }}
+        run: python .github/scripts/check_config_drift.py

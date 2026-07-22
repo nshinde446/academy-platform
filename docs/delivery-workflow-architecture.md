@@ -93,6 +93,15 @@ failure fails the deploy:
 - `GET /api/v1/<authed>` without a cookie → 401 (backend reachable through the
   proxy; auth is enforced, not merely present)
 - backend healthcheck → 200 on the internal port
+- no container in the compose project is `restarting` or `dead`, and backend
+  and frontend are both `running`
+
+That last check exists because HTTP probes only exercise the services that
+answer HTTP. The Celery worker crash-looped on a bad `-A` module path through
+roughly thirty deploys, and every one of them verified green: `deploy.sh` waits
+only on the backend healthcheck, and both probes hit backend/frontend. A
+service that never starts is invisible to a check that only asks whether the
+site responds.
 
 ### 6. Rollback is a first-class path
 
@@ -100,6 +109,20 @@ Images are already SHA-tagged, which is the hard part. What was missing is a
 recorded previous-good tag and a one-command path back to it. On verification
 failure the pipeline redeploys the last known-good images automatically; the
 same path is available manually via `workflow_dispatch`.
+
+**Rollback must not depend on the registry.** The first hand-run drill
+(2026-07-21) failed: `rollback.sh` execs `deploy.sh`, which pulled before
+restarting, and the hand-run path has no `GHCR_TOKEN`, so the pull was denied
+and the rollback aborted with exit 18. The pull was never necessary — a
+rollback target was running minutes earlier and is by definition already on the
+host. `deploy.sh` now continues past a pull failure when it can prove both
+images are present locally, and fails loudly when it cannot.
+
+That drill also exposed the failure mode to check for: `deploy.sh` rewrites
+`.env.<env>` and `.prev-images.<env>` *before* restarting anything, so an abort
+between those two points leaves the env file naming images that are not
+running, and a later `docker compose up` would silently switch releases.
+Reconcile both files against `docker ps` after any failed rollback.
 
 **Code rollback is trivial. Schema rollback is not.** That asymmetry is why
 migrations get their own rules.
@@ -155,8 +178,26 @@ The control that would have caught the missing approval gate: a CI job that
 asserts live repository configuration matches a committed spec — branch
 protection, required status checks, environment protection rules.
 
-Any divergence between what this repo *claims* and what GitHub *enforces* should
-fail a build, not wait to be discovered.
+Any divergence between what this repo *claims* and what GitHub *enforces*
+fails a build, rather than waiting to be discovered.
+
+Implemented as:
+- **`.github/config-spec.json`** — the committed source of truth. To change the
+  real config, change it on GitHub *and* update this file in the same PR.
+- **`.github/scripts/check_config_drift.py`** — reads live config via `gh api`
+  and fails on any mismatch. Asserts only keys the spec declares, so
+  integration-managed environments (Vercel's Preview/Production) never trip it.
+  Inability to *read* the config is itself a failure — a check that can't see
+  the config is the blind spot this job removes.
+- **`.github/workflows/config-drift.yml`** — daily, plus on any change to the
+  spec/checker/deploy pipeline, plus manual. Environment gates are asserted with
+  the built-in token; branch protection needs repo-admin read, which the
+  Actions token cannot be granted, so that half is opt-in via a
+  `CONFIG_AUDIT_TOKEN` PAT secret and reported as a warning until one is added.
+
+The spec deliberately records that `production` must stay *unprotected* and
+`production-migrations` must keep its reviewer, so re-introducing a blanket gate
+(or dropping the migration gate) both count as drift.
 
 ---
 
@@ -180,7 +221,7 @@ path of an incident fix.
 | 1 | Error reporting (Sentry, both tiers, PII-scrubbed) | see `docs/platform-hardening-roadmap.md` H3 |
 | 2 | Post-deploy verification + auto-rollback | this change |
 | 3 | Migration-gated prod approval + corrected docs | this change |
-| 4 | Config-drift assertion job | planned |
+| 4 | Config-drift assertion job | done — `.github/config-spec.json` + checker + workflow |
 | 5 | Fast/full test split | planned |
 | 6 | Staging in the path + e2e smoke | planned |
 | 7 | Migration rules + verified backup restores | partially — rules documented, backup wiring planned |

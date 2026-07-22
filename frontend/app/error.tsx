@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
 
 import { ErrorState } from "@/components/ui/error-state";
 
@@ -17,9 +18,10 @@ export default function RootError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Client-side crashes never reach the server logs on their own. Until a
-    // real reporter (Sentry/OTel) is wired up, at least land it in the browser
-    // console with a stable prefix so it is greppable in a screen-share.
+    // Client-side crashes never reach the server logs on their own.
+    Sentry.captureException(error, {
+      tags: { boundary: "root", digest: error.digest ?? "none" },
+    });
     console.error("[boundary:root]", error);
   }, [error]);
 

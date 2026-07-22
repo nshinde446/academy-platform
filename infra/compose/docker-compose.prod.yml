@@ -132,7 +132,30 @@ services:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    command: ["celery", "-A", "app.worker", "worker", "--loglevel=info", "--concurrency=2"]
+    # The Celery app lives at app.core.jobs.celery_app:celery_app. This pointed
+    # at `app.worker`, a module that has never existed, so the container failed
+    # on start and restart:unless-stopped looped it forever (RestartCount was 30
+    # in prod, ~4 weeks in staging). Nothing caught it: deploy.sh waits only on
+    # the backend healthcheck, and the post-deploy probes only hit
+    # backend/frontend. Every background task has therefore never run.
+    #
+    # Deliberately WITHOUT `-B`. Adding the beat scheduler also starts the
+    # nightly absent sweep, which writes attendance rows for real students —
+    # that is a production behaviour change that deserves its own decision, not
+    # a side effect of fixing a crash loop. See docs/git-and-deploy-workflow.md.
+    command: ["celery", "-A", "app.core.jobs.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    # Override the image's inherited HEALTHCHECK. backend/Dockerfile defines a
+    # `curl http://127.0.0.1:8000/health` probe for the web server; the worker
+    # runs no HTTP server, so that probe can never pass and the container sat
+    # permanently `unhealthy` the moment it finally started. Ask Celery instead:
+    # `inspect ping` against this container's own node returns 0 only if the
+    # worker is alive and talking to the broker.
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.jobs.celery_app.celery_app inspect ping -d celery@$$(hostname) || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }

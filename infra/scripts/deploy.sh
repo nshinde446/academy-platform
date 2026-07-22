@@ -81,13 +81,40 @@ grep -vE '^(BACKEND_IMAGE|FRONTEND_IMAGE)=' "$ENV_FILE" > "$tmp" || true
 mv "$tmp" "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
-echo "==> Logging into GHCR (token comes from CI env)"
 if [[ -n "${GHCR_TOKEN:-}" ]]; then
+    echo "==> Logging into GHCR"
     echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-token}" --password-stdin
+else
+    # Say so plainly. This previously printed "Logging into GHCR" unconditionally
+    # and then skipped the login, which sent a hand-run rollback looking for a
+    # credential problem that the log had just claimed was handled.
+    echo "==> No GHCR_TOKEN in env — skipping login, relying on stored credentials"
 fi
 
 echo "==> docker compose pull (backend: $BACKEND_IMAGE, frontend: $FRONTEND_IMAGE)"
-docker compose -p "$PROJECT" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" pull
+# A pull failure is only fatal if we don't already have the images. A rollback
+# targets images that were running minutes ago, so they are always present
+# locally — yet the pull ran first and killed the rollback when the box had no
+# usable GHCR credential (the hand-run path has no token). Drilled 2026-07-21:
+# 'error from registry: denied', exit 18, before anything was restarted.
+if ! docker compose -p "$PROJECT" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" pull; then
+    echo "==> pull failed — checking whether both images are already local"
+    missing=0
+    for img in "$BACKEND_IMAGE" "$FRONTEND_IMAGE"; do
+        if docker image inspect "$img" >/dev/null 2>&1; then
+            echo "    present: $img"
+        else
+            echo "    MISSING: $img" >&2
+            missing=1
+        fi
+    done
+    if (( missing )); then
+        echo "FAIL: pull failed and the images are not on this host." >&2
+        echo "      Check GHCR credentials (docker login ghcr.io) or the tag." >&2
+        exit 6
+    fi
+    echo "==> continuing with local images (expected for a rollback)"
+fi
 
 echo "==> docker compose up -d (migrations run as one-shot, then backend/worker restart)"
 if ! docker compose -p "$PROJECT" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --remove-orphans; then

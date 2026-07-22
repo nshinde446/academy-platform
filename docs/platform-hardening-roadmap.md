@@ -33,7 +33,50 @@ any unhandled throw unwound to a blank white screen.
 - `app/(dashboard)/loading.tsx`, `app/not-found.tsx`.
 - Shared `components/ui/error-state.tsx` + tests.
 
-## H3 — Error reporting
+## H3 — Error reporting ✅ code shipped 2026-07-21 · needs secrets to activate
+
+Sentry wired on both tiers. **Inert until the DSNs are configured** — the SDK
+no-ops without one, by design, so the code could merge before the secrets
+existed.
+
+Implemented:
+- Frontend: `instrumentation-client.ts` (browser) and `instrumentation.ts`
+  (`register` + `onRequestError` for server renders), per the Next 16 file
+  conventions.
+- All three error boundaries call `Sentry.captureException` with the `digest`
+  as a tag, so the reference shown to the user resolves to the event.
+  `global-error.tsx` wraps the call in try/catch — it is the boundary that must
+  render when everything else has failed.
+- Backend: `app/core/observability/sentry.py`, initialised in `main.py` before
+  the app is constructed, tagged with the existing `X-Request-ID` so a frontend
+  report and its backend request join up.
+- **PII scrubbing on both tiers**, with matching key lists and 26 tests.
+  `send_default_pii` off; cookies and headers dropped wholesale; query strings
+  stripped from URLs; user context reduced to a bare id.
+- Source maps uploaded at build then deleted from the bundle; `SENTRY_AUTH_TOKEN`
+  passed as a BuildKit secret, never an ARG (ARGs persist in image history).
+
+### To activate
+
+Create two Sentry projects (browser + Python), then set:
+
+| Where | Variable |
+|---|---|
+| Frontend **build args** (baked into the bundle) | `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_ENVIRONMENT`, `NEXT_PUBLIC_SENTRY_RELEASE` |
+| Frontend build, source maps | `SENTRY_ORG`, `SENTRY_PROJECT`, secret `sentry_auth_token` |
+| Frontend server runtime | `SENTRY_DSN` |
+| Backend runtime (`.env.prod`) | `SENTRY_DSN`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` |
+
+`NEXT_PUBLIC_*` must be set at **build** time — setting them at runtime does
+nothing, because Next inlines them into the client bundle.
+
+Still outstanding: passing these through `deploy-prod.yml`'s `build-frontend`
+job, and configuring one real alert. Tracing is deliberately off (`0.0`) —
+errors are the point and traces are the expensive part of the quota.
+
+---
+
+## H3 (original scope, for reference)
 
 **The boundaries from H2 currently fail silently from our side.** The user gets
 a styled panel; we never learn the crash happened. The `digest` shown to the
