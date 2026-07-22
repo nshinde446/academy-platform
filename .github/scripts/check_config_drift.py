@@ -10,11 +10,17 @@ control that does not exist. This is the check that catches the divergence
 instead of leaving it to be discovered by accident. See
 docs/delivery-workflow-architecture.md.
 
-Reads config via the `gh` CLI, which the workflow authenticates with a token
-granted `administration: read` (needed to read branch protection). Only keys
-present in the spec are asserted; anything the spec does not mention is ignored,
-so repo settings and integration-managed environments (Vercel's Preview /
-Production) never trigger a false alarm.
+Reads config via the `gh` CLI. Environments are readable with the built-in
+Actions token. The *classic* branch-protection endpoint is not: it is
+unreadable by fine-grained PATs entirely (a GitHub limitation — even with
+`administration: read`, which only unlocks the newer rulesets API) and needs a
+classic `repo`-scope token. That trade (a broad, long-lived credential to guard
+a low-probability solo-repo event) isn't worth it, so branch protection is left
+as a warning by design. See `docs/delivery-workflow-architecture.md`.
+
+Only keys present in the spec are asserted; anything the spec does not mention
+is ignored, so repo settings and integration-managed environments (Vercel's
+Preview / Production) never trigger a false alarm.
 """
 
 from __future__ import annotations
@@ -84,19 +90,24 @@ def check_branch_protection(
     spec: dict[str, Any], drifts: list[str], warnings: list[str]
 ) -> None:
     for branch, want in spec.items():
-        # Reading branch protection requires repo-admin, which the built-in
-        # Actions token cannot be granted. Supply a fine-grained PAT with
-        # `administration: read` as the CONFIG_AUDIT_TOKEN secret to enable this
-        # half of the check; without it, branch protection is left unverified
-        # (loudly) rather than blocking the build.
+        # The classic branch-protection endpoint is unreadable by both the
+        # built-in Actions token AND fine-grained PATs (the latter reach only
+        # the newer rulesets API, even with `administration: read`). Only a
+        # classic `repo`-scope token can read it — a broad credential we've
+        # chosen not to keep for a low-value check. So this half is left
+        # unverified (loudly) rather than blocking the build. If master ever
+        # migrates from classic protection to a ruleset, switch this to read
+        # `repos/{REPO}/rulesets` and the existing read-only PAT will work.
         live = _gh_api(
             f"repos/{REPO}/branches/{branch}/protection", soft_on_denied=True
         )
         if live is PERMISSION_DENIED:
             warnings.append(
-                f"branch `{branch}`: protection NOT verified — the token lacks "
-                f"admin read. Add a CONFIG_AUDIT_TOKEN secret (fine-grained PAT, "
-                f"administration: read) to enable branch-protection drift checks."
+                f"branch `{branch}`: protection NOT verified (by design) — the "
+                f"classic branch-protection API is unreadable by the Actions "
+                f"token and by fine-grained PATs; only a classic `repo`-scope "
+                f"token can read it, which isn't worth keeping for this check. "
+                f"Env gates (the higher-value half) are verified above."
             )
             continue
         if live is None:
