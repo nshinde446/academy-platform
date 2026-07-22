@@ -105,6 +105,13 @@ services:
     environment:
       AIDATA_UPSTREAM: http://backend:8000/AIData.aspx
       AIDATA_PORT: "8099"
+      # CAPTURE MODE ONLY — leave UNSET in production. Set to BioMax's own
+      # SmartOffice receiver to relay the device's traffic through it and log
+      # SmartOffice's server->device commands (Phase 2 provisioning oracle; see
+      # docs/biomax-provisioning-implementation.md §0). Biometric blobs are
+      # redacted in the capture log. Recreate this one service to flip it, then
+      # unset + recreate to return to normal ingest.
+      # AIDATA_RELAY_UPSTREAM: http://103.171.50.109:8080/AIData.aspx
     volumes:
       - ../aidata-proxy/aidata_proxy.py:/app/aidata_proxy.py:ro
     depends_on:
