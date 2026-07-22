@@ -191,9 +191,20 @@ Implemented as:
   the config is the blind spot this job removes.
 - **`.github/workflows/config-drift.yml`** — daily, plus on any change to the
   spec/checker/deploy pipeline, plus manual. Environment gates are asserted with
-  the built-in token; branch protection needs repo-admin read, which the
-  Actions token cannot be granted, so that half is opt-in via a
-  `CONFIG_AUDIT_TOKEN` PAT secret and reported as a warning until one is added.
+  the built-in token — this is the half that catches the incident that motivated
+  the job, and it needs zero configuration.
+
+Branch protection is **left as a warning by design**, not for want of a token.
+The *classic* branch-protection REST API is unreadable by the Actions token
+*and* by fine-grained PATs (those reach only the newer rulesets API, even with
+`administration: read` — confirmed the hard way on 2026-07-22). The only token
+that can read it is a classic `repo`-scope PAT, which grants broad, long-lived
+read/write access to the whole repo — a strictly worse security posture than
+the narrow, low-probability gap it would close on a solo repo. If collaborators
+are ever added, migrate `master` from classic branch protection to a
+**repository ruleset** and point the checker at `repos/<repo>/rulesets`; a
+fine-grained *read-only* PAT (`CONFIG_AUDIT_TOKEN`, already an optional override)
+reads that API cleanly.
 
 The spec deliberately records that `production` must stay *unprotected* and
 `production-migrations` must keep its reviewer, so re-introducing a blanket gate

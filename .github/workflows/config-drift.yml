@@ -37,13 +37,14 @@ jobs:
 
       - name: Check config drift
         env:
-          # The built-in Actions token can read environments but NOT branch
-          # protection (that needs repo-admin, which the token cannot be
-          # granted — `administration` is not even a valid workflow permission).
           # Environment gates — the control that caught the original incident —
-          # are asserted with the built-in token. To also verify branch
-          # protection, add a CONFIG_AUDIT_TOKEN secret: a fine-grained PAT with
-          # `administration: read`. Without it the branch-protection half is
-          # reported as a warning, not a failure.
+          # are asserted with the built-in token (`administration` is not even a
+          # valid workflow permission). The classic branch-protection API cannot
+          # be read here at all: the Actions token can't, and a fine-grained PAT
+          # can't either (it reaches only the rulesets API). Reading it would
+          # need a broad classic `repo`-scope token, which isn't worth keeping
+          # for this check, so branch protection is reported as a warning by
+          # design. CONFIG_AUDIT_TOKEN remains an optional override — useful if
+          # master ever migrates to a ruleset (then a read-only PAT suffices).
           GH_TOKEN: ${{ secrets.CONFIG_AUDIT_TOKEN || github.token }}
         run: python .github/scripts/check_config_drift.py
