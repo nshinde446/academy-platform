@@ -145,9 +145,10 @@ A `dev_id` outside the allowlist gets **401** — fail-safe by default.
 ## 3. Device configuration
 
 The R6 has no "domain name" field (IP only) and won't do TLS to a bare IP, so it
-pushes **plain HTTP on port 80** to the server's IP. Caddy routes only the device
-endpoints to the backend; trust comes from the `dev_id` allowlist, not the
-network. The payload is just an ID + timestamp.
+pushes **plain HTTP directly to `aidata-proxy` on port `8099`** — Caddy is not in
+the path at all (it canonicalises the ack header and breaks the device; see §2).
+Trust comes from the `dev_id` allowlist, not the network. The payload is just an
+ID + timestamp.
 
 **Menu → Comm / Network → Push Settings:**
 
