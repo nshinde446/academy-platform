@@ -3,6 +3,12 @@ name: Deploy / staging
 on:
   push:
     branches: [staging]
+  # Nightly sync so staging never rots behind master. The prod deploy never
+  # touches the staging stack and staging tracks its own branch, so without
+  # this the branch (and the running containers) silently fall behind — which
+  # is exactly how the staging worker ended up 5 weeks / 94 commits stale.
+  schedule:
+    - cron: "0 2 * * *" # 02:00 UTC = 07:30 IST, off-hours
   workflow_dispatch: {}
 
 concurrency:
@@ -10,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write # the nightly sync fast-forwards the `staging` branch
   packages: write
 
 env:
@@ -23,11 +29,47 @@ jobs:
     environment: staging
     steps:
       - uses: actions/checkout@v4
+        with:
+          # A scheduled run deploys the tip of master; a push/dispatch deploys
+          # the ref that triggered it (default master for dispatch).
+          ref: ${{ github.event_name == 'schedule' && 'master' || github.ref }}
+          fetch-depth: 0
+
+      # Skip the whole build+deploy when staging already matches the target
+      # commit (a quiet day with no new master commits) so the nightly run
+      # isn't a pointless rebuild + container recreate.
+      - name: Determine drift
+        id: drift
+        run: |
+          git fetch --quiet origin staging || true
+          deployed=$(git rev-parse origin/staging 2>/dev/null || echo none)
+          target=$(git rev-parse HEAD)
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          if [ "$github_event" = "schedule" ] && [ "$deployed" = "$target" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Staging already at $target — nothing to deploy."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Deploying $target (was $deployed)."
+          fi
+        env:
+          github_event: ${{ github.event_name }}
+
+      # Advance the `staging` branch to the commit we're about to deploy, so the
+      # branch keeps mirroring what actually runs on the box (the SSH step below
+      # resets the VPS repo to origin/staging). Fast-forward only — a genuine
+      # divergence fails loudly here rather than being force-pushed away. Pushing
+      # with GITHUB_TOKEN deliberately does NOT re-trigger this workflow.
+      - name: Sync staging branch to target
+        if: steps.drift.outputs.changed == 'true' && github.event_name != 'push'
+        run: git push origin HEAD:staging
 
       - name: Set up Docker Buildx
+        if: steps.drift.outputs.changed == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
+        if: steps.drift.outputs.changed == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -35,28 +77,31 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & push backend image
+        if: steps.drift.outputs.changed == 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           push: true
           tags: |
             ${{ env.BACKEND_IMAGE_NAME }}:staging
-            ${{ env.BACKEND_IMAGE_NAME }}:staging-${{ github.sha }}
+            ${{ env.BACKEND_IMAGE_NAME }}:staging-${{ steps.drift.outputs.target }}
           cache-from: type=gha,scope=backend-staging
           cache-to: type=gha,mode=max,scope=backend-staging
 
       - name: Build & push frontend image
+        if: steps.drift.outputs.changed == 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
           push: true
           tags: |
             ${{ env.FRONTEND_IMAGE_NAME }}:staging
-            ${{ env.FRONTEND_IMAGE_NAME }}:staging-${{ github.sha }}
+            ${{ env.FRONTEND_IMAGE_NAME }}:staging-${{ steps.drift.outputs.target }}
           cache-from: type=gha,scope=frontend-staging
           cache-to: type=gha,mode=max,scope=frontend-staging
 
       - name: SSH deploy to staging
+        if: steps.drift.outputs.changed == 'true'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -71,8 +116,8 @@ jobs:
             export GHCR_USER='${{ github.actor }}'
             export GHCR_TOKEN='${{ secrets.GITHUB_TOKEN }}'
             bash infra/scripts/deploy.sh staging \
-                ${{ env.BACKEND_IMAGE_NAME }}:staging-${{ github.sha }} \
-                ${{ env.FRONTEND_IMAGE_NAME }}:staging-${{ github.sha }}
+                ${{ env.BACKEND_IMAGE_NAME }}:staging-${{ steps.drift.outputs.target }} \
+                ${{ env.FRONTEND_IMAGE_NAME }}:staging-${{ steps.drift.outputs.target }}
             # Reclaim disk from superseded images once the new ones are running
             # (only after a successful deploy — set -e above). Mirrors prod.
             docker image prune -af
