@@ -642,6 +642,78 @@ async def branch_defaulters(
     return out
 
 
+async def branch_roster_attendance(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    student_ids: list[uuid.UUID],
+    tz_name: str | None = None,
+) -> dict[uuid.UUID, float]:
+    """All-time canonical attendance % per student for the branch roster.
+
+    Same definition as :func:`monthly_summary` (present working days /
+    working days, decision 1) but batched over the whole roster and
+    unbounded in time — the single source of truth for the roster/top-KPI
+    attendance number so it can never drift from the biometric heatmap,
+    defaulter board, or institute overview, all of which read Layer 1.
+
+    A student not present here (no working days) gets no entry; the caller
+    treats a missing student as 0.0.
+    """
+    if not student_ids:
+        return {}
+    tz_name = tz_name or await branch_timezone(session, branch_id)
+
+    # student -> their batches (union of working days, matching monthly_summary
+    # for the rare multi-batch student).
+    student_batches: dict[uuid.UUID, set[uuid.UUID]] = {}
+    all_batch_ids: set[uuid.UUID] = set()
+    for sid, bid in (await session.execute(
+        select(StudentBatchMapping.student_id, StudentBatchMapping.batch_id).where(
+            StudentBatchMapping.student_id.in_(student_ids),
+            StudentBatchMapping.is_deleted == False,
+        )
+    )).all():
+        student_batches.setdefault(sid, set()).add(bid)
+        all_batch_ids.add(bid)
+    if not all_batch_ids:
+        return {}
+
+    # batch -> set of local working dates (>=1 scheduled lecture that day).
+    batch_working: dict[uuid.UUID, set[date]] = {}
+    for bid, start in (await session.execute(
+        select(Lecture.batch_id, Lecture.scheduled_start).where(
+            Lecture.batch_id.in_(all_batch_ids),
+            Lecture.branch_id == branch_id,
+            Lecture.is_deleted == False,
+        )
+    )).all():
+        batch_working.setdefault(bid, set()).add(local_date_of(start, tz_name))
+
+    # student -> set of present local dates (PRESENT / LATE).
+    present_dates: dict[uuid.UUID, set[date]] = {}
+    for sid, day in (await session.execute(
+        select(DailyAttendance.student_id, DailyAttendance.attendance_date).where(
+            DailyAttendance.student_id.in_(student_ids),
+            DailyAttendance.branch_id == branch_id,
+            DailyAttendance.day_status.in_(_PRESENT_STATUSES),
+            DailyAttendance.is_deleted == False,
+        )
+    )).all():
+        present_dates.setdefault(sid, set()).add(day)
+
+    out: dict[uuid.UUID, float] = {}
+    for sid in student_ids:
+        working: set[date] = set()
+        for bid in student_batches.get(sid, ()):  # noqa: SIM118 — set, not dict
+            working |= batch_working.get(bid, set())
+        if not working:
+            continue
+        present = len(working & present_dates.get(sid, set()))
+        out[sid] = round(present / len(working) * 100, 1)
+    return out
+
+
 async def monthly_summary(
     session: AsyncSession,
     *,

@@ -156,6 +156,24 @@ async def test_defaulters_below_threshold(client: AsyncClient, seed_data, db_ses
     assert resp.json() == []
 
 
+async def test_roster_attendance_is_biometric_layer1(
+    client: AsyncClient, seed_data, db_session
+):
+    """The /students/with-stats attendance_pct is the canonical Layer-1 %
+    (biometric whole-day presence), the same source the summary/matrix/
+    defaulter views read — not a per-lecture Layer-2 count. Present 1 of 2
+    working days -> 50%, agreeing with test_summary_percentage above."""
+    await _seed_two_working_days_present_one(seed_data, db_session)
+
+    await _login(client)
+    resp = await client.get(
+        "/api/v1/students/with-stats", params={"branch_id": BRANCH_A}
+    )
+    assert resp.status_code == 200
+    row = next(r for r in resp.json() if r["id"] == STUDENT_ID)
+    assert row["attendance_pct"] == 50.0
+
+
 async def test_branch_summary(client: AsyncClient, seed_data, db_session):
     await _seed_two_working_days_present_one(seed_data, db_session)
 
