@@ -98,3 +98,76 @@ async def test_summary_percentage(client: AsyncClient, seed_data, db_session):
     assert body["working_days"] == 2
     assert body["present_days"] == 1
     assert body["attendance_pct"] == 50.0
+
+
+async def _seed_two_working_days_present_one(seed_data, db_session):
+    """One student in the batch, two lecture days (22nd/23rd), present only the
+    22nd -> 50% over the range. Shared by the matrix/defaulter tests."""
+    db_session.add(StudentBatchMapping(
+        student_id=seed_data["student"].id, batch_id=seed_data["batch"].id,
+        branch_id=seed_data["branch_a"].id, status="active", is_deleted=False,
+    ))
+    db_session.add(_lecture(seed_data, start=datetime(2026, 6, 22, 4, 30, tzinfo=timezone.utc)))
+    db_session.add(_lecture(seed_data, start=datetime(2026, 6, 23, 4, 30, tzinfo=timezone.utc)))
+    db_session.add(_day_row(seed_data, d=date(2026, 6, 22), status="PRESENT"))
+    await db_session.commit()
+
+
+async def test_batch_matrix(client: AsyncClient, seed_data, db_session):
+    await _seed_two_working_days_present_one(seed_data, db_session)
+
+    await _login(client)
+    resp = await client.get("/api/v1/attendance/daily/matrix", params={
+        "branch_id": BRANCH_A, "batch_id": BATCH_ID,
+        "start": "2026-06-01", "end": "2026-06-30",
+    })
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dates"] == ["2026-06-22", "2026-06-23"]  # working-day columns
+    assert body["student_count"] == 1
+    row = body["students"][0]
+    assert row["student_id"] == STUDENT_ID
+    assert row["cells"] == ["P", "A"]  # present 22nd, absent 23rd
+    assert row["attendance_pct"] == 50.0
+    assert body["day_present"] == [1, 0]
+
+
+async def test_defaulters_below_threshold(client: AsyncClient, seed_data, db_session):
+    await _seed_two_working_days_present_one(seed_data, db_session)
+
+    await _login(client)
+    # 50% < default 75% -> the student is a defaulter.
+    resp = await client.get("/api/v1/attendance/daily/defaulters", params={
+        "branch_id": BRANCH_A, "start": "2026-06-01", "end": "2026-06-30",
+    })
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert len(rows) == 1
+    assert rows[0]["student_id"] == STUDENT_ID
+    assert rows[0]["attendance_pct"] == 50.0
+    assert rows[0]["working_days"] == 2
+
+    # Lower the bar below the student's %: they drop off the board.
+    resp = await client.get("/api/v1/attendance/daily/defaulters", params={
+        "branch_id": BRANCH_A, "start": "2026-06-01", "end": "2026-06-30",
+        "threshold": 40,
+    })
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+async def test_branch_summary(client: AsyncClient, seed_data, db_session):
+    await _seed_two_working_days_present_one(seed_data, db_session)
+
+    await _login(client)
+    resp = await client.get("/api/v1/attendance/daily/branch-summary", params={
+        "branch_id": BRANCH_A, "start": "2026-06-01", "end": "2026-06-30",
+    })
+    assert resp.status_code == 200
+    rows = resp.json()
+    seeded = [r for r in rows if r["batch_id"] == BATCH_ID]
+    assert len(seeded) == 1
+    assert seeded[0]["working_days"] == 2
+    assert seeded[0]["student_count"] == 1
+    assert seeded[0]["present"] == 1
+    assert seeded[0]["avg_pct"] == 50.0

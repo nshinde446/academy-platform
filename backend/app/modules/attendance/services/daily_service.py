@@ -580,6 +580,68 @@ async def branch_summary(
     return out
 
 
+async def branch_defaulters(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    start: date,
+    end: date,
+    threshold: float = 75.0,
+    tz_name: str | None = None,
+) -> list[dict]:
+    """Students whose range attendance % is below ``threshold`` (the board that
+    surfaces the 75% eligibility rule).
+
+    Aggregated across every active batch: a student in two batches has their
+    present/working-day counts summed, so the % reflects their whole schedule
+    rather than one batch. Built from ``batch_matrix`` so the numbers match the
+    on-screen matrix exactly. Sorted worst-first. Students with zero working
+    days in range are excluded (no denominator, not a defaulter)."""
+    from app.modules.batch.models.batch_models import Batch
+
+    tz_name = tz_name or await branch_timezone(session, branch_id)
+    batches = (await session.execute(
+        select(Batch)
+        .where(Batch.branch_id == branch_id, Batch.is_deleted == False)
+        .order_by(Batch.name)
+    )).scalars().all()
+
+    agg: dict[uuid.UUID, dict] = {}
+    for b in batches:
+        m = await batch_matrix(
+            session, branch_id=branch_id, batch_id=b.id,
+            start=start, end=end, tz_name=tz_name,
+        )
+        for r in m["students"]:
+            a = agg.get(r["student_id"])
+            if a is None:
+                a = {
+                    "student_id": r["student_id"],
+                    "name": r["name"],
+                    "enrollment_number": r["enrollment_number"],
+                    "batches": [],
+                    "present": 0,
+                    "working_days": 0,
+                }
+                agg[r["student_id"]] = a
+            a["present"] += r["present"]
+            a["working_days"] += r["working_days"]
+            if b.name not in a["batches"]:
+                a["batches"].append(b.name)
+
+    out = []
+    for a in agg.values():
+        wd = a["working_days"]
+        if wd <= 0:
+            continue
+        pct = round(a["present"] / wd * 100, 1)
+        if pct < threshold:
+            out.append({**a, "attendance_pct": pct})
+
+    out.sort(key=lambda x: (x["attendance_pct"], x["name"]))
+    return out
+
+
 async def monthly_summary(
     session: AsyncSession,
     *,

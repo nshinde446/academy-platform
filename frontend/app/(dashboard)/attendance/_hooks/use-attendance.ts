@@ -5,8 +5,11 @@ import type {
   AttendanceMarkRequest,
   AttendanceRecord,
   AttendanceSummary,
+  BatchMatrix,
+  BranchSummaryRow,
   ClassroomRegisterRow,
   DailyAttendance,
+  DefaulterRow,
 } from "../_schemas/attendance";
 
 // Live-view refresh cadence. Punches reach the DB within a couple of minutes
@@ -27,6 +30,12 @@ export const attendanceKeys = {
     [...attendanceKeys.all, "timeline", branchId, studentId, start, end] as const,
   summary: (branchId: string, studentId: string, start: string, end: string) =>
     [...attendanceKeys.all, "summary", branchId, studentId, start, end] as const,
+  defaulters: (branchId: string, start: string, end: string, threshold: number) =>
+    [...attendanceKeys.all, "defaulters", branchId, start, end, threshold] as const,
+  branchSummary: (branchId: string, start: string, end: string) =>
+    [...attendanceKeys.all, "branch-summary", branchId, start, end] as const,
+  matrix: (branchId: string, batchId: string, start: string, end: string) =>
+    [...attendanceKeys.all, "matrix", branchId, batchId, start, end] as const,
 };
 
 // Classroom day register (Reference B) — P/A roster for a batch on one day,
@@ -68,6 +77,70 @@ export function useStudentTimeline(
     },
     enabled: !!branchId && !!studentId && !!start && !!end,
     refetchInterval: LIVE_TIMELINE_MS,
+  });
+}
+
+// Students below an attendance threshold over a range, worst-first — the
+// defaulter board (surfaces the 75% eligibility rule).
+export function useDefaulters(
+  branchId: string | undefined,
+  start: string,
+  end: string,
+  threshold: number,
+) {
+  return useQuery<DefaulterRow[]>({
+    queryKey: attendanceKeys.defaulters(branchId!, start, end, threshold),
+    queryFn: async () => {
+      const res = await apiClient.get<DefaulterRow[]>(
+        "/api/v1/attendance/daily/defaulters",
+        { params: { branch_id: branchId, start, end, threshold } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!start && !!end,
+  });
+}
+
+// Register matrix for one batch over a range — students × working-day columns,
+// each cell P/L/A, with per-student % and per-day present totals.
+export function useBatchMatrix(
+  branchId: string | undefined,
+  batchId: string | undefined,
+  start: string,
+  end: string,
+) {
+  return useQuery<BatchMatrix>({
+    queryKey: attendanceKeys.matrix(branchId!, batchId!, start, end),
+    queryFn: async () => {
+      const res = await apiClient.get<BatchMatrix>(
+        "/api/v1/attendance/daily/matrix",
+        { params: { branch_id: branchId, batch_id: batchId, start, end } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!batchId && !!start && !!end,
+    refetchInterval: LIVE_REGISTER_MS,
+  });
+}
+
+// Per-batch attendance summary over a range — the institute overview. Driven
+// with a single day (start == end) for a "today at a glance" snapshot.
+export function useBranchSummary(
+  branchId: string | undefined,
+  start: string,
+  end: string,
+) {
+  return useQuery<BranchSummaryRow[]>({
+    queryKey: attendanceKeys.branchSummary(branchId!, start, end),
+    queryFn: async () => {
+      const res = await apiClient.get<BranchSummaryRow[]>(
+        "/api/v1/attendance/daily/branch-summary",
+        { params: { branch_id: branchId, start, end } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!start && !!end,
+    refetchInterval: LIVE_REGISTER_MS,
   });
 }
 
