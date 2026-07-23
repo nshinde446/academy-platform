@@ -7,6 +7,7 @@ import type {
   AttendanceSummary,
   ClassroomRegisterRow,
   DailyAttendance,
+  DefaulterRow,
 } from "../_schemas/attendance";
 
 // Live-view refresh cadence. Punches reach the DB within a couple of minutes
@@ -27,6 +28,8 @@ export const attendanceKeys = {
     [...attendanceKeys.all, "timeline", branchId, studentId, start, end] as const,
   summary: (branchId: string, studentId: string, start: string, end: string) =>
     [...attendanceKeys.all, "summary", branchId, studentId, start, end] as const,
+  defaulters: (branchId: string, start: string, end: string, threshold: number) =>
+    [...attendanceKeys.all, "defaulters", branchId, start, end, threshold] as const,
 };
 
 // Classroom day register (Reference B) — P/A roster for a batch on one day,
@@ -68,6 +71,27 @@ export function useStudentTimeline(
     },
     enabled: !!branchId && !!studentId && !!start && !!end,
     refetchInterval: LIVE_TIMELINE_MS,
+  });
+}
+
+// Students below an attendance threshold over a range, worst-first — the
+// defaulter board (surfaces the 75% eligibility rule).
+export function useDefaulters(
+  branchId: string | undefined,
+  start: string,
+  end: string,
+  threshold: number,
+) {
+  return useQuery<DefaulterRow[]>({
+    queryKey: attendanceKeys.defaulters(branchId!, start, end, threshold),
+    queryFn: async () => {
+      const res = await apiClient.get<DefaulterRow[]>(
+        "/api/v1/attendance/daily/defaulters",
+        { params: { branch_id: branchId, start, end, threshold } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!start && !!end,
   });
 }
 

@@ -23,11 +23,12 @@ import type {
 import { PageHeader } from "@/components/layout/page-header";
 import { AttendanceRoster } from "./_components/attendance-roster";
 import { DayRegister } from "./_components/day-register";
+import { DefaulterBoard } from "./_components/defaulter-board";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
 
-type AttendanceView = "lecture" | "day";
+type AttendanceView = "lecture" | "day" | "defaulters";
 
 function formatLectureLabel(
   l: LectureResponse,
@@ -224,7 +225,7 @@ export default function AttendancePage() {
           aria-label="Attendance view"
           className="inline-flex w-fit overflow-hidden rounded-lg border"
         >
-          {(["lecture", "day"] as const).map((v) => (
+          {(["lecture", "day", "defaulters"] as const).map((v) => (
             <button
               key={v}
               type="button"
@@ -238,7 +239,7 @@ export default function AttendancePage() {
                   : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
               }
             >
-              {v === "lecture" ? "By lecture" : "By day"}
+              {v === "lecture" ? "By lecture" : v === "day" ? "By day" : "Defaulters"}
             </button>
           ))}
         </div>
@@ -246,6 +247,8 @@ export default function AttendancePage() {
 
       {view === "day" ? (
         <DayRegister branchId={branchId} batches={batches} />
+      ) : view === "defaulters" ? (
+        <DefaulterBoard branchId={branchId} />
       ) : (
       <>
       {/* Lecture picker */}

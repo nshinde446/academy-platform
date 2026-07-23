@@ -83,3 +83,15 @@ export interface AttendanceSummary {
   absent_days: number;
   attendance_pct: number;
 }
+
+// One student below the attendance threshold over a range, aggregated across
+// their batches. Mirrors the backend DefaulterRow (daily/defaulters).
+export interface DefaulterRow {
+  student_id: string;
+  name: string;
+  enrollment_number: string | null;
+  batches: string[];
+  present: number;
+  working_days: number;
+  attendance_pct: number;
+}
