@@ -96,6 +96,29 @@ export interface DefaulterRow {
   attendance_pct: number;
 }
 
+// One student's row in the batch month matrix. `cells` aligns positionally with
+// the matrix `dates` axis; each is "P" | "L" | "A". Mirrors the backend
+// BatchMatrixStudentRow (daily/matrix).
+export interface BatchMatrixStudentRow {
+  student_id: string;
+  name: string;
+  enrollment_number: string | null;
+  cells: string[];
+  present: number;
+  working_days: number;
+  attendance_pct: number;
+}
+
+// Register matrix for one batch over a range — students × working-day columns.
+// Mirrors the backend BatchMatrixResponse (daily/matrix).
+export interface BatchMatrix {
+  batch_id: string;
+  dates: string[];
+  students: BatchMatrixStudentRow[];
+  day_present: number[];
+  student_count: number;
+}
+
 // One per-batch summary line for the institute overview. Mirrors the backend
 // BranchSummaryRow (daily/branch-summary). For a single-day range, working_days
 // is 0 (no session that day) or 1, and total_slots == student_count.
