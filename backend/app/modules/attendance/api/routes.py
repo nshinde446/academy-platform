@@ -12,8 +12,11 @@ from app.modules.attendance.schemas.attendance_schemas import (
     AttendanceRecordResponse,
     AttendanceReportResponse,
     AttendanceSummaryResponse,
+    BatchMatrixResponse,
+    BranchSummaryRow,
     ClassroomRegisterRow,
     DailyAttendanceResponse,
+    DefaulterRow,
     ExceptionCreate,
     ExceptionResolve,
     ExceptionResponse,
@@ -168,6 +171,53 @@ async def get_student_attendance_summary(
     """Attendance % over a range (working_days = days with >=1 lecture)."""
     return await daily_service.monthly_summary(
         session, student_id=student_id, branch_id=branch_id, start=start, end=end
+    )
+
+
+# ── Insights (on-screen aggregates) ────────────────────────────────────────
+
+
+@router.get("/daily/matrix", response_model=BatchMatrixResponse)
+async def get_batch_matrix(
+    branch_id: uuid.UUID = Query(...),
+    batch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Batch register matrix — students × working-day columns (P/L/A cells)."""
+    return await daily_service.batch_matrix(
+        session, branch_id=branch_id, batch_id=batch_id, start=start, end=end
+    )
+
+
+@router.get("/daily/branch-summary", response_model=list[BranchSummaryRow])
+async def get_branch_summary(
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """One summary row per active batch — the institute overview."""
+    return await daily_service.branch_summary(
+        session, branch_id=branch_id, start=start, end=end
+    )
+
+
+@router.get("/daily/defaulters", response_model=list[DefaulterRow])
+async def get_defaulters(
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    threshold: float = Query(75.0, ge=0, le=100),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Students below ``threshold`` % over the range, worst-first."""
+    return await daily_service.branch_defaulters(
+        session, branch_id=branch_id, start=start, end=end, threshold=threshold
     )
 
 
