@@ -33,6 +33,12 @@ function pctTone(pct: number): string {
   return "text-amber-600 dark:text-amber-400";
 }
 
+function pctBg(pct: number): string {
+  if (pct >= 75) return "bg-emerald-500";
+  if (pct < 60) return "bg-destructive";
+  return "bg-amber-500";
+}
+
 interface InstituteOverviewProps {
   branchId: string | undefined;
 }
@@ -161,13 +167,19 @@ export function InstituteOverview({ branchId }: InstituteOverviewProps) {
                   return (
                     <TableRow key={r.batch_id}>
                       <TableCell>
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-medium">{r.batch_name}</span>
-                          {r.batch_code && (
-                            <span className="text-xs text-muted-foreground tabular-nums">
-                              {r.batch_code}
-                            </span>
-                          )}
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            aria-hidden
+                            className={`h-2 w-2 shrink-0 rounded-full ${pctBg(r.avg_pct)}`}
+                          />
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-medium">{r.batch_name}</span>
+                            {r.batch_code && (
+                              <span className="text-xs text-muted-foreground tabular-nums">
+                                {r.batch_code}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell className="text-right tabular-nums text-sm">
@@ -179,10 +191,20 @@ export function InstituteOverview({ branchId }: InstituteOverviewProps) {
                       <TableCell className="text-right tabular-nums text-sm hidden sm:table-cell">
                         {absent}
                       </TableCell>
-                      <TableCell
-                        className={`text-right font-semibold tabular-nums ${pctTone(r.avg_pct)}`}
-                      >
-                        {r.avg_pct.toFixed(0)}%
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <span className="hidden h-1.5 w-20 overflow-hidden rounded-full bg-muted sm:block">
+                            <span
+                              className={`block h-full rounded-full ${pctBg(r.avg_pct)}`}
+                              style={{ width: `${Math.max(r.avg_pct, 3)}%` }}
+                            />
+                          </span>
+                          <span
+                            className={`font-semibold tabular-nums ${pctTone(r.avg_pct)}`}
+                          >
+                            {r.avg_pct.toFixed(0)}%
+                          </span>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
