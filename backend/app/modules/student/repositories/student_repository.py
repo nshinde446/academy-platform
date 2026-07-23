@@ -59,11 +59,8 @@ async def list_with_stats(
     to reason about with the existing repo style."""
     # Imports inside the function so the SQLAlchemy metadata is
     # already populated by the time we reference cross-module models.
+    from app.modules.attendance.services import daily_service
     from app.modules.batch.models.batch_models import Batch
-    from app.modules.lectures.models.lecture_models import (
-        LectureAttendanceMapping,
-        Lecture,
-    )
     from app.modules.tests.models.test_models import StudentMark, StudentResponse
 
     # Step 1: students + batch lookup.
@@ -119,33 +116,15 @@ async def list_with_stats(
         for r in rows:
             avg_score_by_student[r[0]] = (float(r[1] or 0.0), int(r[2] or 0))
 
-    # Step 3: attendance % over completed lectures the student's batch
-    # actually held.
-    attendance_by_student: dict[uuid.UUID, float] = {}
-    if student_ids:
-        rows = (
-            await session.execute(
-                select(
-                    LectureAttendanceMapping.student_id,
-                    func.count(LectureAttendanceMapping.id),
-                    func.count().filter(
-                        LectureAttendanceMapping.attendance_status == "PRESENT"
-                    ),
-                )
-                .join(Lecture, Lecture.id == LectureAttendanceMapping.lecture_id)
-                .where(
-                    LectureAttendanceMapping.student_id.in_(student_ids),
-                    LectureAttendanceMapping.is_deleted == False,
-                    Lecture.lecture_status == "completed",
-                )
-                .group_by(LectureAttendanceMapping.student_id)
-            )
-        ).all()
-        for r in rows:
-            total = int(r[1] or 0)
-            present = int(r[2] or 0)
-            pct = round(100.0 * present / total, 1) if total > 0 else 0.0
-            attendance_by_student[r[0]] = pct
+    # Step 3: canonical attendance % — biometric whole-day presence (Layer 1),
+    # present working days / working days. This is the SAME source the
+    # attendance heatmap, defaulter board, and institute overview read, so the
+    # roster/top-KPI number agrees with them. (It replaced a per-lecture Layer-2
+    # count that showed 0% for biometrically-present students whose lectures had
+    # no projected marks.) The definition lives once in daily_service.
+    attendance_by_student = await daily_service.branch_roster_attendance(
+        session, branch_id=branch_id, student_ids=list(student_ids)
+    )
 
     # Step 4: DPP completion proxy — % of student_responses submitted
     # (any test, any subject) over total questions on those tests. Once
