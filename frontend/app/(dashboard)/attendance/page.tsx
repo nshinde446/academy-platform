@@ -24,11 +24,12 @@ import { PageHeader } from "@/components/layout/page-header";
 import { AttendanceRoster } from "./_components/attendance-roster";
 import { DayRegister } from "./_components/day-register";
 import { DefaulterBoard } from "./_components/defaulter-board";
+import { InstituteOverview } from "./_components/institute-overview";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
 
-type AttendanceView = "lecture" | "day" | "defaulters";
+type AttendanceView = "lecture" | "day" | "defaulters" | "overview";
 
 function formatLectureLabel(
   l: LectureResponse,
@@ -225,7 +226,7 @@ export default function AttendancePage() {
           aria-label="Attendance view"
           className="inline-flex w-fit overflow-hidden rounded-lg border"
         >
-          {(["lecture", "day", "defaulters"] as const).map((v) => (
+          {(["lecture", "day", "defaulters", "overview"] as const).map((v) => (
             <button
               key={v}
               type="button"
@@ -239,7 +240,13 @@ export default function AttendancePage() {
                   : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
               }
             >
-              {v === "lecture" ? "By lecture" : v === "day" ? "By day" : "Defaulters"}
+              {v === "lecture"
+                ? "By lecture"
+                : v === "day"
+                  ? "By day"
+                  : v === "defaulters"
+                    ? "Defaulters"
+                    : "Overview"}
             </button>
           ))}
         </div>
@@ -249,6 +256,8 @@ export default function AttendancePage() {
         <DayRegister branchId={branchId} batches={batches} />
       ) : view === "defaulters" ? (
         <DefaulterBoard branchId={branchId} />
+      ) : view === "overview" ? (
+        <InstituteOverview branchId={branchId} />
       ) : (
       <>
       {/* Lecture picker */}

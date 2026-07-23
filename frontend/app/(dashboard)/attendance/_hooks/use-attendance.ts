@@ -5,6 +5,7 @@ import type {
   AttendanceMarkRequest,
   AttendanceRecord,
   AttendanceSummary,
+  BranchSummaryRow,
   ClassroomRegisterRow,
   DailyAttendance,
   DefaulterRow,
@@ -30,6 +31,8 @@ export const attendanceKeys = {
     [...attendanceKeys.all, "summary", branchId, studentId, start, end] as const,
   defaulters: (branchId: string, start: string, end: string, threshold: number) =>
     [...attendanceKeys.all, "defaulters", branchId, start, end, threshold] as const,
+  branchSummary: (branchId: string, start: string, end: string) =>
+    [...attendanceKeys.all, "branch-summary", branchId, start, end] as const,
 };
 
 // Classroom day register (Reference B) — P/A roster for a batch on one day,
@@ -92,6 +95,27 @@ export function useDefaulters(
       return res.data;
     },
     enabled: !!branchId && !!start && !!end,
+  });
+}
+
+// Per-batch attendance summary over a range — the institute overview. Driven
+// with a single day (start == end) for a "today at a glance" snapshot.
+export function useBranchSummary(
+  branchId: string | undefined,
+  start: string,
+  end: string,
+) {
+  return useQuery<BranchSummaryRow[]>({
+    queryKey: attendanceKeys.branchSummary(branchId!, start, end),
+    queryFn: async () => {
+      const res = await apiClient.get<BranchSummaryRow[]>(
+        "/api/v1/attendance/daily/branch-summary",
+        { params: { branch_id: branchId, start, end } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!start && !!end,
+    refetchInterval: LIVE_REGISTER_MS,
   });
 }
 

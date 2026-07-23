@@ -95,3 +95,17 @@ export interface DefaulterRow {
   working_days: number;
   attendance_pct: number;
 }
+
+// One per-batch summary line for the institute overview. Mirrors the backend
+// BranchSummaryRow (daily/branch-summary). For a single-day range, working_days
+// is 0 (no session that day) or 1, and total_slots == student_count.
+export interface BranchSummaryRow {
+  batch_id: string;
+  batch_name: string;
+  batch_code: string | null;
+  student_count: number;
+  working_days: number;
+  present: number;
+  total_slots: number;
+  avg_pct: number;
+}
