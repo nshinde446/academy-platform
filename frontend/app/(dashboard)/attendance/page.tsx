@@ -13,6 +13,7 @@ import {
 import { useStudentsWithStats } from "../students/_hooks/use-students";
 import type { LectureResponse } from "../lectures/_schemas/lecture";
 import {
+  useDefaulters,
   useLectureAttendance,
   useMarkAttendance,
 } from "./_hooks/use-attendance";
@@ -26,11 +27,25 @@ import { DayRegister } from "./_components/day-register";
 import { BatchMatrix } from "./_components/batch-matrix";
 import { DefaulterBoard } from "./_components/defaulter-board";
 import { InstituteOverview } from "./_components/institute-overview";
+import { InstitutePulse } from "./_components/institute-pulse";
+import { AttendanceNav, type AttendanceView } from "./_components/attendance-nav";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
 
-type AttendanceView = "lecture" | "day" | "month" | "defaulters" | "overview";
+function localISO(d: Date): string {
+  const off = d.getTimezoneOffset();
+  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+}
+
+function todayLocalISO(): string {
+  return localISO(new Date());
+}
+
+function monthStartISO(): string {
+  const d = new Date();
+  return localISO(new Date(d.getFullYear(), d.getMonth(), 1));
+}
 
 function formatLectureLabel(
   l: LectureResponse,
@@ -70,7 +85,14 @@ export default function AttendancePage() {
   const batches = useMemo(() => batchesQuery.data ?? [], [batchesQuery.data]);
   const students = useMemo(() => studentsQuery.data ?? [], [studentsQuery.data]);
 
-  const [view, setView] = useState<AttendanceView>("lecture");
+  // Institute-wide signals shared by the pulse strip (a tile) and the nav rail
+  // (the Defaulters badge) — computed once here so the two never disagree.
+  const today = todayLocalISO();
+  const monthStart = monthStartISO();
+  const defaultersQuery = useDefaulters(branchId, monthStart, today, 75);
+  const defaultersCount = defaultersQuery.data?.length ?? 0;
+
+  const [view, setView] = useState<AttendanceView>("overview");
   const [filterBatchId, setFilterBatchId] = useState("");
   const [selectedLectureId, setSelectedLectureId] = useState("");
   const [pendingStudentId, setPendingStudentId] = useState<string | null>(null);
@@ -206,7 +228,7 @@ export default function AttendancePage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Attendance"
-        description="Mark a lecture roster by hand. Biometric punches from the BioMax device arrive automatically — no manual pull needed. Marks upsert per student, and changing one overwrites the previous status."
+        description="Live attendance across the institute — mark lectures, scan the campus day register, and track eligibility. Biometric punches from the BioMax device arrive automatically; marks upsert per student."
         actions={
           view === "lecture" ? (
             <Button
@@ -220,51 +242,34 @@ export default function AttendancePage() {
             </Button>
           ) : undefined
         }
-      >
-        {/* View toggle — per-lecture roster vs whole-day campus register */}
-        <div
-          role="tablist"
-          aria-label="Attendance view"
-          className="inline-flex w-fit overflow-hidden rounded-lg border"
-        >
-          {(["lecture", "day", "month", "defaulters", "overview"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              role="tab"
-              aria-selected={view === v}
-              onClick={() => setView(v)}
-              className={
-                "h-8 px-4 text-sm font-medium transition-colors " +
-                (view === v
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground")
-              }
-            >
-              {v === "lecture"
-                ? "By lecture"
-                : v === "day"
-                  ? "By day"
-                  : v === "month"
-                    ? "By month"
-                    : v === "defaulters"
-                      ? "Defaulters"
-                      : "Overview"}
-            </button>
-          ))}
-        </div>
-      </PageHeader>
+      />
 
-      {view === "day" ? (
-        <DayRegister branchId={branchId} batches={batches} />
-      ) : view === "month" ? (
-        <BatchMatrix branchId={branchId} batches={batches} />
-      ) : view === "defaulters" ? (
-        <DefaulterBoard branchId={branchId} />
-      ) : view === "overview" ? (
-        <InstituteOverview branchId={branchId} />
-      ) : (
-      <>
+      {/* Institute pulse — always visible, summary before navigation */}
+      <InstitutePulse
+        branchId={branchId}
+        today={today}
+        defaultersCount={defaultersCount}
+        defaultersLoading={defaultersQuery.isLoading}
+      />
+
+      {/* Console: descriptive view rail + the active view */}
+      <div className="grid items-start gap-4 lg:grid-cols-[264px_1fr]">
+        <AttendanceNav
+          view={view}
+          onChange={setView}
+          defaultersCount={defaultersCount}
+        />
+        <div className="min-w-0">
+          {view === "day" ? (
+            <DayRegister branchId={branchId} batches={batches} />
+          ) : view === "month" ? (
+            <BatchMatrix branchId={branchId} batches={batches} />
+          ) : view === "defaulters" ? (
+            <DefaulterBoard branchId={branchId} />
+          ) : view === "overview" ? (
+            <InstituteOverview branchId={branchId} />
+          ) : (
+          <div className="flex flex-col gap-6">
       {/* Lecture picker */}
       <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
         <select
@@ -341,8 +346,10 @@ export default function AttendancePage() {
         />
       )}
 
-      </>
-      )}
+          </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
