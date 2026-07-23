@@ -28,6 +28,7 @@ import type {
   StudentTopicMastery,
   StudentUpcomingTest,
 } from "../_schemas/student";
+import { StudentAttendanceCalendar } from "./_components/attendance-calendar";
 
 function formatScheduled(iso: string | null): string {
   if (!iso) return "—";
@@ -185,6 +186,8 @@ export default function StudentDetailPage({
           </div>
         </CardContent>
       </Card>
+
+      <StudentAttendanceCalendar branchId={branchId} studentId={studentId} />
 
       {attendance && attendance.held > 0 && (
         <div className="flex flex-col gap-2">
