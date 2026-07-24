@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useUserStore } from "@/store/user-store";
+import { useBranchId } from "@/store/user-store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { TableSkeleton } from "@/components/ui/skeleton";
+import { Skeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import {
   useBatchesForLectures,
@@ -74,8 +74,9 @@ function isToday(iso: string): boolean {
 }
 
 export default function AttendancePage() {
-  const user = useUserStore((s) => s.user);
-  const branchId = user?.branch_roles?.[0]?.branch_id;
+  // `isResolving` covers the first-paint window before /auth/me settles, so we
+  // show a skeleton instead of flashing a "No branch selected" / 0-0 console.
+  const { branchId, isResolving } = useBranchId();
 
   const lecturesQuery = useLectures(branchId);
   const batchesQuery = useBatchesForLectures(branchId);
@@ -244,6 +245,17 @@ export default function AttendancePage() {
         }
       />
 
+      {isResolving ? (
+        // First paint, before /auth/me resolves the active branch: a calm
+        // skeleton rather than a console full of zeros that reads as "broken".
+        <AttendanceConsoleSkeleton />
+      ) : !branchId ? (
+        <p className="text-muted-foreground text-sm">
+          No branch is assigned to your account. Ask an administrator to grant a
+          branch role.
+        </p>
+      ) : (
+        <>
       {/* Institute pulse — always visible, summary before navigation */}
       <InstitutePulse
         branchId={branchId}
@@ -350,7 +362,36 @@ export default function AttendancePage() {
           )}
         </div>
       </div>
+        </>
+      )}
     </div>
+  );
+}
+
+function AttendanceConsoleSkeleton() {
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {Array.from({ length: 5 }, (_, i) => (
+          <div
+            key={i}
+            className="rounded-xl border bg-card p-4 shadow-sm ring-1 ring-foreground/10"
+          >
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="mt-2 h-7 w-16" />
+            <Skeleton className="mt-2 h-3 w-24" />
+          </div>
+        ))}
+      </div>
+      <div className="grid items-start gap-4 lg:grid-cols-[264px_1fr]">
+        <div className="flex flex-col gap-2">
+          {Array.from({ length: 5 }, (_, i) => (
+            <Skeleton key={i} className="h-14 w-full rounded-lg" />
+          ))}
+        </div>
+        <TableSkeleton rows={6} />
+      </div>
+    </>
   );
 }
 
