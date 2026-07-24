@@ -56,11 +56,7 @@ import type {
   TopicSummary,
 } from "./_schemas/lecture";
 import { LectureTable } from "./_components/lecture-table";
-import {
-  LectureTableMsa,
-  groupStatus,
-  type MsaStatusGroup,
-} from "./_components/lecture-table-msa";
+import { groupStatus } from "./_components/lecture-table-msa";
 import { GenerateDppModal } from "./_components/generate-dpp-modal";
 import { LectureEmptyState } from "./_components/lecture-empty-state";
 import { CreateLectureDialog } from "./_components/create-lecture-dialog";
@@ -136,14 +132,6 @@ function filterLectures(
   });
 }
 
-const MSA_GROUPS: { value: MsaStatusGroup | "all"; label: string }[] = [
-  { value: "all", label: "All" },
-  { value: "scheduled", label: "Scheduled" },
-  { value: "live", label: "Live" },
-  { value: "completed", label: "Completed" },
-  { value: "no_show", label: "No-show" },
-];
-
 function startOfWeekMonday(d: Date): Date {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -204,9 +192,16 @@ function LecturesPageBody() {
   const { branchId, isResolving } = useBranchId();
 
   const searchParams = useSearchParams();
+  // Three tabs: Schedule (default), Calendar, Insights. The old Simplified
+  // (?view=msa) view folded into Schedule (one lecture table), so it maps here.
   const view = searchParams.get("view");
-  const isMsa = view === "msa";
-  const isCalendar = view === "calendar";
+  const tab: "schedule" | "calendar" | "insights" =
+    view === "calendar"
+      ? "calendar"
+      : view === "insights"
+        ? "insights"
+        : "schedule";
+  const isCalendar = tab === "calendar";
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
@@ -215,7 +210,6 @@ function LecturesPageBody() {
   const [filterStatus, setFilterStatus] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-  const [msaGroup, setMsaGroup] = useState<MsaStatusGroup | "all">("all");
 
   const [deleteTarget, setDeleteTarget] = useState<LectureResponse | null>(
     null
@@ -404,31 +398,8 @@ function LecturesPageBody() {
     ]
   );
 
-  // MSA view: drop cancelled rows entirely, group statuses, then apply chip.
-  const msaFiltered = useMemo(() => {
-    const q = debouncedSearch.toLowerCase();
-    return lectures.filter((l) => {
-      const g = groupStatus(l.lecture_status);
-      if (!g) return false;
-      if (msaGroup !== "all" && g !== msaGroup) return false;
-      if (!q) return true;
-      const t = teachers.find((x) => x.id === l.teacher_id);
-      const at = teachers.find((x) => x.id === l.actual_teacher_id);
-      const b = batches.find((x) => x.id === l.batch_id);
-      const top = allTopics.find((x) => x.id === l.topic_id);
-      const hay = [
-        t ? `${t.first_name} ${t.last_name}` : "",
-        at ? `${at.first_name} ${at.last_name}` : "",
-        b?.name ?? "",
-        top?.name ?? "",
-      ]
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
-    });
-  }, [lectures, msaGroup, debouncedSearch, teachers, batches, allTopics]);
-
-  const msaKpis = useMemo(() => {
+  // Week-context KPIs shown atop the Schedule tab.
+  const weekKpis = useMemo(() => {
     const eligible = lectures.filter((l) => !!groupStatus(l.lecture_status));
     const thisWeek = eligible.filter((l) => isThisWeek(l.scheduled_start)).length;
     const completed = eligible.filter(
@@ -585,7 +556,7 @@ function LecturesPageBody() {
   }
 
   // CSV of whatever the admin is currently looking at (filters/search applied).
-  const visibleLectures = isMsa ? msaFiltered : filtered;
+  const visibleLectures = filtered;
   function handleDownloadCsv() {
     downloadScheduleCsv(visibleLectures, {
       batches,
@@ -689,42 +660,45 @@ function LecturesPageBody() {
       <PageHeader
         title="Lectures"
         description={
-          isCalendar
+          tab === "calendar"
             ? "Week-at-a-glance grid of every batch's scheduled lectures."
-            : isMsa
-              ? "Schedule, attendance, and one-click DPP generation off completed lectures."
+            : tab === "insights"
+              ? "Teacher productivity and the log of recorded sessions."
               : "Schedule, run, and track lectures. Backend rejects teacher/batch/classroom conflicts at create time."
         }
         actions={headerActions}
       >
-        <p className="text-xs text-muted-foreground">
+        <div
+          role="tablist"
+          aria-label="Lectures view"
+          className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1"
+        >
           {[
-            { key: "full", label: "Full", href: "/lectures" },
-            { key: "msa", label: "Simplified", href: "/lectures?view=msa" },
-            {
-              key: "calendar",
-              label: "Calendar",
-              href: "/lectures?view=calendar",
-            },
-          ].map((v, i) => {
-            const active =
-              (v.key === "full" && !isMsa && !isCalendar) ||
-              (v.key === "msa" && isMsa) ||
-              (v.key === "calendar" && isCalendar);
+            { key: "schedule", label: "Schedule", href: "/lectures" },
+            { key: "calendar", label: "Calendar", href: "/lectures?view=calendar" },
+            { key: "insights", label: "Insights", href: "/lectures?view=insights" },
+          ].map((v) => {
+            const active = tab === v.key;
             return (
-              <span key={v.key}>
-                {i > 0 && " · "}
-                {active ? (
-                  <span className="font-medium text-foreground">{v.label}</span>
-                ) : (
-                  <Link href={v.href} className="underline">
-                    {v.label}
-                  </Link>
-                )}
-              </span>
+              <Button
+                key={v.key}
+                render={<Link href={v.href} />}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                variant="ghost"
+                size="sm"
+                className={
+                  active
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }
+              >
+                {v.label}
+              </Button>
             );
           })}
-        </p>
+        </div>
       </PageHeader>
 
       {isResolving ? (
@@ -746,99 +720,37 @@ function LecturesPageBody() {
           onToday={() => setWeekStart(startOfWeekMonday(new Date()))}
           isLoading={calendarQuery.isLoading}
         />
-      ) : isMsa ? (
-        <>
-          {/* MSA KPI strip */}
-          <Card size="sm">
-            <div className="grid grid-cols-2 gap-3 px-3 sm:grid-cols-4">
-              <Kpi label="This week" value={String(msaKpis.thisWeek)} />
-              <Kpi label="Completed" value={String(msaKpis.completed)} />
-              <Kpi label="Live now" value={String(msaKpis.live)} />
-              <Kpi label="Upcoming today" value={String(msaKpis.upcomingToday)} />
-            </div>
-          </Card>
-
-          {/* Segmented status chips + search */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div
-              role="tablist"
-              aria-label="Status"
-              className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1"
-            >
-              {MSA_GROUPS.map((g) => {
-                const active = msaGroup === g.value;
-                return (
-                  <button
-                    key={g.value}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => setMsaGroup(g.value)}
-                    className={
-                      "rounded-md px-3 py-1 text-xs font-medium transition-colors " +
-                      (active
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground")
-                    }
-                  >
-                    {g.label}
-                  </button>
-                );
-              })}
-            </div>
-            <span className="flex-1" />
-            <Input
-              placeholder="Search teacher, batch, topic…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full sm:max-w-xs"
-              aria-label="Search lectures"
-            />
-            <span className="text-xs text-muted-foreground">
-              {msaFiltered.length} lecture{msaFiltered.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-
-          {/* MSA Content */}
-          {lecturesQuery.isLoading ? (
-            <p className="text-muted-foreground text-sm">Loading lectures...</p>
-          ) : lecturesQuery.isError ? (
-            <p className="text-destructive text-sm">
-              Failed to load lectures. Make sure the backend is running.
-            </p>
-          ) : msaFiltered.length === 0 ? (
-            <LectureEmptyState hasFilter={!!debouncedSearch || msaGroup !== "all"} />
-          ) : (
-            <LectureTableMsa
-              lectures={msaFiltered}
-              batches={batches}
-              teachers={teachers}
-              subjects={allSubjects}
-              topics={allTopics}
-              onStart={handleStart}
-              onComplete={handleComplete}
-              onGenerateDpp={handleGenerateDpp}
-              onRecordMakeup={handleRecordMakeup}
-            />
-          )}
-        </>
+      ) : tab === "insights" ? (
+        <div className="flex flex-col gap-6">
+          <TeacherProductivityPanel
+            branchId={branchId}
+            fromDate={fromDate}
+            toDate={toDate}
+          />
+          <SessionList
+            sessions={sessions}
+            batches={batches}
+            teachers={teachers}
+            subjects={allSubjects}
+          />
+        </div>
       ) : (
         <>
           {/* At-a-glance strip — week context + the two triage queues that the
               worklists below let you act on. Queue tiles glow when non-empty. */}
           <Card size="sm">
             <div className="grid grid-cols-2 gap-3 px-3 sm:grid-cols-3 xl:grid-cols-6">
-              <Kpi label="This week" value={String(msaKpis.thisWeek)} />
+              <Kpi label="This week" value={String(weekKpis.thisWeek)} />
               <Kpi
                 label="Completed"
-                value={String(msaKpis.completed)}
+                value={String(weekKpis.completed)}
                 hint="this week"
                 tone="success"
               />
               <Kpi
                 label="Live now"
-                value={String(msaKpis.live)}
-                tone={msaKpis.live > 0 ? "primary" : "default"}
+                value={String(weekKpis.live)}
+                tone={weekKpis.live > 0 ? "primary" : "default"}
               />
               <Kpi
                 label="Pending close-out"
@@ -1046,19 +958,6 @@ function LecturesPageBody() {
               onRecordMakeup={handleRecordMakeup}
             />
           )}
-
-          <SessionList
-            sessions={sessions}
-            batches={batches}
-            teachers={teachers}
-            subjects={allSubjects}
-          />
-
-          <TeacherProductivityPanel
-            branchId={branchId}
-            fromDate={fromDate}
-            toDate={toDate}
-          />
         </>
       )}
 
