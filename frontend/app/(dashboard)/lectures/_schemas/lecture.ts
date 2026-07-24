@@ -66,6 +66,12 @@ export interface LectureActuals {
   notes?: string | null;
 }
 
+export interface LectureReschedule {
+  scheduled_start: string;
+  scheduled_end: string;
+  classroom_id?: string | null;
+}
+
 export interface CopyScheduleSummary {
   source_date: string;
   target_date: string;

@@ -6,6 +6,7 @@ import type {
   CopyScheduleSummary,
   CopySelectedSummary,
   LectureActuals,
+  LectureReschedule,
   LectureCreate,
   LectureNoShow,
   LectureResponse,
@@ -407,6 +408,31 @@ export function useTeachersBySubject(
       return res.data;
     },
     enabled: !!branchId && !!subjectId,
+  });
+}
+
+export function useRescheduleLecture(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      lectureId,
+      data,
+    }: {
+      lectureId: string;
+      data: LectureReschedule;
+    }) => {
+      const res = await apiClient.patch<LectureResponse>(
+        `/api/v1/lectures/${lectureId}/reschedule`,
+        data,
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        queryClient.invalidateQueries({ queryKey: lectureKeys.list(branchId) });
+      }
+    },
   });
 }
 
