@@ -9,6 +9,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { InfoHint } from "@/components/ui/info-hint";
 import { useProductivityInsights } from "../_hooks/use-lectures";
 
 interface TeacherProductivityPanelProps {
@@ -17,10 +18,21 @@ interface TeacherProductivityPanelProps {
   toDate: string;
 }
 
-function punctualityTone(pct: number): "success" | "secondary" | "destructive" {
+function pctTone(pct: number): "success" | "secondary" | "destructive" {
   if (pct >= 90) return "success";
   if (pct >= 75) return "secondary";
   return "destructive";
+}
+
+// Turnout/attendance reads on the student 75% eligibility scale.
+function attendanceTone(pct: number): "success" | "secondary" | "destructive" {
+  if (pct >= 75) return "success";
+  if (pct >= 60) return "secondary";
+  return "destructive";
+}
+
+function pct(value: number | null): string {
+  return value == null ? "—" : `${value}%`;
 }
 
 export function TeacherProductivityPanel({
@@ -34,16 +46,29 @@ export function TeacherProductivityPanel({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div>
+        <div className="flex items-center gap-1.5">
           <h3 className="text-lg font-semibold">Teacher Productivity</h3>
-          <p className="text-xs text-muted-foreground">
-            Hours taught & punctuality from completed lectures
-            {fromDate || toDate
-              ? ` · ${fromDate || "start"} → ${toDate || "now"}`
-              : " · all time"}
-            . Reflects lectures whose actuals were recorded.
-          </p>
+          <InfoHint
+            text={
+              <>
+                Hours &amp; punctuality come from completed lectures.{" "}
+                <span className="font-medium">Turnout</span> is the average
+                student attendance in each teacher&apos;s classes (biometric
+                day-presence).{" "}
+                <span className="font-medium">Reliability</span> is how many of
+                the classes assigned to a teacher they personally delivered —
+                the rest were no-shows or handed to a substitute. Reliability is
+                a lifecycle signal, not the teacher&apos;s own biometric
+                attendance (teachers aren&apos;t on the device).
+              </>
+            }
+          />
         </div>
+        <p className="text-xs text-muted-foreground">
+          {fromDate || toDate
+            ? `${fromDate || "start"} → ${toDate || "now"}`
+            : "all time"}
+        </p>
       </div>
 
       {query.isLoading ? (
@@ -59,7 +84,7 @@ export function TeacherProductivityPanel({
       ) : (
         <>
           {/* Summary KPI strip */}
-          <div className="grid grid-cols-2 gap-3 rounded-xl border p-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 rounded-xl border p-3 sm:grid-cols-3 lg:grid-cols-6">
             <Kpi label="Teachers" value={String(data.summary.teachers)} />
             <Kpi
               label="Lectures taught"
@@ -68,7 +93,19 @@ export function TeacherProductivityPanel({
             <Kpi label="Total hours" value={`${data.summary.total_hours}h`} />
             <Kpi
               label="On-time"
-              value={`${data.summary.branch_punctuality_pct}%`}
+              value={pct(data.summary.branch_punctuality_pct)}
+            />
+            <Kpi
+              label="Student turnout"
+              value={pct(data.summary.branch_turnout_pct)}
+              hint="attendance in their classes"
+            />
+            <Kpi
+              label="Reliability"
+              value={pct(data.summary.branch_reliability_pct)}
+              hint={`${data.summary.total_teacher_no_show} teacher no-show${
+                data.summary.total_teacher_no_show === 1 ? "" : "s"
+              }`}
             />
           </div>
 
@@ -78,16 +115,17 @@ export function TeacherProductivityPanel({
                 <TableRow>
                   <TableHead>Teacher</TableHead>
                   <TableHead className="text-right">Lectures</TableHead>
-                  <TableHead className="text-right">Hours</TableHead>
                   <TableHead className="hidden sm:table-cell text-right">
-                    Avg / lecture
+                    Hours
                   </TableHead>
                   <TableHead className="text-right">Punctuality</TableHead>
+                  <TableHead className="text-right">Turnout</TableHead>
+                  <TableHead className="text-right">Reliability</TableHead>
                   <TableHead className="hidden md:table-cell text-right">
-                    Late
+                    No-show
                   </TableHead>
                   <TableHead className="hidden lg:table-cell text-right">
-                    Topics
+                    Sub&apos;d
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -100,22 +138,41 @@ export function TeacherProductivityPanel({
                     <TableCell className="text-right tabular-nums">
                       {t.lectures_taught}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="hidden sm:table-cell text-right tabular-nums text-muted-foreground">
                       {t.hours_taught}h
                     </TableCell>
-                    <TableCell className="hidden sm:table-cell text-right tabular-nums text-muted-foreground">
-                      {t.avg_lecture_min}m
+                    <TableCell className="text-right">
+                      {t.punctuality_pct == null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <Badge variant={pctTone(t.punctuality_pct)}>
+                          {t.punctuality_pct}%
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Badge variant={punctualityTone(t.punctuality_pct)}>
-                        {t.punctuality_pct}%
-                      </Badge>
+                      {t.student_turnout_pct == null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <Badge variant={attendanceTone(t.student_turnout_pct)}>
+                          {t.student_turnout_pct}%
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {t.reliability_pct == null ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <Badge variant={pctTone(t.reliability_pct)}>
+                          {t.reliability_pct}%
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-right tabular-nums text-muted-foreground">
-                      {t.late_count}
+                      {t.teacher_no_show}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-right tabular-nums text-muted-foreground">
-                      {t.distinct_topics}
+                      {t.substituted_out}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -128,11 +185,20 @@ export function TeacherProductivityPanel({
   );
 }
 
-function Kpi({ label, value }: { label: string; value: string }) {
+function Kpi({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="text-xl font-semibold tabular-nums">{value}</span>
+      {hint && <span className="text-[10px] text-muted-foreground">{hint}</span>}
     </div>
   );
 }

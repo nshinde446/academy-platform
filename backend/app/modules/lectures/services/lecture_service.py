@@ -1916,11 +1916,30 @@ async def get_productivity_insights(
     Built on the persisted late_flag / actual_duration_min, so it only reflects
     lectures whose actuals were captured (live complete or EOD backfill).
     """
+    # Imported here (not at module top) to keep the lectures<->attendance
+    # service dependency lazy — daily_service already imports from lectures.
+    from app.modules.attendance.services import daily_service
+
     rows = await lecture_repository.teacher_productivity_in_range(
         session, branch_id, from_dt, to_dt
     )
+    # Attendance-aligned signals: student turnout (Layer 1) keyed on the
+    # effective teacher, and delivery reliability keyed on the assigned teacher.
+    turnout = await daily_service.teacher_turnout_in_range(
+        session, branch_id=branch_id, from_dt=from_dt, to_dt=to_dt
+    )
+    reliability_rows = await lecture_repository.teacher_reliability_in_range(
+        session, branch_id, from_dt, to_dt
+    )
+    reliability = {r["teacher_id"]: r for r in reliability_rows}
 
-    teacher_ids = [r["teacher_id"] for r in rows]
+    # A teacher can appear via any signal (taught something, or was assigned a
+    # class they missed / that got covered), so union all their ids.
+    teacher_ids = (
+        {r["teacher_id"] for r in rows}
+        | set(turnout.keys())
+        | set(reliability.keys())
+    )
     teachers_by_id: dict[uuid.UUID, Teacher] = {}
     if teacher_ids:
         result = await session.execute(
@@ -1931,41 +1950,89 @@ async def get_productivity_insights(
         )
         teachers_by_id = {t.id: t for t in result.scalars().all()}
 
+    prod_by_id = {r["teacher_id"]: r for r in rows}
+
     by_teacher: list[dict] = []
     total_lectures = 0
     total_minutes = 0
     total_late = 0
     total_timed = 0
-    for r in rows:
-        t = teachers_by_id.get(r["teacher_id"])
+    total_turnout_num = 0.0
+    total_turnout_den = 0
+    total_taught_self = 0
+    total_assigned = 0
+    total_no_show = 0
+    for tid in teacher_ids:
+        t = teachers_by_id.get(tid)
         if t is None:
             continue
-        timed = r["on_time_count"] + r["late_count"]
-        hours = round(r["total_minutes"] / 60, 1)
-        avg_min = (
-            round(r["total_minutes"] / r["timed_lectures"], 1)
-            if r["timed_lectures"] > 0
-            else 0.0
-        )
-        punctuality = _safe_pct(r["on_time_count"], timed)
+        r = prod_by_id.get(tid)
+        rel = reliability.get(tid)
+        tn = turnout.get(tid)
+
+        if r is not None:
+            timed = r["on_time_count"] + r["late_count"]
+            hours = round(r["total_minutes"] / 60, 1)
+            avg_min = (
+                round(r["total_minutes"] / r["timed_lectures"], 1)
+                if r["timed_lectures"] > 0
+                else 0.0
+            )
+            punctuality = _safe_pct(r["on_time_count"], timed)
+            lectures_taught = r["lectures_taught"]
+            late_count = r["late_count"]
+            on_time_count = r["on_time_count"]
+            distinct_topics = r["distinct_topics"]
+            total_lectures += lectures_taught
+            total_minutes += r["total_minutes"]
+            total_late += late_count
+            total_timed += timed
+        else:
+            timed = 0
+            hours = 0.0
+            avg_min = 0.0
+            punctuality = None
+            lectures_taught = 0
+            late_count = 0
+            on_time_count = 0
+            distinct_topics = 0
+
+        assigned = rel["assigned"] if rel else 0
+        taught_self = rel["taught_self"] if rel else 0
+        reliability_pct = _safe_pct(taught_self, assigned) if assigned else None
+        total_taught_self += taught_self
+        total_assigned += assigned
+        total_no_show += rel["teacher_no_show"] if rel else 0
+
+        turnout_pct = tn["turnout_pct"] if tn else None
+        turnout_lectures = tn["turnout_lectures"] if tn else 0
+        if tn:
+            # Weight the branch turnout by how many lectures each average covers.
+            total_turnout_num += tn["turnout_pct"] * turnout_lectures
+            total_turnout_den += turnout_lectures
+
         by_teacher.append(
             {
-                "teacher_id": r["teacher_id"],
+                "teacher_id": tid,
                 "first_name": t.first_name,
                 "last_name": t.last_name,
-                "lectures_taught": r["lectures_taught"],
+                "lectures_taught": lectures_taught,
                 "hours_taught": hours,
                 "avg_lecture_min": avg_min,
-                "late_count": r["late_count"],
-                "on_time_count": r["on_time_count"],
+                "late_count": late_count,
+                "on_time_count": on_time_count,
                 "punctuality_pct": punctuality,
-                "distinct_topics": r["distinct_topics"],
+                "distinct_topics": distinct_topics,
+                # Attendance-aligned:
+                "student_turnout_pct": turnout_pct,
+                "turnout_lectures": turnout_lectures,
+                "assigned": assigned,
+                "taught_self": taught_self,
+                "teacher_no_show": rel["teacher_no_show"] if rel else 0,
+                "substituted_out": rel["substituted_out"] if rel else 0,
+                "reliability_pct": reliability_pct,
             }
         )
-        total_lectures += r["lectures_taught"]
-        total_minutes += r["total_minutes"]
-        total_late += r["late_count"]
-        total_timed += timed
 
     # Most hours first — the productivity leaderboard.
     by_teacher.sort(key=lambda r: r["hours_taught"], reverse=True)
@@ -1976,6 +2043,15 @@ async def get_productivity_insights(
         "total_hours": round(total_minutes / 60, 1),
         "total_late": total_late,
         "branch_punctuality_pct": _safe_pct(total_timed - total_late, total_timed),
+        "branch_turnout_pct": (
+            round(total_turnout_num / total_turnout_den, 1)
+            if total_turnout_den
+            else None
+        ),
+        "branch_reliability_pct": _safe_pct(total_taught_self, total_assigned)
+        if total_assigned
+        else None,
+        "total_teacher_no_show": total_no_show,
     }
     return {
         "from_date": from_dt,
