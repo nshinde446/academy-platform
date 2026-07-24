@@ -5,12 +5,13 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueries } from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
-import { useUserStore } from "@/store/user-store";
+import { useBranchId } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Skeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -197,8 +198,10 @@ export default function LecturesPage() {
 }
 
 function LecturesPageBody() {
-  const user = useUserStore((s) => s.user);
-  const branchId = user?.branch_roles?.[0]?.branch_id;
+  // `isResolving` covers the first-paint window before /auth/me settles, so the
+  // page shows a skeleton instead of flashing an empty "no branch" state — the
+  // same shared hook the attendance console uses.
+  const { branchId, isResolving } = useBranchId();
 
   const searchParams = useSearchParams();
   const view = searchParams.get("view");
@@ -724,7 +727,14 @@ function LecturesPageBody() {
         </p>
       </PageHeader>
 
-      {isCalendar ? (
+      {isResolving ? (
+        <LecturesSkeleton />
+      ) : !branchId ? (
+        <p className="text-muted-foreground text-sm">
+          No branch is assigned to your account. Ask an administrator to grant a
+          branch role.
+        </p>
+      ) : isCalendar ? (
         <CalendarWeekView
           lectures={calendarQuery.data ?? []}
           batches={batches}
@@ -1136,6 +1146,31 @@ function LecturesPageBody() {
         destructive
         onConfirm={handleDeleteSelectedConfirm}
       />
+    </div>
+  );
+}
+
+function LecturesSkeleton() {
+  return (
+    <div className="flex flex-col gap-6">
+      <Card size="sm">
+        <div className="grid grid-cols-2 gap-3 px-3 sm:grid-cols-3 xl:grid-cols-6">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="flex flex-col gap-1.5">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-6 w-12" />
+            </div>
+          ))}
+        </div>
+      </Card>
+      <Card size="sm">
+        <div className="flex flex-wrap gap-3 px-3">
+          {Array.from({ length: 5 }, (_, i) => (
+            <Skeleton key={i} className="h-9 w-36" />
+          ))}
+        </div>
+      </Card>
+      <TableSkeleton rows={8} />
     </div>
   );
 }
