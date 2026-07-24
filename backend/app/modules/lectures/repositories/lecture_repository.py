@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.academic.models.academic_models import AcademicYear, Chapter, Topic, Subject
@@ -852,6 +852,74 @@ async def teacher_productivity_in_range(
             "late_count": int(r.late_count or 0),
             "on_time_count": int(r.on_time_count or 0),
             "distinct_topics": int(r.distinct_topics or 0),
+        }
+        for r in rows
+    ]
+
+
+async def teacher_reliability_in_range(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+) -> list[dict]:
+    """Per ORIGINAL teacher, did they deliver the classes assigned to them.
+
+    Keyed on ``teacher_id`` (the assigned teacher, not the substitute) over
+    lectures with a definite delivery outcome (completed or no_show) in window:
+
+    - ``assigned``        — those lectures they were the scheduled teacher for
+    - ``taught_self``     — completed by them personally (no substitute)
+    - ``teacher_no_show`` — no_show attributed to TEACHER_NO_SHOW
+    - ``substituted_out`` — someone else taught their class
+
+    The service derives reliability_pct = taught_self / assigned.
+    """
+    filters = [
+        Lecture.branch_id == branch_id,
+        Lecture.is_deleted == False,  # noqa: E712
+        Lecture.lecture_status.in_(("completed", "no_show")),
+    ]
+    if from_dt is not None:
+        filters.append(Lecture.scheduled_start >= from_dt)
+    if to_dt is not None:
+        filters.append(Lecture.scheduled_start <= to_dt)
+
+    taught_self = and_(
+        Lecture.lecture_status == "completed",
+        or_(
+            Lecture.actual_teacher_id.is_(None),
+            Lecture.actual_teacher_id == Lecture.teacher_id,
+        ),
+    )
+    teacher_no_show = and_(
+        Lecture.lecture_status == "no_show",
+        Lecture.no_show_reason == "TEACHER_NO_SHOW",
+    )
+    substituted_out = and_(
+        Lecture.actual_teacher_id.isnot(None),
+        Lecture.actual_teacher_id != Lecture.teacher_id,
+    )
+
+    stmt = (
+        select(
+            Lecture.teacher_id.label("teacher_id"),
+            func.count().label("assigned"),
+            func.count().filter(taught_self).label("taught_self"),
+            func.count().filter(teacher_no_show).label("teacher_no_show"),
+            func.count().filter(substituted_out).label("substituted_out"),
+        )
+        .where(and_(*filters))
+        .group_by(Lecture.teacher_id)
+    )
+    rows = (await session.execute(stmt)).all()
+    return [
+        {
+            "teacher_id": r.teacher_id,
+            "assigned": int(r.assigned or 0),
+            "taught_self": int(r.taught_self or 0),
+            "teacher_no_show": int(r.teacher_no_show or 0),
+            "substituted_out": int(r.substituted_out or 0),
         }
         for r in rows
     ]

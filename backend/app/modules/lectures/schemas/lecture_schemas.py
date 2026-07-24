@@ -456,8 +456,22 @@ class ProductivityTeacherRow(BaseModel):
     late_count: int
     on_time_count: int
     # Share of timed lectures that started on time (the punctuality KPI).
-    punctuality_pct: float
+    # None when the teacher taught nothing timed in range.
+    punctuality_pct: float | None
     distinct_topics: int
+    # ── Attendance-aligned ──────────────────────────────────────────────
+    # Avg student turnout across this teacher's completed lectures (Layer-1
+    # present students / batch size). None when none of their lectures'
+    # batches have students. Credited to the effective (delivering) teacher.
+    student_turnout_pct: float | None = None
+    turnout_lectures: int = 0
+    # Delivery reliability of classes ASSIGNED to this teacher (lifecycle, not
+    # biometric): taught_self / assigned. None when nothing was assigned.
+    assigned: int = 0
+    taught_self: int = 0
+    teacher_no_show: int = 0
+    substituted_out: int = 0
+    reliability_pct: float | None = None
 
 
 class ProductivitySummary(BaseModel):
@@ -466,6 +480,10 @@ class ProductivitySummary(BaseModel):
     total_hours: float
     total_late: int
     branch_punctuality_pct: float
+    # Attendance-aligned branch rollups (None when no data in range).
+    branch_turnout_pct: float | None = None
+    branch_reliability_pct: float | None = None
+    total_teacher_no_show: int = 0
 
 
 class ProductivityResponse(BaseModel):

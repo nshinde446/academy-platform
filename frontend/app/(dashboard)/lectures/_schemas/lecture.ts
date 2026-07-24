@@ -140,8 +140,18 @@ export interface ProductivityTeacherRow {
   avg_lecture_min: number;
   late_count: number;
   on_time_count: number;
-  punctuality_pct: number;
+  punctuality_pct: number | null;
   distinct_topics: number;
+  // Attendance-aligned: avg student turnout across this teacher's completed
+  // lectures (Layer-1 present students / batch), and lifecycle delivery
+  // reliability of classes assigned to them (taught-self / assigned).
+  student_turnout_pct: number | null;
+  turnout_lectures: number;
+  assigned: number;
+  taught_self: number;
+  teacher_no_show: number;
+  substituted_out: number;
+  reliability_pct: number | null;
 }
 
 export interface ProductivitySummary {
@@ -150,6 +160,9 @@ export interface ProductivitySummary {
   total_hours: number;
   total_late: number;
   branch_punctuality_pct: number;
+  branch_turnout_pct: number | null;
+  branch_reliability_pct: number | null;
+  total_teacher_no_show: number;
 }
 
 export interface ProductivityResponse {
