@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.settings import get_settings
@@ -712,6 +712,106 @@ async def branch_roster_attendance(
         present = len(working & present_dates.get(sid, set()))
         out[sid] = round(present / len(working) * 100, 1)
     return out
+
+
+async def teacher_turnout_in_range(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    tz_name: str | None = None,
+) -> dict[uuid.UUID, dict]:
+    """Per effective-teacher student turnout over their completed lectures.
+
+    A lecture's turnout = present students in its batch on that local day /
+    batch size, read from Layer 1 ``DailyAttendance`` (PRESENT/LATE) — the same
+    canonical present-basis as every other attendance %. Averaged across the
+    teacher's completed lectures so it answers "how well-attended are this
+    teacher's classes". Credited to the *effective* teacher
+    (coalesce(actual_teacher_id, teacher_id)) so a substitute earns the turnout
+    of the class they actually delivered — matching the productivity row.
+
+    Returns ``{teacher_id: {"turnout_pct": float, "turnout_lectures": int}}``;
+    a teacher whose lectures' batches have no enrolled students is omitted.
+    """
+    tz_name = tz_name or await branch_timezone(session, branch_id)
+
+    effective_teacher = func.coalesce(
+        Lecture.actual_teacher_id, Lecture.teacher_id
+    )
+    filters = [
+        Lecture.branch_id == branch_id,
+        Lecture.is_deleted == False,  # noqa: E712
+        Lecture.lecture_status == "completed",
+    ]
+    if from_dt is not None:
+        filters.append(Lecture.scheduled_start >= from_dt)
+    if to_dt is not None:
+        filters.append(Lecture.scheduled_start <= to_dt)
+
+    lecture_rows = (await session.execute(
+        select(effective_teacher, Lecture.batch_id, Lecture.scheduled_start).where(
+            *filters
+        )
+    )).all()
+    if not lecture_rows:
+        return {}
+
+    # (teacher, batch, local-date) per completed lecture.
+    triples: list[tuple[uuid.UUID, uuid.UUID, date]] = []
+    batch_ids: set[uuid.UUID] = set()
+    dates: set[date] = set()
+    for teacher_id, batch_id, scheduled_start in lecture_rows:
+        if teacher_id is None or batch_id is None:
+            continue
+        d = local_date_of(scheduled_start, tz_name)
+        triples.append((teacher_id, batch_id, d))
+        batch_ids.add(batch_id)
+        dates.add(d)
+    if not triples:
+        return {}
+
+    # batch -> its active students (roster size + membership).
+    batch_students: dict[uuid.UUID, set[uuid.UUID]] = {}
+    for sid, bid in (await session.execute(
+        select(StudentBatchMapping.student_id, StudentBatchMapping.batch_id).where(
+            StudentBatchMapping.batch_id.in_(batch_ids),
+            StudentBatchMapping.is_deleted == False,  # noqa: E712
+        )
+    )).all():
+        batch_students.setdefault(bid, set()).add(sid)
+
+    all_students = {s for members in batch_students.values() for s in members}
+    # (student, date) present on that day, limited to the lecture days.
+    present: set[tuple[uuid.UUID, date]] = set()
+    if all_students:
+        for sid, d in (await session.execute(
+            select(DailyAttendance.student_id, DailyAttendance.attendance_date).where(
+                DailyAttendance.student_id.in_(all_students),
+                DailyAttendance.branch_id == branch_id,
+                DailyAttendance.attendance_date.in_(dates),
+                DailyAttendance.day_status.in_(_PRESENT_STATUSES),
+                DailyAttendance.is_deleted == False,  # noqa: E712
+            )
+        )).all():
+            present.add((sid, d))
+
+    acc: dict[uuid.UUID, list[float]] = {}
+    for teacher_id, batch_id, d in triples:
+        roster = batch_students.get(batch_id, set())
+        if not roster:
+            continue
+        present_count = sum(1 for s in roster if (s, d) in present)
+        acc.setdefault(teacher_id, []).append(present_count / len(roster))
+
+    return {
+        tid: {
+            "turnout_pct": round(sum(ratios) / len(ratios) * 100, 1),
+            "turnout_lectures": len(ratios),
+        }
+        for tid, ratios in acc.items()
+    }
 
 
 async def monthly_summary(

@@ -200,3 +200,88 @@ async def test_productivity_after_completion(client: AsyncClient, seed_data):
     assert body["summary"]["total_lectures"] >= 1
     rows = [r for r in body["by_teacher"] if r["teacher_id"] == TEACHER_ID]
     assert rows and rows[0]["hours_taught"] >= 1.5
+
+
+async def test_productivity_attendance_alignment(
+    client: AsyncClient, seed_data, db_session
+):
+    """The productivity row carries attendance-aligned signals: student
+    turnout (Layer-1) and delivery reliability (lifecycle)."""
+    from app.modules.attendance.models.attendance_models import DailyAttendance
+    from app.modules.student.models.student_models import StudentBatchMapping
+
+    await _login_admin(client)
+    # Noon UTC two days ago → same local date under any realistic branch tz.
+    start = (datetime.now(timezone.utc) - timedelta(days=2)).replace(
+        hour=12, minute=0, second=0, microsecond=0
+    )
+
+    # Enrol the seed student in the batch and mark them present that day.
+    db_session.add(StudentBatchMapping(
+        student_id=seed_data["student"].id, batch_id=seed_data["batch"].id,
+        branch_id=seed_data["branch_a"].id, status="active", is_deleted=False,
+    ))
+    db_session.add(DailyAttendance(
+        student_id=seed_data["student"].id, branch_id=seed_data["branch_a"].id,
+        attendance_date=start.date(), day_status="PRESENT",
+        signoff="COMPLETE", source="BIOMETRIC",
+    ))
+    await db_session.commit()
+
+    lecture = (await client.post(
+        "/api/v1/lectures", json=_payload(start, start + timedelta(hours=1))
+    )).json()
+    await client.patch(
+        f"/api/v1/lectures/{lecture['id']}/actuals",
+        params={"branch_id": BRANCH_A_ID},
+        json={
+            "actual_start": start.isoformat(),
+            "actual_end": (start + timedelta(minutes=60)).isoformat(),
+        },
+    )
+
+    body = (await client.get(
+        "/api/v1/lectures/insights/productivity",
+        params={"branch_id": BRANCH_A_ID},
+    )).json()
+    row = next(r for r in body["by_teacher"] if r["teacher_id"] == TEACHER_ID)
+    # 1 student in the batch, present that day → 100% turnout over 1 lecture.
+    assert row["student_turnout_pct"] == 100.0
+    assert row["turnout_lectures"] == 1
+    # The assigned teacher taught it themselves → 100% reliability, no no-show.
+    assert row["assigned"] == 1
+    assert row["taught_self"] == 1
+    assert row["reliability_pct"] == 100.0
+    assert row["teacher_no_show"] == 0
+    assert body["summary"]["branch_turnout_pct"] == 100.0
+    assert body["summary"]["branch_reliability_pct"] == 100.0
+
+
+async def test_productivity_reliability_counts_teacher_no_show(
+    client: AsyncClient, seed_data
+):
+    """A TEACHER_NO_SHOW dents the assigned teacher's reliability."""
+    await _login_admin(client)
+    start = (datetime.now(timezone.utc) - timedelta(days=1)).replace(
+        hour=12, minute=0, second=0, microsecond=0
+    )
+    lecture = (await client.post(
+        "/api/v1/lectures", json=_payload(start, start + timedelta(hours=1))
+    )).json()
+    resp = await client.patch(
+        f"/api/v1/lectures/{lecture['id']}/no-show",
+        params={"branch_id": BRANCH_A_ID},
+        json={"no_show_reason": "TEACHER_NO_SHOW"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    body = (await client.get(
+        "/api/v1/lectures/insights/productivity",
+        params={"branch_id": BRANCH_A_ID},
+    )).json()
+    row = next(r for r in body["by_teacher"] if r["teacher_id"] == TEACHER_ID)
+    assert row["teacher_no_show"] == 1
+    assert row["taught_self"] == 0
+    assert row["assigned"] == 1
+    assert row["reliability_pct"] == 0.0
+    assert body["summary"]["total_teacher_no_show"] >= 1
