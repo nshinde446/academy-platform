@@ -87,4 +87,60 @@ describe("StudentAttendanceCalendar", () => {
     render(<StudentAttendanceCalendar branchId="br1" studentId="stu1" />);
     expect(screen.getByLabelText("Next month")).toBeDisabled();
   });
+
+  it("switches to the day log and shows exact IN/OUT times and a window", () => {
+    setHooks(
+      [
+        dayRow({
+          attendance_date: "2026-07-10",
+          day_status: "PRESENT",
+          first_in: "2026-07-10T03:58:00Z", // 09:28 IST
+          last_out: "2026-07-10T10:32:00Z", // 16:02 IST
+          signoff: "COMPLETE",
+        }),
+      ],
+      { student_id: "stu1", working_days: 1, present_days: 1, absent_days: 0, attendance_pct: 100 },
+    );
+    render(<StudentAttendanceCalendar branchId="br1" studentId="stu1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "log" }));
+
+    // Column headers of the reviewable roster.
+    expect(screen.getByText("In")).toBeInTheDocument();
+    expect(screen.getByText("Out")).toBeInTheDocument();
+    expect(screen.getByText("Sign-off")).toBeInTheDocument();
+    // The on-campus window: 03:58Z → 10:32Z is 6h34, timezone-independent.
+    expect(screen.getByText("6h34")).toBeInTheDocument();
+    expect(screen.getByText("Complete")).toBeInTheDocument();
+  });
+
+  it("flags a missing sign-off and dashes an absent day's times in the log", () => {
+    setHooks(
+      [
+        dayRow({
+          attendance_date: "2026-07-09",
+          day_status: "PRESENT",
+          first_in: "2026-07-09T03:58:00Z",
+          last_out: null,
+          signoff: "MISSING",
+        }),
+        dayRow({
+          id: "d2",
+          attendance_date: "2026-07-08",
+          day_status: "ABSENT",
+          first_in: null,
+          last_out: null,
+          signoff: "NA",
+        }),
+      ],
+      { student_id: "stu1", working_days: 2, present_days: 1, absent_days: 1, attendance_pct: 50 },
+    );
+    render(<StudentAttendanceCalendar branchId="br1" studentId="stu1" />);
+    fireEvent.click(screen.getByRole("button", { name: "log" }));
+
+    expect(screen.getByText("Missing")).toBeInTheDocument();
+    expect(screen.getByText("Absent")).toBeInTheDocument();
+    // Absent day has no times → dashes (both cells and its window).
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+  });
 });
