@@ -103,6 +103,44 @@ headers, and the redacted body — that is where the `cmd_code` command appears.
 LAN, SSH to the VPS with the local key, and a person adding a user in
 SmartOffice's admin UI — it cannot run as an autonomous/cloud job.
 
+### 0.5 Runbook — local capture (SmartOffice on the coaching laptop)
+
+**Preferred over §0.4 when SmartOffice + MSSQL run on-site.** With SmartOffice
+installed on the coaching-center laptop, the capture is a same-LAN, no-cloud job:
+the device points at the laptop, not the VPS, so there is no Caddy bypass, no
+dynamic-IP relay, and no SSH. Same oracle, fewer moving parts.
+
+Standalone tool: `infra/aidata-proxy/local_capture.py` (stdlib only, no Docker).
+It is the local twin of relay mode — forwards each device poll verbatim to local
+SmartOffice, echoes SmartOffice's response back byte-for-byte with original
+header casing (the firmware is case-sensitive), and writes both legs to
+`aidata_capture.log` next to the script. Biometric discipline is identical:
+`face`/`photo`/`logPhoto`/`fps`/`template`/`image` are recorded as key + byte
+length only, never the blob.
+
+On the coaching laptop, from `infra/aidata-proxy/`:
+
+```bash
+python local_capture.py          # prints the laptop LAN IP + port on startup
+```
+
+Then on the R6 server/push setting, point the device at the laptop — **Server
+IP = the printed LAN IP, Port = 8090 (default), Path = /AIData.aspx** — and allow
+the port through Windows Firewall. Add / edit / delete a user in SmartOffice's UI
+and watch for a `*** COMMAND ***` console line; the full `cmd_code` + payload is
+in `aidata_capture.log`. **When done, point the device back at the VPS** so
+normal cloud attendance resumes.
+
+Config via env if defaults don't fit: `SMARTOFFICE_URL`
+(default `http://127.0.0.1:8080/AIData.aspx`), `CAPTURE_PORT` (default `8090`),
+`CAPTURE_FILE`.
+
+**Only for the write path.** This re-points the device off the VPS for the
+duration of the session, so live punches pause while capturing — run it in a
+quiet window. Attendance ingest stays on the VPS direct-push; this laptop tool
+exists solely to learn the server→device command vocabulary. Record the captured
+commands in `biomax-attendance.md` (§ "AIData server→device commands") per §0.3.
+
 ---
 
 ## Phase 1 — data model
