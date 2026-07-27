@@ -52,6 +52,7 @@ interface LectureTableProps {
   onActuals: (lecture: LectureResponse) => void;
   onGenerateDpp?: (lecture: LectureResponse) => void;
   onRecordMakeup?: (lecture: LectureResponse) => void;
+  onReschedule?: (lecture: LectureResponse) => void;
 }
 
 function formatDuration(min: number | null): string | null {
@@ -292,6 +293,7 @@ export function LectureTable({
   onActuals,
   onGenerateDpp,
   onRecordMakeup,
+  onReschedule,
 }: LectureTableProps) {
   const selectable = !!selectedIds && !!onToggleSelect;
   const allSelected =
@@ -410,6 +412,8 @@ export function LectureTable({
               l.lecture_status === "started" ||
               l.lecture_status === "paused";
             const canNoShow = isScheduledLike;
+            // Only a not-yet-started lecture can be moved to a new time.
+            const canReschedule = isScheduledLike;
             const canSubstitute =
               l.lecture_status !== "cancelled" &&
               l.lecture_status !== "no_show";
@@ -597,6 +601,11 @@ export function LectureTable({
                         {canSubstitute && (
                           <DropdownMenuItem onClick={() => onSubstitute(l)}>
                             {l.actual_teacher_id ? "Edit substitute" : "Substitute"}
+                          </DropdownMenuItem>
+                        )}
+                        {canReschedule && onReschedule && (
+                          <DropdownMenuItem onClick={() => onReschedule(l)}>
+                            Reschedule
                           </DropdownMenuItem>
                         )}
                         {canNoShow && (

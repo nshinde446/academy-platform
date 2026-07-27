@@ -37,6 +37,7 @@ import {
   useLecturesInRange,
   useMarkNoShow,
   useMarkSubstitute,
+  useRescheduleLecture,
   usePendingActuals,
   usePendingMakeups,
   useStartLecture,
@@ -48,6 +49,7 @@ import type {
   LectureActuals,
   LectureCreate,
   LectureNoShow,
+  LectureReschedule,
   LectureResponse,
   LectureSessionCreate,
   LectureStatus,
@@ -62,6 +64,7 @@ import { LectureEmptyState } from "./_components/lecture-empty-state";
 import { CreateLectureDialog } from "./_components/create-lecture-dialog";
 import { MarkSubstituteDialog } from "./_components/mark-substitute-dialog";
 import { MarkNoShowDialog } from "./_components/mark-no-show-dialog";
+import { RescheduleDialog } from "./_components/reschedule-dialog";
 import { RecordMakeupDialog } from "./_components/record-makeup-dialog";
 import { ImportScheduleDialog } from "./_components/import-schedule-dialog";
 import { CopyScheduleDialog } from "./_components/copy-schedule-dialog";
@@ -221,6 +224,9 @@ function LecturesPageBody() {
     null
   );
   const [noShowOpen, setNoShowOpen] = useState(false);
+  const [rescheduleTarget, setRescheduleTarget] =
+    useState<LectureResponse | null>(null);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [dppTarget, setDppTarget] = useState<LectureResponse | null>(null);
   const [dppOpen, setDppOpen] = useState(false);
   const [makeupOpen, setMakeupOpen] = useState(false);
@@ -269,6 +275,7 @@ function LecturesPageBody() {
   const deleteMutation = useDeleteLecture(branchId);
   const substituteMutation = useMarkSubstitute(branchId);
   const noShowMutation = useMarkNoShow(branchId);
+  const rescheduleMutation = useRescheduleLecture(branchId);
   const sessionMutation = useCreateLectureSession(branchId);
   const actualsMutation = useUpdateActuals(branchId);
   const copySelectedMutation = useCopySelected(branchId);
@@ -471,6 +478,17 @@ function LecturesPageBody() {
     if (!noShowTarget) return;
     await noShowMutation.mutateAsync({
       lectureId: noShowTarget.id,
+      data,
+    });
+  }
+  function handleReschedule(l: LectureResponse) {
+    setRescheduleTarget(l);
+    setRescheduleOpen(true);
+  }
+  async function handleRescheduleSubmit(data: LectureReschedule) {
+    if (!rescheduleTarget) return;
+    await rescheduleMutation.mutateAsync({
+      lectureId: rescheduleTarget.id,
       data,
     });
   }
@@ -956,6 +974,7 @@ function LecturesPageBody() {
               onActuals={handleActuals}
               onGenerateDpp={handleGenerateDpp}
               onRecordMakeup={handleRecordMakeup}
+              onReschedule={handleReschedule}
             />
           )}
         </>
@@ -1010,6 +1029,18 @@ function LecturesPageBody() {
         }}
         onSubmit={handleNoShowSubmit}
         isPending={noShowMutation.isPending}
+      />
+
+      <RescheduleDialog
+        lecture={rescheduleTarget}
+        classrooms={classrooms}
+        open={rescheduleOpen}
+        onOpenChange={(o) => {
+          setRescheduleOpen(o);
+          if (!o) setRescheduleTarget(null);
+        }}
+        onSubmit={handleRescheduleSubmit}
+        isPending={rescheduleMutation.isPending}
       />
 
       <MarkSubstituteDialog
