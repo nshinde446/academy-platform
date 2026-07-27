@@ -77,4 +77,47 @@ describe("DayRegister", () => {
       fmt: "xlsx",
     });
   });
+
+  it("filters the visible roster to the selected student", async () => {
+    const user = userEvent.setup();
+    render(<DayRegister branchId="br1" batches={BATCHES} />);
+    await user.selectOptions(screen.getByLabelText("Select batch"), "b1");
+
+    // Whole batch first.
+    let table = screen.getByRole("table");
+    expect(within(table).getByText("Aarav Patil")).toBeInTheDocument();
+    expect(within(table).getByText("Diya Shah")).toBeInTheDocument();
+
+    // Pick a student -> table narrows to just them.
+    await user.selectOptions(screen.getByLabelText("Student"), "s1");
+    table = screen.getByRole("table");
+    expect(within(table).getByText("Aarav Patil")).toBeInTheDocument();
+    expect(within(table).queryByText("Diya Shah")).not.toBeInTheDocument();
+  });
+
+  it("scopes the main download to batch when unfiltered, student when filtered", async () => {
+    const user = userEvent.setup();
+    downloadMutate.mockClear();
+    render(<DayRegister branchId="br1" batches={BATCHES} />);
+    await user.selectOptions(screen.getByLabelText("Select batch"), "b1");
+
+    // No student selected -> "This batch".
+    let group = screen.getByText("This batch").parentElement!;
+    await user.click(within(group).getByText("PDF"));
+    expect(downloadMutate.mock.calls.at(-1)![0]).toMatchObject({
+      scope: "batch",
+      id: "b1",
+      fmt: "pdf",
+    });
+
+    // Select a student -> the same primary group emits an individual report.
+    await user.selectOptions(screen.getByLabelText("Student"), "s1");
+    group = screen.getByText("Selected student").parentElement!;
+    await user.click(within(group).getByText("Excel"));
+    expect(downloadMutate.mock.calls.at(-1)![0]).toMatchObject({
+      scope: "student",
+      id: "s1",
+      fmt: "xlsx",
+    });
+  });
 });

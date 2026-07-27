@@ -69,6 +69,15 @@ export function DayRegister({ branchId, batches }: DayRegisterProps) {
     () => registerQuery.data ?? [],
     [registerQuery.data],
   );
+  // The Student filter narrows the visible roster; empty selection = whole batch.
+  // A stale selection (student not in the current batch) falls back to all rows.
+  const visibleRows = useMemo(
+    () =>
+      studentId && rows.some((r) => r.student_id === studentId)
+        ? rows.filter((r) => r.student_id === studentId)
+        : rows,
+    [rows, studentId],
+  );
 
   const download = useDownloadAttendanceReport(branchId);
   function pull(scope: "student" | "batch" | "all-batches", fmt: "xlsx" | "pdf") {
@@ -99,7 +108,11 @@ export function DayRegister({ branchId, batches }: DayRegisterProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <select
           value={batchId}
-          onChange={(e) => setBatchId(e.target.value)}
+          onChange={(e) => {
+            setBatchId(e.target.value);
+            // A student from the previous batch shouldn't leak the filter over.
+            setStudentId("");
+          }}
           className={SELECT_CLASS}
           aria-label="Select batch"
         >
@@ -165,14 +178,14 @@ export function DayRegister({ branchId, batches }: DayRegisterProps) {
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  Student (for individual report)
+                  Student
                   <select
                     value={studentId}
                     onChange={(e) => setStudentId(e.target.value)}
                     className={`${SELECT_CLASS} min-w-44`}
                     disabled={rows.length === 0}
                   >
-                    <option value="">Select a student…</option>
+                    <option value="">All students</option>
                     {rows.map((r) => (
                       <option key={r.student_id} value={r.student_id}>
                         {r.name}
@@ -181,18 +194,17 @@ export function DayRegister({ branchId, batches }: DayRegisterProps) {
                   </select>
                 </label>
               </div>
+              <p className="text-xs text-muted-foreground">
+                {studentId
+                  ? "Download covers the selected student for the date range."
+                  : "No student selected — download covers the whole batch for the date range."}
+              </p>
               <div className="flex flex-wrap gap-4">
                 <DownloadGroup
-                  label="Student"
-                  disabled={!studentId || download.isPending}
-                  onExcel={() => pull("student", "xlsx")}
-                  onPdf={() => pull("student", "pdf")}
-                />
-                <DownloadGroup
-                  label="This batch"
+                  label={studentId ? "Selected student" : "This batch"}
                   disabled={!batchId || download.isPending}
-                  onExcel={() => pull("batch", "xlsx")}
-                  onPdf={() => pull("batch", "pdf")}
+                  onExcel={() => pull(studentId ? "student" : "batch", "xlsx")}
+                  onPdf={() => pull(studentId ? "student" : "batch", "pdf")}
                 />
                 <DownloadGroup
                   label="All batches"
@@ -232,7 +244,7 @@ export function DayRegister({ branchId, batches }: DayRegisterProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((r, i) => (
+              {visibleRows.map((r, i) => (
                 <RegisterRow key={r.student_id} row={r} index={i} timeOf={timeOf} />
               ))}
             </TableBody>
