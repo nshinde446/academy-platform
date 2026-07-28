@@ -109,6 +109,12 @@ class Settings(BaseSettings):
     # assumption, mirroring ETO_BRANCH_ID). Per-serial branch mapping can come
     # later; for now all allowed devices map here.
     BIOMAX_BRANCH_ID: str = ""
+    # Server → device provisioning (push student identity to the terminal so
+    # staff never hand-type a name + roll number). Off by default: while false
+    # the provisioning API returns 503 and the queue is never emitted to the
+    # device, so shipping the plumbing cannot affect live attendance. See
+    # docs/biomax-provisioning-implementation.md.
+    BIOMAX_PROVISIONING_ENABLED: bool = False
 
     # SmartOffice (SmartOfficePayroll) cloud middleware — the ZKTeco devices
     # push to SmartOffice's server and we PULL the aggregated logs from its REST
