@@ -9,7 +9,8 @@ export type AttendanceView =
   | "defaulters"
   | "month"
   | "day"
-  | "lecture";
+  | "lecture"
+  | "device";
 
 const ICON_PROPS = {
   viewBox: "0 0 24 24",
@@ -26,6 +27,7 @@ const ITEMS: {
   name: string;
   desc: string;
   icon: ReactNode;
+  adminOnly?: boolean;
 }[] = [
   {
     view: "overview",
@@ -84,6 +86,19 @@ const ITEMS: {
       </svg>
     ),
   },
+  {
+    view: "device",
+    name: "Device sync",
+    desc: "Reconcile students against the BioMax terminal's user table.",
+    adminOnly: true,
+    icon: (
+      <svg {...ICON_PROPS}>
+        <rect x="4" y="2" width="16" height="20" rx="2" />
+        <path d="M12 18h.01" />
+        <circle cx="12" cy="9" r="3" />
+      </svg>
+    ),
+  },
 ];
 
 // Descriptive view rail — each target names itself (icon + purpose) and carries
@@ -93,18 +108,21 @@ export function AttendanceNav({
   view,
   onChange,
   defaultersCount,
+  isAdmin = false,
 }: {
   view: AttendanceView;
   onChange: (v: AttendanceView) => void;
   defaultersCount: number;
+  isAdmin?: boolean;
 }) {
+  const items = ITEMS.filter((it) => isAdmin || !it.adminOnly);
   return (
     <div
       role="tablist"
       aria-label="Attendance views"
       className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0"
     >
-      {ITEMS.map((it) => {
+      {items.map((it) => {
         const active = view === it.view;
         return (
           <button

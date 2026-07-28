@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useBranchId } from "@/store/user-store";
+import { useBranchId, useUserStore } from "@/store/user-store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton, TableSkeleton } from "@/components/ui/skeleton";
@@ -28,7 +28,12 @@ import { BatchMatrix } from "./_components/batch-matrix";
 import { DefaulterBoard } from "./_components/defaulter-board";
 import { InstituteOverview } from "./_components/institute-overview";
 import { InstitutePulse } from "./_components/institute-pulse";
+import { DeviceSync } from "./_components/device-sync";
 import { AttendanceNav, type AttendanceView } from "./_components/attendance-nav";
+
+// Roles that may see/use the device-provisioning surface (matches the backend
+// require_roles(["super_admin","branch_admin"]) on /attendance/provisioning).
+const ADMIN_ROLES = new Set(["super_admin", "branch_admin"]);
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
@@ -77,6 +82,11 @@ export default function AttendancePage() {
   // `isResolving` covers the first-paint window before /auth/me settles, so we
   // show a skeleton instead of flashing a "No branch selected" / 0-0 console.
   const { branchId, isResolving } = useBranchId();
+  const roles = useUserStore((s) => s.user?.roles ?? []);
+  const isAdmin = useMemo(
+    () => roles.some((r) => ADMIN_ROLES.has(r)),
+    [roles],
+  );
 
   const lecturesQuery = useLectures(branchId);
   const batchesQuery = useBatchesForLectures(branchId);
@@ -270,6 +280,7 @@ export default function AttendancePage() {
           view={view}
           onChange={setView}
           defaultersCount={defaultersCount}
+          isAdmin={isAdmin}
         />
         <div className="min-w-0">
           {view === "day" ? (
@@ -280,6 +291,8 @@ export default function AttendancePage() {
             <DefaulterBoard branchId={branchId} />
           ) : view === "overview" ? (
             <InstituteOverview branchId={branchId} />
+          ) : view === "device" ? (
+            <DeviceSync branchId={branchId} />
           ) : (
           <div className="flex flex-col gap-6">
       {/* Lecture picker */}

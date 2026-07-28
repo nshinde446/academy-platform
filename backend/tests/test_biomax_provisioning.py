@@ -292,3 +292,19 @@ async def test_provisioning_api_disabled_by_default_returns_503(client):
     # before any auth or device check. Proves shipping the plumbing is inert.
     resp = await client.get(f"/api/v1/attendance/provisioning/reconcile?dev_id={DEV}")
     assert resp.status_code == 503
+
+
+async def test_list_devices_reports_flag_and_serials(monkeypatch):
+    # /devices is NOT behind the enabled gate: the UI must tell "feature off"
+    # apart from "no devices configured". It reports both the flag and the
+    # configured serials (sorted), leaking nothing an admin didn't already set.
+    monkeypatch.setattr(
+        provisioning_routes, "get_settings",
+        lambda: type("S", (), {"BIOMAX_PROVISIONING_ENABLED": False})(),
+    )
+    monkeypatch.setattr(
+        provisioning_routes, "_allowed_serials", lambda: {"DEV-B", "DEV-A"}
+    )
+    result = await provisioning_routes.list_devices(_user={})
+    assert result.enabled is False
+    assert [d.dev_id for d in result.devices] == ["DEV-A", "DEV-B"]

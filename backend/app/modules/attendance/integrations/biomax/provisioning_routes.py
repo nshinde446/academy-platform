@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config.settings import get_settings
 from app.core.database.session import get_db
 from app.modules.attendance.integrations.biomax.iclock import (
+    _allowed_serials,
     _require_known_device,
     _resolve_branch,
 )
@@ -24,6 +25,8 @@ from app.modules.attendance.models.provisioning_models import STATUS_PENDING
 from app.modules.attendance.repositories import device_command_repo
 from app.modules.attendance.schemas.provisioning_schemas import (
     DeviceCommandResponse,
+    ProvisionDevice,
+    ProvisionDevicesResponse,
     ProvisionDryRunRequest,
     ProvisionPlanResponse,
     ProvisionPushRequest,
@@ -45,6 +48,22 @@ def _require_enabled() -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="BioMax provisioning is disabled (BIOMAX_PROVISIONING_ENABLED).",
         )
+
+
+@router.get("/devices", response_model=ProvisionDevicesResponse)
+async def list_devices(
+    _user: dict = Depends(_ADMIN),
+):
+    """Configured devices + the enabled flag, so the UI renders the right state.
+
+    Deliberately NOT behind ``_require_enabled``: the UI needs to distinguish
+    "feature off" from "no devices configured", and this leaks nothing beyond
+    the serials an admin already set.
+    """
+    return ProvisionDevicesResponse(
+        enabled=get_settings().BIOMAX_PROVISIONING_ENABLED,
+        devices=[ProvisionDevice(dev_id=s) for s in sorted(_allowed_serials())],
+    )
 
 
 @router.get("/reconcile", response_model=ReconcileResponse)

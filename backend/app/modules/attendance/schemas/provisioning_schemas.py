@@ -66,6 +66,20 @@ class DeviceCommandResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ProvisionDevice(BaseModel):
+    """A configured BioMax device the UI can reconcile against."""
+
+    dev_id: str
+
+
+class ProvisionDevicesResponse(BaseModel):
+    """The configured devices + whether provisioning is enabled at all, so the
+    UI can show the right empty/disabled state without a second call."""
+
+    enabled: bool
+    devices: list[ProvisionDevice]
+
+
 class ReconcileRow(BaseModel):
     vendor_user_id: str
     name: str | None = None
