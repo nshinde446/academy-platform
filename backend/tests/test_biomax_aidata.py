@@ -14,8 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.attendance.integrations.biomax import aidata
 from app.modules.attendance.integrations.biomax.service import ingest_punches
 from app.modules.attendance.models.attendance_models import DailyAttendance
+from app.modules.attendance.repositories import device_command_repo
 from app.modules.attendance.services import daily_service
 from app.modules.student.models.student_models import Student
+
+DEV = "AMDB26013800122"
 
 
 async def _student(db_session: AsyncSession, seed_data, rfid: str) -> Student:
@@ -77,6 +80,109 @@ def test_direction_mapping():
     assert aidata._direction("1") == "OUT"
     assert aidata._direction(None) is None
     assert aidata._direction("weird") is None
+
+
+# ── enrollment-mirror parsing (identity only, never biometrics) ──────────────
+
+
+def test_parse_enroll_extracts_identity():
+    body = {
+        "userId": "3001", "name": "RAM SIR", "privilege": 0,
+        "vaildStart": "20200101", "vaildEnd": "20401231",
+        "face": "AAQD....", "photo": "/9j/....",
+    }
+    fields = aidata.parse_enroll_record(body)
+    assert fields["vendor_user_id"] == "3001"
+    assert fields["name"] == "RAM SIR"
+    assert fields["privilege"] == 0
+    assert fields["valid_start"] == "20200101"
+    assert fields["valid_end"] == "20401231"
+    # A template was present -> flag only.
+    assert fields["has_face"] is True
+    # The blob itself is never carried out of the record.
+    assert not any(
+        k in fields for k in ("face", "photo", "logPhoto", "fps", "template", "image")
+    )
+
+
+def test_parse_enroll_has_face_false_without_template():
+    fields = aidata.parse_enroll_record({"userId": "3001", "name": "NO FACE"})
+    assert fields["has_face"] is False
+    assert fields["valid_start"] is None and fields["valid_end"] is None
+
+
+def test_parse_enroll_none_without_userid():
+    # Heartbeat / unusable sync -> nothing to mirror.
+    assert aidata.parse_enroll_record({"name": "RAM SIR", "face": "AAQD"}) is None
+    assert aidata.parse_enroll_record({"userId": "  "}) is None
+
+
+def test_parse_enroll_truncates_name_and_coerces_privilege():
+    fields = aidata.parse_enroll_record(
+        {"userId": "3001", "name": "X" * 200, "privilege": "not-int"}
+    )
+    assert len(fields["name"]) == aidata.MIRROR_NAME_MAX
+    assert fields["privilege"] == 0
+
+
+def test_parse_enroll_junk_validity_dropped():
+    fields = aidata.parse_enroll_record(
+        {"userId": "3001", "vaildStart": "", "vaildEnd": "N/A"}
+    )
+    assert fields["valid_start"] is None
+    assert fields["valid_end"] is None
+
+
+# ── mirror persistence (device_users) ────────────────────────────────────────
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_mirror_enroll_record_lands_device_user(db_session, seed_data):
+    branch_id = seed_data["branch_a"].id
+    ok = await aidata._mirror_enroll_record(
+        db_session, branch_id, DEV,
+        {"userId": "3001", "name": "RAM SIR", "vaildStart": "20200101",
+         "vaildEnd": "20401231", "face": "AAQD...."},
+    )
+    assert ok is True
+    await db_session.commit()
+
+    users = await device_command_repo.list_device_users(db_session, branch_id, DEV)
+    assert len(users) == 1
+    assert users[0].vendor_user_id == "3001"
+    assert users[0].name == "RAM SIR"
+    assert users[0].has_face is True
+    assert users[0].valid_start == "20200101"
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_mirror_enroll_record_upserts_on_resync(db_session, seed_data):
+    branch_id = seed_data["branch_a"].id
+    await aidata._mirror_enroll_record(
+        db_session, branch_id, DEV, {"userId": "3001", "name": "OLD NAME"}
+    )
+    await db_session.commit()
+    await aidata._mirror_enroll_record(
+        db_session, branch_id, DEV,
+        {"userId": "3001", "name": "NEW NAME", "face": "AAQD"},
+    )
+    await db_session.commit()
+
+    users = await device_command_repo.list_device_users(db_session, branch_id, DEV)
+    assert len(users) == 1  # upsert, not a second row
+    assert users[0].name == "NEW NAME"
+    assert users[0].has_face is True
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_mirror_enroll_record_noop_without_userid(db_session, seed_data):
+    branch_id = seed_data["branch_a"].id
+    ok = await aidata._mirror_enroll_record(
+        db_session, branch_id, DEV, {"name": "RAM SIR", "face": "AAQD"}
+    )
+    assert ok is False
+    users = await device_command_repo.list_device_users(db_session, branch_id, DEV)
+    assert users == []
 
 
 # ── dev_id allowlist gating (reused from iclock) ─────────────────────────────
@@ -170,6 +276,70 @@ def test_ingest_failure_is_not_acked(monkeypatch):
     )
     assert resp.status_code == 500
     assert "response_code" not in resp.headers
+
+
+# ── enrollment mirror is gated by BIOMAX_PROVISIONING_ENABLED ────────────────
+
+
+def _enroll_client(monkeypatch, db_session, branch_id, *, enabled: bool):
+    """A TestClient wired to hit ``aidata_push`` with the real db_session, the
+    device allowlisted, and the provisioning flag set to ``enabled``."""
+    import app.modules.attendance.integrations.biomax.iclock as iclock
+    from app.core.database.session import get_db
+
+    monkeypatch.setattr(
+        iclock, "get_settings",
+        lambda: type("S", (), {"BIOMAX_DEVICE_SERIALS": DEV})(),
+    )
+    monkeypatch.setattr(
+        aidata, "get_settings",
+        lambda: type("S", (), {"BIOMAX_PROVISIONING_ENABLED": enabled})(),
+    )
+    monkeypatch.setattr(aidata, "_resolve_branch", lambda: branch_id)
+
+    async def _tz(*a, **k):
+        return "Asia/Kolkata"
+
+    monkeypatch.setattr(daily_service, "branch_timezone", _tz)
+
+    test_app = FastAPI()
+    test_app.include_router(aidata.router)
+
+    async def _db():
+        yield db_session
+
+    test_app.dependency_overrides[get_db] = _db
+    return TestClient(test_app)
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_enroll_push_mirrors_when_enabled(monkeypatch, db_session, seed_data):
+    branch_id = seed_data["branch_a"].id
+    client = _enroll_client(monkeypatch, db_session, branch_id, enabled=True)
+    resp = client.post(
+        "/AIData.aspx",
+        headers={"dev_id": DEV, "request_code": aidata.ENROLL_REQUEST_CODE},
+        json={"userId": "3001", "name": "RAM SIR", "face": "AAQD...."},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["response_code"] == "OK"  # still acked
+    users = await device_command_repo.list_device_users(db_session, branch_id, DEV)
+    assert [u.vendor_user_id for u in users] == ["3001"]
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_enroll_push_ack_and_drops_when_disabled(monkeypatch, db_session, seed_data):
+    branch_id = seed_data["branch_a"].id
+    client = _enroll_client(monkeypatch, db_session, branch_id, enabled=False)
+    resp = client.post(
+        "/AIData.aspx",
+        headers={"dev_id": DEV, "request_code": aidata.ENROLL_REQUEST_CODE},
+        json={"userId": "3001", "name": "RAM SIR", "face": "AAQD...."},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["response_code"] == "OK"
+    users = await device_command_repo.list_device_users(db_session, branch_id, DEV)
+    assert users == []  # flag off -> byte-identical ack-and-drop, nothing mirrored
 
 
 # ── end-to-end ingest ───────────────────────────────────────────────────────
