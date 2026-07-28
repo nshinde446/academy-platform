@@ -105,6 +105,16 @@ services:
     environment:
       AIDATA_UPSTREAM: http://backend:8000/AIData.aspx
       AIDATA_PORT: "8099"
+      # HTTPS listener for the device in Domain Name + HTTPS mode. TLS is
+      # terminated HERE, not by Caddy — Caddy canonicalises the case-sensitive
+      # ack headers and breaks the device. Caddy still ISSUES/renews the cert
+      # (add the host to /etc/caddy/Caddyfile); we mount its cert files below.
+      AIDATA_TLS_PORT: "8443"
+      AIDATA_TLS_CERT: /certs/acme-v02.api.letsencrypt.org-directory/attend.eduworld-livekit.duckdns.org/attend.eduworld-livekit.duckdns.org.crt
+      AIDATA_TLS_KEY: /certs/acme-v02.api.letsencrypt.org-directory/attend.eduworld-livekit.duckdns.org/attend.eduworld-livekit.duckdns.org.key
+      # Liveness heartbeat — bumped on every device contact; the host-side
+      # attendance_watchdog.py reads it and alerts when it goes stale.
+      AIDATA_HEARTBEAT_FILE: /srv/academy/aidata/heartbeat
       # CAPTURE MODE ONLY — leave UNSET in production. Set to BioMax's own
       # SmartOffice receiver to relay the device's traffic through it and log
       # SmartOffice's server->device commands (Phase 2 provisioning oracle; see
@@ -114,13 +124,20 @@ services:
       # AIDATA_RELAY_UPSTREAM: http://103.171.50.109:8080/AIData.aspx
     volumes:
       - ../aidata-proxy/aidata_proxy.py:/app/aidata_proxy.py:ro
+      # Caddy's cert store (read-only). Container runs as root, so it can read
+      # caddy's 0600 key despite the caddy:caddy ownership.
+      - /var/lib/caddy/.local/share/caddy/certificates:/certs:ro
+      # Heartbeat dir shared with the host watchdog (cron reads it there).
+      - /srv/academy/aidata:/srv/academy/aidata
     depends_on:
       backend: { condition: service_healthy }
     ports:
-      # Public on purpose — the terminal pushes here directly (plain HTTP, the
-      # only thing this firmware speaks). Payload is just an ID + timestamp and
-      # the backend still enforces its dev_id allowlist.
+      # Public on purpose — the terminal pushes here directly. Plain HTTP on
+      # 8099 (proven fallback), HTTPS on 8443 (Domain Name mode). Payload is
+      # just an ID + timestamp and the backend still enforces its dev_id
+      # allowlist.
       - "8099:8099"
+      - "8443:8443"
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }

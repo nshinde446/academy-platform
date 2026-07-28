@@ -47,6 +47,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import ssl
+import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -58,6 +61,23 @@ RELAY_UPSTREAM = os.environ.get("AIDATA_RELAY_UPSTREAM") or None
 PORT = int(os.environ.get("AIDATA_PORT", "8099"))
 TIMEOUT = float(os.environ.get("AIDATA_TIMEOUT", "10"))
 PATH = "/AIData.aspx"
+
+# --- HTTPS (Domain Name mode) -----------------------------------------------
+# When the device is configured with a hostname + HTTPS, it connects here over
+# TLS. We terminate TLS in THIS process (not Caddy) because Caddy canonicalises
+# the case-sensitive ack headers and breaks the device (the whole reason this
+# proxy exists). Caddy still *issues/renews* the Let's Encrypt cert for the
+# hostname; we just read its files. Unset -> no TLS listener (plain HTTP only).
+TLS_PORT = int(os.environ.get("AIDATA_TLS_PORT", "0") or "0")
+TLS_CERT = os.environ.get("AIDATA_TLS_CERT") or None  # fullchain .crt (PEM)
+TLS_KEY = os.environ.get("AIDATA_TLS_KEY") or None     # private .key (PEM)
+
+# --- Liveness heartbeat ------------------------------------------------------
+# The device polls every ~20s even when nobody punches, so "no contact" is a far
+# better outage signal than "no punches". On every device request we bump the
+# mtime of this file; the watchdog (attendance_watchdog.py) alerts when it goes
+# stale. Unset -> no heartbeat written.
+HEARTBEAT_FILE = os.environ.get("AIDATA_HEARTBEAT_FILE") or None
 
 # Headers the device sends that the app needs to identify + classify the record.
 # Everything else (including any base64 face/photo payload) is passed through in
@@ -116,6 +136,65 @@ def _capture(direction: str, status: object, headers: object, body: bytes) -> No
         "body": _redact(body),
     }
     log.info("CAPTURE %s", json.dumps(entry, ensure_ascii=False))
+
+
+def _touch_heartbeat() -> None:
+    """Bump the heartbeat file's mtime to mark 'the device just contacted us'.
+    Best-effort: a heartbeat failure must never affect acking a punch."""
+    if not HEARTBEAT_FILE:
+        return
+    try:
+        now = time.time()
+        with open(HEARTBEAT_FILE, "a"):
+            pass
+        os.utime(HEARTBEAT_FILE, (now, now))
+    except OSError as exc:
+        log.warning("heartbeat write failed: %s", exc)
+
+
+class _CertReloader:
+    """Holds an SSLContext and reloads the cert when its file changes on disk,
+    so Caddy's automatic renewals are picked up without restarting the proxy.
+    Wired in as the context's ``sni_callback`` — checked once per TLS handshake,
+    which is cheap and needs no timer thread."""
+
+    def __init__(self, certfile: str, keyfile: str) -> None:
+        self._certfile = certfile
+        self._keyfile = keyfile
+        self._lock = threading.Lock()
+        self._mtime = 0.0
+        self._ctx = self._build()
+
+    def _build(self) -> ssl.SSLContext:
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(self._certfile, self._keyfile)
+        # Some BioMax firmwares only negotiate older TLS; allow down to 1.2
+        # (still refuse SSLv3/TLS1.0/1.1). Raise if you confirm the device does
+        # 1.3 cleanly.
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        self._mtime = os.path.getmtime(self._certfile)
+        return ctx
+
+    def _maybe_reload(self) -> None:
+        try:
+            if os.path.getmtime(self._certfile) != self._mtime:
+                with self._lock:
+                    if os.path.getmtime(self._certfile) != self._mtime:
+                        self._ctx = self._build()
+                        log.info("TLS cert reloaded from %s", self._certfile)
+        except OSError as exc:
+            log.warning("TLS cert reload check failed: %s", exc)
+
+    def sni_callback(self, sslsock: ssl.SSLObject, server_name: str | None,
+                     ctx: ssl.SSLContext) -> None:
+        self._maybe_reload()
+        sslsock.context = self._ctx
+
+    @property
+    def context(self) -> ssl.SSLContext:
+        ctx = self._ctx
+        ctx.sni_callback = self.sni_callback
+        return ctx
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -199,6 +278,10 @@ class Handler(BaseHTTPRequestHandler):
             self._refuse(404)
             return
 
+        # A request on the real path is the device (or its probe) reaching us —
+        # record liveness before anything else can fail.
+        _touch_heartbeat()
+
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else b""
 
@@ -244,6 +327,12 @@ class Handler(BaseHTTPRequestHandler):
         and add nothing. Real events are logged explicitly above."""
 
 
+def _serve(server: ThreadingHTTPServer, label: str) -> None:
+    log.info("listening on %s (%s) -> %s", server.server_address, label,
+             RELAY_UPSTREAM or UPSTREAM)
+    server.serve_forever()
+
+
 def main() -> None:
     if RELAY_UPSTREAM:
         log.warning(
@@ -251,8 +340,36 @@ def main() -> None:
             "verbatim (biometric blobs redacted in the capture log). This must "
             "NOT run in production.", RELAY_UPSTREAM
         )
-    log.info("listening on 0.0.0.0:%d -> %s", PORT, RELAY_UPSTREAM or UPSTREAM)
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    if HEARTBEAT_FILE:
+        _touch_heartbeat()  # seed it so the watchdog doesn't false-alarm on boot
+        log.info("heartbeat -> %s", HEARTBEAT_FILE)
+
+    servers: list[tuple[ThreadingHTTPServer, str]] = [
+        (ThreadingHTTPServer(("0.0.0.0", PORT), Handler), "plain HTTP")
+    ]
+
+    # Optional TLS listener for the device in Domain Name + HTTPS mode.
+    if TLS_PORT and TLS_CERT and TLS_KEY:
+        try:
+            reloader = _CertReloader(TLS_CERT, TLS_KEY)
+            tls_server = ThreadingHTTPServer(("0.0.0.0", TLS_PORT), Handler)
+            tls_server.socket = reloader.context.wrap_socket(
+                tls_server.socket, server_side=True
+            )
+            servers.append((tls_server, "HTTPS/TLS"))
+            log.info("TLS enabled on :%d using %s", TLS_PORT, TLS_CERT)
+        except (OSError, ssl.SSLError) as exc:
+            # Never let a cert problem take down plain-HTTP ingest — that path is
+            # the proven fallback. Log loudly and carry on HTTP-only.
+            log.error("TLS listener NOT started (%s) — continuing HTTP-only", exc)
+    elif TLS_PORT:
+        log.warning("AIDATA_TLS_PORT set but cert/key missing — TLS disabled")
+
+    # Run every listener but the last in its own daemon thread; serve the last
+    # on the main thread so the process blocks here.
+    for server, label in servers[:-1]:
+        threading.Thread(target=_serve, args=(server, label), daemon=True).start()
+    _serve(*servers[-1])
 
 
 if __name__ == "__main__":
