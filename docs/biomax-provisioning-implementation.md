@@ -11,11 +11,13 @@ repeated here. Ingest (device → platform) is described in
 `infra/aidata-redirect/` stopgap is retired (2026-07-22) — the transport is
 stable, so building on it no longer risks masking a silent redirect failure.
 
-**The gate is still Phase 0.** The command vocabulary is unknown and must be
-*captured*, not guessed — these are write commands and a wrong guess can wipe
-enrolled users whose faces cannot be restored from our DB. Everything from Phase
-1 on is ordinary work that we do not start until Phase 0 yields a confirmed
-format.
+**The gate was Phase 0 — now largely CLEARED (2026-07-28).** The command
+vocabulary and the registration payload were captured directly from SmartOffice's
+own SQL database on the coaching laptop (see §0.6). One small piece remains — the
+HTTP *wire framing* of a `SET_USER_INFO` response — which is a short oracle
+capture, not a blocker to the design. The old warning still holds for the
+delete path: write commands can wipe enrolled faces that our DB cannot restore,
+so nothing is emitted on a guess.
 
 ---
 
@@ -24,6 +26,87 @@ format.
 Nothing below can be finalised until we know the real `cmd_code` values, their
 payload shape, and how the device reports a command's result. Same oracle method
 that cracked the ack: let BioMax's own SmartOffice tell us.
+
+### 0.6 RESULT — vocabulary captured from SmartOffice's SQL DB (2026-07-28)
+
+The cleanest oracle turned out to be SmartOffice's **own database**, not a live
+relay. With SmartOffice + MSSQL installed on the coaching laptop, its
+`SmartOffice` DB (`localhost\SQLEXPRESS`) holds a `DeviceCommands` queue — the
+exact server→device channel — with every command it has ever issued to our
+terminal (serial `AMDB26013800122`). Read-only queries gave us the authoritative
+vocabulary; no device re-pointing, no biometrics touched.
+
+**Command vocabulary** (`DeviceCommands.DeviceCommand` = the `cmd_code`):
+
+| `cmd_code` | meaning |
+|---|---|
+| `SET_TIME` | sync device clock to server |
+| `RESET_ENROLL_MARK` | reset the enroll marker (part of a full user re-read) |
+| `GET_LOG_DATA` | pull attendance log records |
+| `GET_USER_INFO` | read the device's user table |
+| **`SET_USER_INFO`** | **create / update a user — the registration command** |
+
+No explicit delete command has been observed yet (SmartOffice hasn't issued one);
+capture it via §0.4/§0.5 before ever building the delete path (Phase 5).
+
+**Registration payload** — `cmd_code: SET_USER_INFO`, body a `users` array. The
+captured example (stored in the queue as `$`-separated decimal-ASCII in
+`CmdParmStr`), decoded verbatim:
+
+```json
+{"users":[{"userId":"1","name":"test","privilege":0,"card":"","pwd":"","vaildStart":"20230728","vaildEnd":"20360728"}]}
+```
+
+Field contract (note the vendor typos `vaildStart`/`vaildEnd`):
+
+| field | required | our value |
+|---|---|---|
+| `userId` | **yes — hard** | the student's roll number (numeric); also `Student.rfid_number`. Empty `userId` is the zombie-record loop bug. |
+| `name` | yes in practice | student name (`EmployeeName` is `NOT NULL` in SmartOffice) |
+| `privilege` | default `0` | `0` = normal user |
+| `card` | optional — **left empty** | physical RFID card number; we do not issue cards (see identity model) |
+| `pwd` | optional | PIN; empty |
+| `vaildStart`/`vaildEnd` | optional, send wide | `YYYYMMDD` validity window (e.g. `20200101`→`20401231`) so users never silently expire |
+
+**Identity model (decided 2026-07-28) — the crux the code must honour:**
+
+- The device `userId` is the identity key, *separate* from the authentication
+  method. A punch — by face, thumb, card, or PIN — reports this `userId`, and
+  `aidata.py` matches it to `Student.rfid_number`.
+- **`Student.rfid_number` is a misnomer: it holds the device `userId`, not a
+  physical card number.** All working punches matched this way. (Worth an
+  eventual rename; out of scope here — document, don't churn.)
+- **Auth = face and/or thumb, enrolled physically at the device.** Templates
+  cannot be pushed. `card` stays empty — cards are not used (every
+  `EmployeeRFIDNumber`/`BiometricCardNumber` in SmartOffice is blank; the 4
+  enrolled users are face-only). Confirm the physical unit actually has a thumb
+  sensor before promising fingerprint — capability flags say yes, `fpCount` is 0.
+- **`userId` = the student's roll number, numeric.** Evidence: real userIds are
+  `1000120001`/`6`/`1`; the one alphanumeric SmartOffice user (`TestEmployee1`)
+  shows `userCount 6` for 7 employees — it appears **not to have synced**. Keep
+  userIds numeric, unique per device, ≤ ~10 digits (the field allows 50 but
+  firmware is happier short). Map alphanumeric enrollment IDs to a numeric roll.
+- **Path B therefore pushes only `userId + name`** to pre-load identity, so staff
+  at the device only capture the biometric — never type a name or ID.
+
+**Device capacity** (from `Devices.DeviceInfo` JSON, model Smart2/V536, firmware
+`K8D_3Y3Kbio030_3.2`, faceVer `FACE_D_400`): `userLimit 3000`, `faceLimit 3000`,
+`cardLimit 3000`, `fpLimit 10000`, `logLimit 200000`, `maxBufferLen ~409600`.
+**A 2000-student batch fits comfortably** (current `userCount 6`, `faceCount 4`).
+The buffer limit is why bulk `SET_USER_INFO` must chunk (§1.1 / Phase 5.6).
+
+**Why registration can't ride SmartOffice while we own the punches:** the device
+has a single push target and the `cmd_code` command comes back *on the punch
+response*. With the device pointed at our cloud, SmartOffice's queued commands
+never reach it (`Devices.LastPing` froze when we repointed it). So Path B isn't an
+add-on — it's the *only* way to register while attendance flows to us.
+
+**Still open — one short capture:** the DB gives the command and payload but not
+the HTTP *wire framing* of the response (does the JSON ride in the body or a
+header? what result-message does the device send back?). Get it the same oracle
+way — POST a `realtime_glog` to SmartOffice's `AIData.aspx` with a `SET_USER_INFO`
+queued and record the response — via §0.4 (VPS relay) or §0.5 (local capture).
+That closes Phase 0 for the write path.
 
 ### 0.1 Relay mode in `aidata-proxy`
 
@@ -157,8 +240,8 @@ Two new tables in the attendance domain. Both carry the standard base fields
 | `id` | uuid pk | |
 | `branch_id` | uuid fk | isolation |
 | `dev_id` | text | target terminal (matches the ingest allowlist) |
-| `command` | text | the captured `cmd_code` (e.g. `add_user`) |
-| `payload` | jsonb | captured payload (userId, name, privilege, validity) |
+| `command` | text | the captured `cmd_code` (`SET_USER_INFO` for register; see §0.6) |
+| `payload` | jsonb | captured payload (`userId`, `name`, `privilege`, `vaildStart`/`vaildEnd`; `card` empty) |
 | `student_id` | uuid fk null | provenance; null for non-student ops |
 | `status` | enum | `pending` / `sent` / `confirmed` / `failed` / `cancelled` |
 | `attempts` | int | delivery attempts, capped |
@@ -231,8 +314,10 @@ service tree; no new top-level module.
 - `parse_command_result(record)` — Phase-0 result format → confirm/fail a queued
   command. Called from the ingest path when a result-message `request_code`
   arrives.
-- `build_payload(student)` — the one place that knows the captured payload shape;
-  rejects any biometric key by construction.
+- `build_payload(student)` — the one place that knows the captured `SET_USER_INFO`
+  shape (§0.6): `userId = rfid_number` (student roll no, numeric), `name`,
+  `privilege 0`, `card ""`, a wide `vaildStart`/`vaildEnd`. Rejects any biometric
+  key by construction, and asserts `userId` is non-empty + numeric.
 
 ### 2.3 Emission — the change to `_ack()` in `aidata.py`
 
