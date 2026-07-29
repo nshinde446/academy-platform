@@ -11,13 +11,14 @@ repeated here. Ingest (device → platform) is described in
 `infra/aidata-redirect/` stopgap is retired (2026-07-22) — the transport is
 stable, so building on it no longer risks masking a silent redirect failure.
 
-**The gate was Phase 0 — now largely CLEARED (2026-07-28).** The command
-vocabulary and the registration payload were captured directly from SmartOffice's
-own SQL database on the coaching laptop (see §0.6). One small piece remains — the
-HTTP *wire framing* of a `SET_USER_INFO` response — which is a short oracle
-capture, not a blocker to the design. The old warning still holds for the
-delete path: write commands can wipe enrolled faces that our DB cannot restore,
-so nothing is emitted on a guess.
+**The gate was Phase 0 — now FULLY CLEARED (2026-07-29).** The command vocabulary
+and payload came from SmartOffice's SQL database (§0.6); the remaining piece — the
+full HTTP wire protocol (the `receive_cmd` command-fetch channel, the
+`cmd_code`/`trans_id` response headers + JSON body, and the `send_cmd_result`
+ack) — came from **SmartOffice's own handler code** (`App_Code.dll`), see §0.7.
+Emission (§2.3) is now a known build, not a guess. The old warning still holds for
+the delete path: write commands can wipe enrolled faces that our DB cannot
+restore, so the delete path is built last and never emitted on a guess.
 
 ---
 
@@ -101,12 +102,66 @@ response*. With the device pointed at our cloud, SmartOffice's queued commands
 never reach it (`Devices.LastPing` froze when we repointed it). So Path B isn't an
 add-on — it's the *only* way to register while attendance flows to us.
 
-**Still open — one short capture:** the DB gives the command and payload but not
-the HTTP *wire framing* of the response (does the JSON ride in the body or a
-header? what result-message does the device send back?). Get it the same oracle
-way — POST a `realtime_glog` to SmartOffice's `AIData.aspx` with a `SET_USER_INFO`
-queued and record the response — via §0.4 (VPS relay) or §0.5 (local capture).
-That closes Phase 0 for the write path.
+### 0.7 RESOLVED — full wire protocol, from SmartOffice's own code (2026-07-29)
+
+The live-capture routes (§0.4/§0.5) were attempted on-site and **failed** — not
+for lack of a queued command, but because SmartOffice only delivers commands to a
+device in its **"connected" handshake state**, which an in-path relay could not
+reproduce (both an HTTP-parsing proxy and a raw byte-level TCP relay left the
+device's cloud icon disconnected). Rather than keep coaxing the black box, we
+went to the **authoritative source: SmartOffice's own handler code.**
+
+SmartOffice's AIData receiver is an ASP.NET app on the coaching laptop at
+`C:\SmartOffice-Online\SmartUpload\IndigoFaceDataCollector\` (IIS site on
+`localhost:82`; admin UI on `:81`). `AIData.aspx` inherits
+`SmartOffice__WebAPI.AIData`, but the handler logic is in **`bin/App_Code.dll`**
+(56 KB, not obfuscated). A read-only string scan of that assembly (UTF-16
+literals; no decompiler needed) yielded the complete protocol.
+
+**Everything is one endpoint — `POST /AIData.aspx` — switched on the
+`request_code` request header:**
+
+| `request_code` | direction | purpose |
+|---|---|---|
+| `realtime_glog` | device → server | a punch (this is all we ingest today) |
+| `realtime_enroll_data` | device → server | enrollment mirror |
+| **`receive_cmd`** | device → server | **device asks for a pending command — the channel we never answered** |
+| **`send_cmd_result`** | device → server | **device reports a command's result — the ack** |
+| `GET_LOGIMAGE_DATA`, `realtime_door_status` | device → server | other data (ignore) |
+
+**The command-delivery flow** (SmartOffice's `OnReceiveCmd`): on a `receive_cmd`
+request, look up the next `Pending` row in `DeviceCommands`, build the JSON
+string, mark it `Running`, and call
+`SendResponseToClient(response_code, trans_id, cmd_code, jsonstr)`. On the wire
+that is:
+
+- **Response headers:** `response_code: OK` · `cmd_code: SET_USER_INFO` (or
+  `SET_TIME` / `GET_USER_INFO` / `DELETE_USER`; **`NO_CMD` when the queue is
+  empty**) · `trans_id: <DeviceCommandId>`
+- **Response body:** the command JSON —
+  `{"users":[{"userId","name","privilege","card","pwd","vaildStart","vaildEnd"}]}`
+  — i.e. the JSON rides in the **body**, and it is **exactly what
+  `provisioning_service.build_user_payload` already produces.**
+
+**The result/ack flow:** the device then POSTs `request_code: send_cmd_result`
+carrying `trans_id`, `cmd_code`, and `cmd_return_code` (`Success`/`Failure`);
+SmartOffice updates the row's `Status`. That is our confirmation signal —
+`mark_confirmed` / `mark_failed`.
+
+**The "connected" handshake** is a separate `DeviceHeartbeat.aspx` /
+`DevHeartBeatController`. This is why `local_capture.py` broke the device — it
+404'd every path except `/AIData.aspx`, i.e. it rejected the heartbeats. Our
+server must answer the heartbeat so the device stays connected and keeps sending
+`receive_cmd`. (`SET_TIME` also travels this way, using `syncTime` + `330` — the
+IST `UTC+5:30` offset in minutes.)
+
+**Consequence — Phase 0 is fully closed; §2.3 emission becomes a *known build*,
+not a capture-gated guess.** Two small inbound-shape details (the exact field
+names SmartOffice reads off the `receive_cmd` / `send_cmd_result` requests, and
+the heartbeat response body) resolve in a single build+test session pointing the
+device at our own server — no oracle needed. The old §0.4/§0.5 relay runbooks
+below are retained for reference but are **superseded** by this static-analysis
+result.
 
 ### 0.1 Relay mode in `aidata-proxy`
 
@@ -319,40 +374,50 @@ service tree; no new top-level module.
   `privilege 0`, `card ""`, a wide `vaildStart`/`vaildEnd`. Rejects any biometric
   key by construction, and asserts `userId` is non-empty + numeric.
 
-### 2.3 Emission — the change to `_ack()` in `aidata.py`
+### 2.3 Emission — branch on `request_code` in `aidata.py`
 
-This is the whole server→device mechanism and the only edit to the hot path.
-Today `_ack()` returns `cmd_code: ""`. The change:
+The server→device mechanism is **not** a change to the punch (`realtime_glog`)
+ack — §0.7 corrected that. Commands ride the device's dedicated **`receive_cmd`**
+request. So `aidata_push` branches on the `request_code` header:
 
-- On each device POST, after the punch/sync is handled and **only if ingest
-  succeeded** (unchanged fail-safe ordering — a command must not ride a response
-  that also NAKs a punch), call `next_pending(dev_id)`.
-- If a command exists, set `cmd_code` (+ its payload, in whatever header/body
-  slot Phase 0 showed) and `mark_sent`. Otherwise emit the empty `cmd_code`
-  exactly as now.
-- **One command per response.** The device polls constantly, so the queue drains
-  quickly without batching; one-at-a-time keeps confirmation unambiguous.
-- Keep `_ack()` synchronous-looking and side-effect-narrow: it consults the
-  queue and marks `sent`, nothing more. The heavy lifting (enqueue, reconcile)
-  is out-of-band.
+- **`realtime_glog` / `realtime_enroll_data`** — unchanged: ingest the punch /
+  mirror the enrollment, then return the empty ack (`response_code: OK`, empty
+  `cmd_code`/`trans_id`). Commands never ride these responses.
+- **`receive_cmd`** — the emission path. Call `next_pending(dev_id)`:
+  - a command exists → respond with headers `response_code: OK`,
+    `cmd_code: <command>` (e.g. `SET_USER_INFO`), `trans_id: <command id>`, and
+    the JSON **body** from `payload` (already the correct
+    `{"users":[…]}` shape). Then `mark_sent(trans_id)`.
+  - queue empty → respond `cmd_code: NO_CMD` (the vendor's explicit "nothing
+    queued" value), empty body.
+- **`send_cmd_result`** — the confirmation path (§2.4).
 
-Because emission threads through the same response the ingest fail-safe owns, add
-a test that a **500 (ingest failed) never carries a `cmd_code`** — we must not
-tell the device to mutate its user table on a response that also asks it to
-retry a punch.
+Notes:
+- **One command per `receive_cmd`.** The device fetches repeatedly, so the queue
+  drains without batching; one-at-a-time keeps confirmation unambiguous.
+- Emission is off the punch fail-safe entirely now, which is cleaner: a punch
+  ingest failure (500) is its own response and **can never carry a `cmd_code`**,
+  because commands only leave on a `receive_cmd`. Keep a test asserting that.
+- **Keep the device connected.** Add a `/DeviceHeartbeat.aspx` responder (§0.7)
+  so the terminal stays in its "connected" state and keeps issuing `receive_cmd`;
+  without it the command channel goes idle. Confirm the exact expected heartbeat
+  response in the build+test session.
 
-### 2.4 Confirmation
+### 2.4 Confirmation — the `send_cmd_result` request
 
-When the device's result-message `request_code` (captured in Phase 0) arrives on
-`/AIData.aspx`, route it to `parse_command_result`:
+The device reports each command's outcome as a `POST /AIData.aspx` with
+`request_code: send_cmd_result`, echoing `trans_id` + `cmd_code` and a
+`cmd_return_code` (`Success` / `Failure`). Route it to `parse_command_result`:
 
-- match it to the `sent` command (by echoed `trans_id`/userId — Phase 0 tells us
-  which),
-- `mark_confirmed` on success, `mark_failed` + `last_error` on device-side
-  rejection,
+- match it to the `sent` command by `trans_id`,
+- `mark_confirmed` on `Success`, `mark_failed` + `last_error` on `Failure`,
 - **cap `attempts`** so a rejected command can't loop forever — the exact trap
   the ingest side hit. A command at the cap goes `failed` and surfaces in the UI,
   never silently retries.
+
+Fallback if the result message is thinner than expected: reconcile the sent
+command against the next `realtime_enroll_data` dump (the `device_users` mirror
+already gives us that), and confirm from the mirror rather than the ack.
 
 ### 2.5 API — `api/routes.py` (attendance module)
 
