@@ -279,13 +279,23 @@ def test_ingest_failure_is_not_acked(monkeypatch):
 
 
 # ── enrollment mirror is gated by BIOMAX_PROVISIONING_ENABLED ────────────────
+#
+# These invoke ``aidata_push`` DIRECTLY (awaited on the test's own event loop)
+# rather than through Starlette's sync TestClient. TestClient runs the async
+# handler on its own thread/loop, so handing it the pytest-asyncio ``db_session``
+# would use one asyncpg connection across two loops and DEADLOCK on Postgres
+# (it merely works on SQLite). Awaiting the coroutine keeps the DB on one loop.
 
 
-def _enroll_client(monkeypatch, db_session, branch_id, *, enabled: bool):
-    """A TestClient wired to hit ``aidata_push`` with the real db_session, the
-    device allowlisted, and the provisioning flag set to ``enabled``."""
+async def _invoke_aidata_push(
+    monkeypatch, session, branch_id, *, enabled: bool, body: dict
+):
+    """Call the real ``aidata_push`` with a fabricated Request, the device
+    allowlisted, and the provisioning flag set — all on the current loop."""
+    import json as _json
+
     import app.modules.attendance.integrations.biomax.iclock as iclock
-    from app.core.database.session import get_db
+    from starlette.requests import Request
 
     monkeypatch.setattr(
         iclock, "get_settings",
@@ -302,24 +312,29 @@ def _enroll_client(monkeypatch, db_session, branch_id, *, enabled: bool):
 
     monkeypatch.setattr(daily_service, "branch_timezone", _tz)
 
-    test_app = FastAPI()
-    test_app.include_router(aidata.router)
+    payload = _json.dumps(body).encode()
 
-    async def _db():
-        yield db_session
+    async def _receive():
+        return {"type": "http.request", "body": payload, "more_body": False}
 
-    test_app.dependency_overrides[get_db] = _db
-    return TestClient(test_app)
+    request = Request(
+        {"type": "http", "method": "POST", "path": "/AIData.aspx", "headers": []},
+        _receive,
+    )
+    return await aidata.aidata_push(
+        request,
+        dev_id=DEV,
+        request_code=aidata.ENROLL_REQUEST_CODE,
+        session=session,
+    )
 
 
 @pytest.mark.usefixtures("seed_data")
 async def test_enroll_push_mirrors_when_enabled(monkeypatch, db_session, seed_data):
     branch_id = seed_data["branch_a"].id
-    client = _enroll_client(monkeypatch, db_session, branch_id, enabled=True)
-    resp = client.post(
-        "/AIData.aspx",
-        headers={"dev_id": DEV, "request_code": aidata.ENROLL_REQUEST_CODE},
-        json={"userId": "3001", "name": "RAM SIR", "face": "AAQD...."},
+    resp = await _invoke_aidata_push(
+        monkeypatch, db_session, branch_id, enabled=True,
+        body={"userId": "3001", "name": "RAM SIR", "face": "AAQD...."},
     )
     assert resp.status_code == 200
     assert resp.headers["response_code"] == "OK"  # still acked
@@ -330,11 +345,9 @@ async def test_enroll_push_mirrors_when_enabled(monkeypatch, db_session, seed_da
 @pytest.mark.usefixtures("seed_data")
 async def test_enroll_push_ack_and_drops_when_disabled(monkeypatch, db_session, seed_data):
     branch_id = seed_data["branch_a"].id
-    client = _enroll_client(monkeypatch, db_session, branch_id, enabled=False)
-    resp = client.post(
-        "/AIData.aspx",
-        headers={"dev_id": DEV, "request_code": aidata.ENROLL_REQUEST_CODE},
-        json={"userId": "3001", "name": "RAM SIR", "face": "AAQD...."},
+    resp = await _invoke_aidata_push(
+        monkeypatch, db_session, branch_id, enabled=False,
+        body={"userId": "3001", "name": "RAM SIR", "face": "AAQD...."},
     )
     assert resp.status_code == 200
     assert resp.headers["response_code"] == "OK"
