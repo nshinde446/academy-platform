@@ -1,9 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
 import type {
+  DeviceCommandRow,
   ProvisionDevicesResponse,
+  ProvisionPlanResponse,
+  ProvisionPushResponse,
   ReconcileResponse,
 } from "../_schemas/provisioning";
+
+// Live-refresh cadence for the queue while commands are in flight — the device
+// drains them on its next contact, so a short poll keeps the status current.
+const QUEUE_LIVE_MS = 8_000;
 
 export const provisioningKeys = {
   all: ["provisioning"] as const,
@@ -11,6 +18,8 @@ export const provisioningKeys = {
     [...provisioningKeys.all, "devices", branchId] as const,
   reconcile: (branchId: string, devId: string) =>
     [...provisioningKeys.all, "reconcile", branchId, devId] as const,
+  commands: (branchId: string, devId: string) =>
+    [...provisioningKeys.all, "commands", branchId, devId] as const,
 };
 
 // Configured devices + whether provisioning is enabled at all. Not gated by the
@@ -47,5 +56,94 @@ export function useReconcile(
       return res.data;
     },
     enabled: !!branchId && !!devId && enabled,
+  });
+}
+
+// The outbound command queue for a device (pending → sent → confirmed/failed).
+// Polls while enabled so the UI reflects the device draining it. Read-only —
+// nothing here emits to the device.
+export function useDeviceCommands(
+  branchId: string | undefined,
+  devId: string | undefined,
+  enabled: boolean,
+) {
+  return useQuery<DeviceCommandRow[]>({
+    queryKey: provisioningKeys.commands(branchId ?? "", devId ?? ""),
+    queryFn: async () => {
+      const res = await apiClient.get<DeviceCommandRow[]>(
+        "/api/v1/attendance/provisioning/commands",
+        { params: { dev_id: devId, limit: 200 } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!devId && enabled,
+    refetchInterval: QUEUE_LIVE_MS,
+  });
+}
+
+// Dry-run: what a push WOULD do for an explicit student set. No side effects,
+// so it's a mutation we call on demand (not a cached query).
+export function useProvisionDryRun(devId: string | undefined) {
+  return useMutation<ProvisionPlanResponse, unknown, string[]>({
+    mutationFn: async (studentIds: string[]) => {
+      const res = await apiClient.post<ProvisionPlanResponse>(
+        "/api/v1/attendance/provisioning/dry-run",
+        { dev_id: devId, student_ids: studentIds },
+      );
+      return res.data;
+    },
+  });
+}
+
+// Enqueue register commands for an explicit student set. Idempotent server-side
+// (in-flight users are skipped), so a re-run never double-queues. On success we
+// refresh both the queue and the reconcile diff.
+export function useProvisionPush(
+  branchId: string | undefined,
+  devId: string | undefined,
+) {
+  const queryClient = useQueryClient();
+  return useMutation<ProvisionPushResponse, unknown, string[]>({
+    mutationFn: async (studentIds: string[]) => {
+      const res = await apiClient.post<ProvisionPushResponse>(
+        "/api/v1/attendance/provisioning/push",
+        { dev_id: devId, student_ids: studentIds },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId && devId) {
+        queryClient.invalidateQueries({
+          queryKey: provisioningKeys.commands(branchId, devId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: provisioningKeys.reconcile(branchId, devId),
+        });
+      }
+    },
+  });
+}
+
+// Pull a still-pending command out of the queue. A sent command can't be
+// cancelled (the device already has it) — the API 409s and the UI surfaces it.
+export function useCancelCommand(
+  branchId: string | undefined,
+  devId: string | undefined,
+) {
+  const queryClient = useQueryClient();
+  return useMutation<DeviceCommandRow, unknown, string>({
+    mutationFn: async (commandId: string) => {
+      const res = await apiClient.post<DeviceCommandRow>(
+        `/api/v1/attendance/provisioning/commands/${commandId}/cancel`,
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId && devId) {
+        queryClient.invalidateQueries({
+          queryKey: provisioningKeys.commands(branchId, devId),
+        });
+      }
+    },
   });
 }
