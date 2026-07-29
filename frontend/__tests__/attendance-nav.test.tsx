@@ -44,4 +44,16 @@ describe("AttendanceNav", () => {
     fireEvent.click(screen.getByRole("tab", { name: /Batch month grid/ }));
     expect(onChange).toHaveBeenCalledWith("month");
   });
+
+  it("hides the admin-only Device sync view from non-admins", () => {
+    render(<AttendanceNav view="overview" onChange={() => {}} defaultersCount={0} />);
+    expect(screen.queryByText("Device sync")).not.toBeInTheDocument();
+  });
+
+  it("shows Device sync to admins", () => {
+    render(
+      <AttendanceNav view="overview" onChange={() => {}} defaultersCount={0} isAdmin />,
+    );
+    expect(screen.getByText("Device sync")).toBeInTheDocument();
+  });
 });
