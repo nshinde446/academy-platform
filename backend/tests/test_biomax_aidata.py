@@ -2,18 +2,27 @@
 enrollment-sync ignore, and the end-to-end ingest landing a DailyAttendance row.
 """
 
+import json
 import uuid
 from datetime import date, datetime, timezone
 
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.attendance.integrations.biomax import aidata
 from app.modules.attendance.integrations.biomax.service import ingest_punches
 from app.modules.attendance.models.attendance_models import DailyAttendance
+from app.modules.attendance.models.provisioning_models import (
+    CMD_SET_USER_INFO,
+    STATUS_CONFIRMED,
+    STATUS_FAILED,
+    STATUS_PENDING,
+    STATUS_SENT,
+)
 from app.modules.attendance.repositories import device_command_repo
 from app.modules.attendance.services import daily_service
 from app.modules.student.models.student_models import Student
@@ -288,7 +297,8 @@ def test_ingest_failure_is_not_acked(monkeypatch):
 
 
 async def _invoke_aidata_push(
-    monkeypatch, session, branch_id, *, enabled: bool, body: dict
+    monkeypatch, session, branch_id, *, enabled: bool, body: dict,
+    request_code: str = None,
 ):
     """Call the real ``aidata_push`` with a fabricated Request, the device
     allowlisted, and the provisioning flag set — all on the current loop."""
@@ -296,6 +306,9 @@ async def _invoke_aidata_push(
 
     import app.modules.attendance.integrations.biomax.iclock as iclock
     from starlette.requests import Request
+
+    if request_code is None:
+        request_code = aidata.ENROLL_REQUEST_CODE
 
     monkeypatch.setattr(
         iclock, "get_settings",
@@ -318,13 +331,14 @@ async def _invoke_aidata_push(
         return {"type": "http.request", "body": payload, "more_body": False}
 
     request = Request(
-        {"type": "http", "method": "POST", "path": "/AIData.aspx", "headers": []},
+        {"type": "http", "method": "POST", "path": "/AIData.aspx",
+         "headers": [(b"request_code", request_code.encode()), (b"dev_id", DEV.encode())]},
         _receive,
     )
     return await aidata.aidata_push(
         request,
         dev_id=DEV,
-        request_code=aidata.ENROLL_REQUEST_CODE,
+        request_code=request_code,
         session=session,
     )
 
@@ -384,3 +398,168 @@ async def test_aidata_ingest_lands_daily_attendance(db_session, seed_data):
     )).scalar_one()
     assert day.day_status == "PRESENT"
     assert day.signoff == "COMPLETE"
+
+
+# ── Increment 4: server→device command channel (receive_cmd / send_cmd_result) ─
+
+
+async def _enqueue_cmd(db_session, branch_id, *, user_id="3001", name="Ravi Kumar"):
+    payload = {"users": [{
+        "userId": user_id, "name": name, "privilege": 0, "card": "", "pwd": "",
+        "vaildStart": "20200101", "vaildEnd": "20401231",
+    }]}
+    (cmd,) = await device_command_repo.enqueue(db_session, [{
+        "branch_id": branch_id, "dev_id": DEV, "command": CMD_SET_USER_INFO,
+        "vendor_user_id": user_id, "payload": payload, "student_id": None,
+        "command_status": STATUS_PENDING,
+        "idempotency_key": f"{DEV}:{CMD_SET_USER_INFO}:{user_id}",
+    }])
+    await db_session.commit()
+    return cmd
+
+
+def _req(request_code, extra_headers=None):
+    """A minimal Starlette Request carrying device headers (for handler-direct
+    calls that read request.headers)."""
+    headers = [(b"request_code", request_code.encode()), (b"dev_id", DEV.encode())]
+    for k, v in (extra_headers or {}).items():
+        headers.append((k.encode(), v.encode()))
+    return Request({"type": "http", "method": "POST", "path": "/AIData.aspx",
+                    "headers": headers})
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_receive_cmd_empty_queue_returns_no_cmd(db_session, seed_data):
+    resp = await aidata._emit_next_command(db_session, DEV)
+    assert resp.headers["response_code"] == "OK"
+    assert resp.headers["cmd_code"] == "NO_CMD"
+    assert resp.headers["trans_id"] == ""
+    assert resp.body == b""
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_receive_cmd_emits_command_and_marks_sent(db_session, seed_data):
+    branch_id = seed_data["branch_a"].id
+    cmd = await _enqueue_cmd(db_session, branch_id, user_id="3001", name="Ravi Kumar")
+
+    resp = await aidata._emit_next_command(db_session, DEV)
+    assert resp.headers["cmd_code"] == "SET_USER_INFO"
+    assert resp.headers["trans_id"] == cmd.id.hex  # correlation token
+    body = json.loads(resp.body)
+    assert body["users"][0]["userId"] == "3001"
+    assert body["users"][0]["name"] == "Ravi Kumar"
+    # No biometric keys ever leave in a command body.
+    assert not any(k in body["users"][0] for k in ("face", "photo", "fps", "template"))
+
+    await db_session.refresh(cmd)
+    assert cmd.command_status == STATUS_SENT
+    assert cmd.trans_id == cmd.id.hex
+    assert cmd.attempts == 1
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_receive_cmd_serves_one_at_a_time_fifo(db_session, seed_data):
+    branch_id = seed_data["branch_a"].id
+    first = await _enqueue_cmd(db_session, branch_id, user_id="1001", name="A")
+    await _enqueue_cmd(db_session, branch_id, user_id="1002", name="B")
+
+    r1 = await aidata._emit_next_command(db_session, DEV)
+    await db_session.commit()
+    # Oldest first; the second fetch gets the other one, not the same.
+    assert json.loads(r1.body)["users"][0]["userId"] == "1001"
+    r2 = await aidata._emit_next_command(db_session, DEV)
+    assert json.loads(r2.body)["users"][0]["userId"] == "1002"
+    assert r1.headers["trans_id"] == first.id.hex
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_send_cmd_result_success_confirms(db_session, seed_data):
+    branch_id = seed_data["branch_a"].id
+    cmd = await _enqueue_cmd(db_session, branch_id)
+    await aidata._emit_next_command(db_session, DEV)  # marks sent, sets trans_id
+    await db_session.commit()
+
+    await aidata._handle_cmd_result(
+        db_session, DEV,
+        _req("send_cmd_result", {"trans_id": cmd.id.hex, "cmd_return_code": "Success"}),
+        {},
+    )
+    await db_session.refresh(cmd)
+    assert cmd.command_status == STATUS_CONFIRMED
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_send_cmd_result_failure_marks_failed(db_session, seed_data):
+    branch_id = seed_data["branch_a"].id
+    cmd = await _enqueue_cmd(db_session, branch_id)
+    await aidata._emit_next_command(db_session, DEV)
+    await db_session.commit()
+
+    await aidata._handle_cmd_result(
+        db_session, DEV,
+        _req("send_cmd_result", {"trans_id": cmd.id.hex, "cmd_return_code": "Failure"}),
+        {},
+    )
+    await db_session.refresh(cmd)
+    assert cmd.command_status == STATUS_FAILED
+    assert cmd.last_error
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_send_cmd_result_unknown_trans_id_is_ignored(db_session, seed_data):
+    # A stray result for a trans_id we never issued must not blow up.
+    await aidata._handle_cmd_result(
+        db_session, DEV,
+        _req("send_cmd_result", {"trans_id": "deadbeef", "cmd_return_code": "Success"}),
+        {},
+    )  # no exception = pass
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_receive_cmd_via_push_emits_when_enabled(monkeypatch, db_session, seed_data):
+    branch_id = seed_data["branch_a"].id
+    await _enqueue_cmd(db_session, branch_id, user_id="3001")
+    resp = await _invoke_aidata_push(
+        monkeypatch, db_session, branch_id, enabled=True,
+        body={}, request_code=aidata.RECEIVE_CMD_REQUEST_CODE,
+    )
+    assert resp.headers["cmd_code"] == "SET_USER_INFO"
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_receive_cmd_via_push_inert_when_disabled(monkeypatch, db_session, seed_data):
+    branch_id = seed_data["branch_a"].id
+    await _enqueue_cmd(db_session, branch_id, user_id="3001")
+    resp = await _invoke_aidata_push(
+        monkeypatch, db_session, branch_id, enabled=False,
+        body={}, request_code=aidata.RECEIVE_CMD_REQUEST_CODE,
+    )
+    # Flag off -> receive_cmd is NOT handled specially; falls through to the
+    # empty ack (cmd_code ""), never emitting the queued command.
+    assert resp.headers["cmd_code"] == ""
+    cmd = (await device_command_repo.list_commands(db_session, branch_id, DEV))[0]
+    assert cmd.command_status == STATUS_PENDING  # still queued, not sent
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_device_heartbeat_gated_by_flag(monkeypatch):
+    import app.modules.attendance.integrations.biomax.iclock as iclock
+    monkeypatch.setattr(
+        iclock, "get_settings",
+        lambda: type("S", (), {"BIOMAX_DEVICE_SERIALS": DEV})(),
+    )
+    # OFF -> 404 (byte-identical to "no such route" before this increment)
+    monkeypatch.setattr(
+        aidata, "get_settings",
+        lambda: type("S", (), {"BIOMAX_PROVISIONING_ENABLED": False})(),
+    )
+    off = await aidata.device_heartbeat(dev_id=DEV)
+    assert off.status_code == 404
+    # ON -> keep-connected ack
+    monkeypatch.setattr(
+        aidata, "get_settings",
+        lambda: type("S", (), {"BIOMAX_PROVISIONING_ENABLED": True})(),
+    )
+    on = await aidata.device_heartbeat(dev_id=DEV)
+    assert on.status_code == 200
+    assert on.headers["response_code"] == "OK"
