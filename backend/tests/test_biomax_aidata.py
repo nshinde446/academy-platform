@@ -429,10 +429,12 @@ def _req(request_code, extra_headers=None):
 
 
 @pytest.mark.usefixtures("seed_data")
-async def test_receive_cmd_empty_queue_returns_no_cmd(db_session, seed_data):
+async def test_receive_cmd_empty_queue_returns_error_no_cmd(db_session, seed_data):
+    # Must match SmartOffice EXACTLY: response_code ERROR_NO_CMD, empty
+    # cmd_code/trans_id, empty body — the device keeps polling only on this.
     resp = await aidata._emit_next_command(db_session, DEV)
-    assert resp.headers["response_code"] == "OK"
-    assert resp.headers["cmd_code"] == "NO_CMD"
+    assert resp.headers["response_code"] == "ERROR_NO_CMD"
+    assert resp.headers["cmd_code"] == ""
     assert resp.headers["trans_id"] == ""
     assert resp.body == b""
 
@@ -443,8 +445,12 @@ async def test_receive_cmd_emits_command_and_marks_sent(db_session, seed_data):
     cmd = await _enqueue_cmd(db_session, branch_id, user_id="3001", name="Ravi Kumar")
 
     resp = await aidata._emit_next_command(db_session, DEV)
+    assert resp.headers["response_code"] == "OK"
     assert resp.headers["cmd_code"] == "SET_USER_INFO"
-    assert resp.headers["trans_id"] == cmd.id.hex  # correlation token
+    # Numeric trans_id, matching SmartOffice (echo-safe).
+    expected_trans = aidata._numeric_trans_id(cmd)
+    assert resp.headers["trans_id"] == expected_trans
+    assert resp.headers["trans_id"].isdigit()
     body = json.loads(resp.body)
     assert body["users"][0]["userId"] == "3001"
     assert body["users"][0]["name"] == "Ravi Kumar"
@@ -453,7 +459,7 @@ async def test_receive_cmd_emits_command_and_marks_sent(db_session, seed_data):
 
     await db_session.refresh(cmd)
     assert cmd.command_status == STATUS_SENT
-    assert cmd.trans_id == cmd.id.hex
+    assert cmd.trans_id == expected_trans
     assert cmd.attempts == 1
 
 
@@ -469,7 +475,7 @@ async def test_receive_cmd_serves_one_at_a_time_fifo(db_session, seed_data):
     assert json.loads(r1.body)["users"][0]["userId"] == "1001"
     r2 = await aidata._emit_next_command(db_session, DEV)
     assert json.loads(r2.body)["users"][0]["userId"] == "1002"
-    assert r1.headers["trans_id"] == first.id.hex
+    assert r1.headers["trans_id"] == aidata._numeric_trans_id(first)
 
 
 @pytest.mark.usefixtures("seed_data")
@@ -481,7 +487,8 @@ async def test_send_cmd_result_success_confirms(db_session, seed_data):
 
     await aidata._handle_cmd_result(
         db_session, DEV,
-        _req("send_cmd_result", {"trans_id": cmd.id.hex, "cmd_return_code": "Success"}),
+        _req("send_cmd_result",
+             {"trans_id": aidata._numeric_trans_id(cmd), "cmd_return_code": "Success"}),
         {},
     )
     await db_session.refresh(cmd)
@@ -497,7 +504,8 @@ async def test_send_cmd_result_failure_marks_failed(db_session, seed_data):
 
     await aidata._handle_cmd_result(
         db_session, DEV,
-        _req("send_cmd_result", {"trans_id": cmd.id.hex, "cmd_return_code": "Failure"}),
+        _req("send_cmd_result",
+             {"trans_id": aidata._numeric_trans_id(cmd), "cmd_return_code": "Failure"}),
         {},
     )
     await db_session.refresh(cmd)

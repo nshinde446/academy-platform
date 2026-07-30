@@ -97,8 +97,13 @@ ENROLL_REQUEST_CODE = "realtime_enroll_data"
 # switched on the ``request_code`` header.
 RECEIVE_CMD_REQUEST_CODE = "receive_cmd"       # device asks for a queued command
 SEND_CMD_RESULT_REQUEST_CODE = "send_cmd_result"  # device reports a result
-CMD_CODE_NONE = "NO_CMD"                        # "nothing queued" cmd_code value
 RESULT_SUCCESS = "Success"                      # cmd_return_code on success
+
+# The exact "nothing queued" response SmartOffice returns to a receive_cmd — a
+# ``response_code: ERROR_NO_CMD`` (NOT ``OK``) with empty cmd_code/trans_id and
+# empty body. Captured from SmartOffice's own log: the device polls happily every
+# 20s as long as it gets this; anything else and it gives up the command channel.
+RESPONSE_CODE_NO_CMD = "ERROR_NO_CMD"
 
 # Device-name field is short (SmartOffice EmployeeName is nvarchar(50)); the
 # mirror stores at most this many chars so a diff never trips on truncation.
@@ -235,17 +240,26 @@ def _ack() -> Response:
     )
 
 
+def _numeric_trans_id(command) -> str:
+    """A NUMERIC correlation token, matching SmartOffice (which uses the integer
+    DeviceCommandId, e.g. ``1008``). The firmware appears to treat ``trans_id`` as
+    a number, so a uuid-hex token risks being mangled on echo. Derived from the
+    command's uuid (low 31 bits) so it's stable, positive, and echo-safe; we store
+    and match on the exact string via ``find_by_trans_id``."""
+    return str(command.id.int & 0x7FFFFFFF)
+
+
 def _command_response(command) -> Response:
     """Serve one queued command to the device on its ``receive_cmd`` fetch.
 
-    The command name is the ``cmd_code`` header, the correlation token is
-    ``trans_id`` (echoed back in ``send_cmd_result``), and the JSON payload —
-    exactly ``build_user_payload``'s ``{"users":[…]}`` shape — rides in the body.
+    Matches SmartOffice's exact wire shape: ``response_code: OK``, the command in
+    ``cmd_code``, a numeric ``trans_id`` (echoed back in ``send_cmd_result``), and
+    the JSON payload — ``build_user_payload``'s ``{"users":[…]}`` — in the body.
     """
     body = json.dumps(command.payload or {}).encode("utf-8")
     return Response(
         content=body,
-        media_type="application/json",
+        media_type="application/octet-stream",
         headers={
             "response_code": "OK",
             "cmd_code": command.command,
@@ -255,11 +269,12 @@ def _command_response(command) -> Response:
 
 
 def _no_command_response() -> Response:
-    """Tell the device the queue is empty (``cmd_code: NO_CMD``)."""
+    """Tell the device the queue is empty — SmartOffice's exact ``ERROR_NO_CMD``
+    (empty cmd_code/trans_id, empty body). The device keeps polling on this."""
     return Response(
         content=b"",
         media_type="application/octet-stream",
-        headers={"response_code": "OK", "cmd_code": CMD_CODE_NONE, "trans_id": ""},
+        headers={"response_code": RESPONSE_CODE_NO_CMD, "cmd_code": "", "trans_id": ""},
     )
 
 
@@ -270,7 +285,7 @@ async def _emit_next_command(session: AsyncSession, dev_id: str) -> Response:
     command = await device_command_repo.next_pending(session, dev_id)
     if command is None:
         return _no_command_response()
-    trans_id = command.id.hex
+    trans_id = _numeric_trans_id(command)
     await device_command_repo.mark_sent(session, command, trans_id)
     logger.info(
         "AIData receive_cmd %s -> emit %s trans_id=%s user=%s",
