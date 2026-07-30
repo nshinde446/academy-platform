@@ -13,14 +13,21 @@ byte-for-byte, and forwards the record to the app for real ingest. The device
 points straight at it, so nothing rewrites the headers.
 
 Why a separate process instead of exposing the backend port directly: this
-serves **only** ``/AIData.aspx``, so the rest of the API is never reachable over
-plain HTTP.
+serves **only** the device paths (``/AIData.aspx`` and ``/DeviceHeartbeat.aspx``),
+so the rest of the API is never reachable over plain HTTP.
 
-Ack discipline (this is the part that loses data if you get it wrong): we ack
-**only** once the app confirms it stored the punch. The device deletes its only
-copy the moment it is acked, so acking a punch we could not store — e.g. during
-a deploy — loses it permanently. On any upstream failure we return 500 and no
-ack headers, and the device retains the record and retries.
+The proxy is **transparent to the backend's response**: it forwards the device's
+request and echoes the backend's status + headers + body byte-for-byte (header
+case preserved — the firmware is case-sensitive). The backend owns the device
+dialect — an empty ack for a punch, a ``cmd_code`` + JSON command for a
+``receive_cmd`` fetch, a keep-alive for the heartbeat. The proxy never
+synthesises a response of its own (except the fail-safe refuse below).
+
+Ack discipline (this is the part that loses data if you get it wrong): the
+backend acks a punch **only** once it is stored, and returns 500 otherwise. The
+device deletes its only copy the moment it is acked, so we must never turn a
+failure into an ack. On a backend **5xx or unreachable** the proxy returns 500
+with no ack headers, and the device retains the record and retries.
 
 RELAY / CAPTURE MODE (Phase 2 provisioning groundwork — normally OFF)
 --------------------------------------------------------------------
@@ -53,14 +60,29 @@ import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit, urlunsplit
 
 UPSTREAM = os.environ.get("AIDATA_UPSTREAM", "http://backend:8000/AIData.aspx")
 # When set, the proxy relays to this URL (SmartOffice) and echoes its response
-# verbatim instead of ingesting + synthesising our own ack. Off by default.
+# verbatim instead of forwarding to our backend. Off by default.
 RELAY_UPSTREAM = os.environ.get("AIDATA_RELAY_UPSTREAM") or None
 PORT = int(os.environ.get("AIDATA_PORT", "8099"))
 TIMEOUT = float(os.environ.get("AIDATA_TIMEOUT", "10"))
-PATH = "/AIData.aspx"
+
+# Device paths we forward to the backend. ``/AIData.aspx`` carries punches, the
+# enroll mirror, and the provisioning command channel (``receive_cmd`` /
+# ``send_cmd_result``); ``/DeviceHeartbeat.aspx`` is the keep-connected beat that
+# lets the device stay online and keep fetching commands. Anything else is
+# refused so the rest of the API is never exposed over plain HTTP.
+ALLOWED_PATHS = ("/AIData.aspx", "/DeviceHeartbeat.aspx")
+
+
+def _rebase(base_url: str, path: str) -> str:
+    """Point ``base_url``'s scheme+host at the request's own path, so a
+    ``/DeviceHeartbeat.aspx`` request reaches the backend's
+    ``/DeviceHeartbeat.aspx`` — not the ``/AIData.aspx`` baked into the env URL."""
+    u = urlsplit(base_url)
+    return urlunsplit((u.scheme, u.netloc, path, "", ""))
 
 # --- HTTPS (Domain Name mode) -----------------------------------------------
 # When the device is configured with a hostname + HTTPS, it connects here over
@@ -202,26 +224,67 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "aidata-proxy"
 
-    def _ack(self) -> None:
-        """The exact response the R6 accepts. Keys must stay lowercase, and
-        cmd_code/trans_id must stay EMPTY — a non-empty value means "server has
-        a command for you" and the device re-syncs instead of clearing its log.
-        """
-        self.send_response(200)
-        self.send_header("Content-Type", "application/octet-stream")
-        self.send_header("response_code", "OK")
-        self.send_header("cmd_code", "")
-        self.send_header("trans_id", "")
-        self.send_header("Content-Length", "0")
-        self.end_headers()
-
     def _refuse(self, status: int = 500) -> None:
         """No ack headers -> the device keeps the record and retries later."""
         self.send_response(status)
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _relay(self, method: str, body: bytes) -> None:
+    def _echo(self, status: int, headers: list, body: bytes) -> None:
+        """Write an upstream response back to the device verbatim: the given
+        status, its headers (framing recomputed, case otherwise preserved so the
+        firmware's case-sensitive ``response_code``/``cmd_code`` survive), and
+        body. This is how a backend command (``cmd_code`` + JSON) or a relayed
+        SmartOffice response reaches the device unchanged."""
+        self.send_response(status)
+        for k, v in headers:
+            if k.lower() in _SKIP_ECHO:
+                continue
+            self.send_header(k, v)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def _forward(self, method: str, body: bytes, upstream: str) -> None:
+        """Forward the device request to the backend and echo its response
+        verbatim. The backend owns the device dialect (empty ack for a punch, a
+        command for ``receive_cmd``, keep-alive for the heartbeat).
+
+        Fail-safe: a backend **5xx or unreachable** -> ``_refuse()`` (no ack), so
+        the device keeps its record and retries — we never turn a storage failure
+        into a delivery. Any non-5xx status (200 command/ack, 404 heartbeat when
+        provisioning is off, …) is echoed as-is."""
+        request_code = self.headers.get("request_code") or "?"
+        headers = {
+            h: self.headers.get(h) for h in FORWARD_HEADERS if self.headers.get(h)
+        }
+        headers.setdefault("Content-Type", "application/json")
+        try:
+            req = urllib.request.Request(
+                upstream, data=body, method=method, headers=headers
+            )
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                status = resp.status
+                resp_headers = list(resp.headers.items())
+                resp_body = resp.read()
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            resp_headers = list(exc.headers.items()) if exc.headers else []
+            resp_body = exc.read() or b""
+        except Exception as exc:  # network refused, timeout, app restarting...
+            log.warning("upstream unreachable (%s) — not acking", type(exc).__name__)
+            self._refuse()
+            return
+        # Never let a server error read as a delivery — refuse so the device
+        # retries. Everything else is the backend's real answer; echo it.
+        if status >= 500:
+            log.warning("upstream %s for %s — not acking", status, request_code)
+            self._refuse()
+            return
+        self._echo(status, resp_headers, resp_body)
+
+    def _relay(self, method: str, body: bytes, upstream: str) -> None:
         """Transparent relay to SmartOffice: forward the device's request as-is
         and echo SmartOffice's response verbatim (status + headers + body),
         capturing both legs. Used only in relay/capture mode to learn the
@@ -239,12 +302,12 @@ class Handler(BaseHTTPRequestHandler):
                  list(self.headers.items()), body)
         try:
             req = urllib.request.Request(
-                RELAY_UPSTREAM, data=body, method=method, headers=fwd
+                upstream, data=body, method=method, headers=fwd
             )
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                status = resp.status
                 # resp.headers preserves SmartOffice's ORIGINAL header casing,
                 # which is exactly what the case-sensitive firmware needs.
+                status = resp.status
                 resp_headers = list(resp.headers.items())
                 resp_body = resp.read()
         except urllib.error.HTTPError as exc:
@@ -259,62 +322,31 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         _capture("smartoffice->device", status, resp_headers, resp_body)
-
-        # Echo SmartOffice's response to the device byte-for-byte (minus framing
-        # headers we must recompute). send_header preserves whatever case we
-        # pass, so the device sees SmartOffice's exact header casing.
-        self.send_response(status)
-        for k, v in resp_headers:
-            if k.lower() in _SKIP_ECHO:
-                continue
-            self.send_header(k, v)
-        self.send_header("Content-Length", str(len(resp_body)))
-        self.end_headers()
-        if resp_body:
-            self.wfile.write(resp_body)
+        self._echo(status, resp_headers, resp_body)
 
     def _handle(self, method: str) -> None:
-        if self.path.split("?", 1)[0] != PATH:
+        path = self.path.split("?", 1)[0]
+        if path not in ALLOWED_PATHS:
             self._refuse(404)
             return
 
-        # A request on the real path is the device (or its probe) reaching us —
-        # record liveness before anything else can fail.
+        # A request on a real device path is the device (or its probe) reaching
+        # us — record liveness before anything else can fail.
         _touch_heartbeat()
 
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length) if length else b""
 
-        # Relay/capture mode: hand the whole exchange to SmartOffice verbatim.
+        # Relay/capture mode: hand the whole exchange to SmartOffice verbatim
+        # (path preserved, so a heartbeat relays to SmartOffice's heartbeat too).
         if RELAY_UPSTREAM:
-            self._relay(method, body)
+            self._relay(method, body, _rebase(RELAY_UPSTREAM, path))
             return
 
-        request_code = self.headers.get("request_code") or "?"
-        headers = {
-            h: self.headers.get(h) for h in FORWARD_HEADERS if self.headers.get(h)
-        }
-        headers.setdefault("Content-Type", "application/json")
-
-        try:
-            req = urllib.request.Request(
-                UPSTREAM, data=body, method=method, headers=headers
-            )
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                ok = 200 <= resp.status < 300
-                resp.read()
-        except urllib.error.HTTPError as exc:
-            # The app deliberately 500s when it could not store the punch.
-            ok = False
-            log.warning("upstream %s for %s — not acking", exc.code, request_code)
-        except Exception as exc:  # network refused, timeout, app restarting...
-            ok = False
-            log.warning("upstream unreachable (%s) — not acking", type(exc).__name__)
-
-        if ok:
-            self._ack()
-        else:
-            self._refuse()
+        # Normal mode: forward to the backend at the SAME path and echo its
+        # response verbatim (empty ack / command / heartbeat — the backend owns
+        # the dialect), with the 5xx-or-unreachable refuse fail-safe.
+        self._forward(method, body, _rebase(UPSTREAM, path))
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
         self._handle("POST")
