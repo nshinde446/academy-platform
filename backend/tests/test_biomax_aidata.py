@@ -496,6 +496,25 @@ async def test_send_cmd_result_success_confirms(db_session, seed_data):
 
 
 @pytest.mark.usefixtures("seed_data")
+async def test_send_cmd_result_empty_ack_confirms(db_session, seed_data):
+    # This R6 acks a SUCCESSFUL command with an empty result: it echoes the
+    # trans_id but sends no cmd_return_code. Absence of an explicit failure = OK.
+    # (Observed live 2026-07-30: users registered on the device with ret=''.)
+    branch_id = seed_data["branch_a"].id
+    cmd = await _enqueue_cmd(db_session, branch_id)
+    await aidata._emit_next_command(db_session, DEV)
+    await db_session.commit()
+
+    await aidata._handle_cmd_result(
+        db_session, DEV,
+        _req("send_cmd_result", {"trans_id": aidata._numeric_trans_id(cmd)}),
+        {},
+    )
+    await db_session.refresh(cmd)
+    assert cmd.command_status == STATUS_CONFIRMED
+
+
+@pytest.mark.usefixtures("seed_data")
 async def test_send_cmd_result_failure_marks_failed(db_session, seed_data):
     branch_id = seed_data["branch_a"].id
     cmd = await _enqueue_cmd(db_session, branch_id)

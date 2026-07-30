@@ -312,13 +312,19 @@ async def _handle_cmd_result(
     if command is None:
         logger.warning("AIData send_cmd_result %s: unknown trans_id=%r", dev_id, trans_id)
         return
-    # Success is the vendor's "Success" token, or a ZK-style numeric 0.
-    if ret.lower() == RESULT_SUCCESS.lower() or ret == "0":
-        await device_command_repo.mark_confirmed(session, command)
-        logger.info("AIData cmd CONFIRMED %s trans_id=%s", command.command, trans_id)
-    else:
-        await device_command_repo.mark_failed(session, command, ret or "device reported failure")
+    # This R6 acknowledges a SUCCESSFUL command with an EMPTY result — it echoes
+    # the trans_id but sends no return code. Confirmed live: users registered on
+    # the device while send_cmd_result carried ret=''. So treat the absence of an
+    # explicit failure as success; only a non-empty code that isn't "Success"/"0"
+    # is a real device-side failure. (Ground truth remains reconcile vs the
+    # device's user table — see the mirror/reconcile path.)
+    failed = ret != "" and ret.lower() != RESULT_SUCCESS.lower() and ret != "0"
+    if failed:
+        await device_command_repo.mark_failed(session, command, ret)
         logger.info("AIData cmd FAILED %s trans_id=%s ret=%r", command.command, trans_id, ret)
+    else:
+        await device_command_repo.mark_confirmed(session, command)
+        logger.info("AIData cmd CONFIRMED %s trans_id=%s (ret=%r)", command.command, trans_id, ret)
 
 
 @router.post("/AIData.aspx")

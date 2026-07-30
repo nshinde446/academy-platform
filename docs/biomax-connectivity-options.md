@@ -1,6 +1,27 @@
 # BioMax device ↔ our platform — connectivity options (decision doc)
 
-**Status:** open decision, 2026-07-30. **Owner:** attendance/provisioning work.
+**Status:** ✅ **SOLVED, 2026-07-30.** Option A is live end-to-end — the device
+polls `receive_cmd` from our VPS and applies pushed users. **Owner:**
+attendance/provisioning work.
+
+## TL;DR — the winning path (proven)
+Both directions now run **device → our VPS, no on-prem laptop**:
+- **Read punches:** device `realtime_glog` → VPS (already live).
+- **Push users:** device `receive_cmd` poll → VPS emits `SET_USER_INFO` → device
+  registers the user. **Proven live:** pushed `9990009 / WEB TEST` *and* a real
+  student (`2801300 / Gauravi`) from the webpage; both appear in the device's
+  user table (`GetUserIdList`, count 6→7→…).
+- **The unlock:** point the device's **command channel** (`serverHost:serverPort`)
+  at our VPS. We did this **via the device's own local HTTP API** — `POST /bin/cmd`
+  `{"cmd":"SetDeviceSetting","data":{...serverHost/serverPort/pushServerHost/
+  pushServerPort/pushEnable...}}` (Digest `admin`/`admin`, port 80). This is a
+  **one-time config write**, not an on-prem dependency — Option B's API turned out
+  to be the *tool that configures Option A*, not a separate fallback.
+- **Caveat:** this R6 acks a successful command with an **empty** `send_cmd_result`
+  (echoes `trans_id`, no return code). Backend now treats "no explicit failure" as
+  success; ground truth remains reconcile vs the device's user table.
+- **TODO:** confirm `serverHost` **persists across a device reboot** (this unit had
+  a settings-save quirk on its *physical* menu; the API write should stick).
 
 ## The goal
 Our web platform must, for the BioMax R6 face terminal (`AMDB26013800122`):
@@ -49,37 +70,35 @@ A cloud app reaches a LAN device only two ways:
 
 | # | Path | Read punches | Push users | On-prem box? | Status |
 |---|---|---|---|---|---|
-| **A** | **AIData push, device → our VPS (both directions)** | ✅ works | via `receive_cmd` poll | **none** | build done; blocked on device-menu config pointing the command channel at our VPS |
-| **B** | **Device local HTTP API (port 80, lighttpd/digest)** | likely | likely (`setUserInfo`-type) | small dedicated box | **untested — needs device admin creds + endpoint spec** |
+| **A** | **AIData push, device → our VPS (both directions)** | ✅ works | ✅ **works** via `receive_cmd` poll | **none** | ✅ **PROVEN live 2026-07-30** — device command channel pointed at our VPS via the port-80 API; users pushed from the webpage land on the device |
+| **B** | **Device local HTTP API (port 80, lighttpd/digest, `admin`/`admin`)** | ✅ (`GetLogDataPage`) | ✅ (`SetUserInfo`) | small dedicated box | **creds/endpoints now known** — `/bin/cmd` JSON API. Used here to *configure A*; also a viable direct-LAN bridge if ever needed |
 | C | Port 5005 LAN SDK (binary) | maybe | maybe | small dedicated box | undocumented binary protocol; hardest |
 | D | ZKTeco `pyzk`/4370 | — | — | — | ❌ port closed — ruled out |
 | E | Buy a universal gateway (CAMS / Minop) | ✅ | ✅ | depends | paid third-party dependency |
 
-## Decision
+## Decision — ✅ Option A, live
 
 - **Punches: solved** via Option A (device→VPS). Keep it.
-- **Push users: pursue A and B in parallel.**
-  - **A (primary):** have the **BioMax installer** point the device's command
-    channel at our VPS and confirm it saves. Cleanest, laptop-free; our platform
-    is 100% built for it (Increments 1–4 + proxy, dormant behind
-    `BIOMAX_PROVISIONING_ENABLED`). Blocked only because the on-device setting
-    would not save for us tonight and the device kept auto-attaching to
-    SmartOffice on the LAN.
-  - **B (fallback):** the most promising *new* lead. The device has a real local
-    HTTP API (port 80). With the **device admin credentials + endpoint spec**, a
-    tiny **always-on on-prem bridge** (a ~₹3–4k Raspberry Pi — never the laptop)
-    can push users + read punches over the LAN, **independent of the device's
-    cloud config**. Needs testing.
+- **Push users: solved** via Option A. The device's command channel
+  (`serverHost:serverPort`) was pointed at our VPS (`116.203.116.141:8099`) with a
+  one-time `SetDeviceSetting` over the port-80 `/bin/cmd` API. The device now polls
+  `receive_cmd` from us every ~20s and applies queued `SET_USER_INFO` commands.
+  Platform side runs behind `BIOMAX_PROVISIONING_ENABLED=true`.
+- **Option B is not needed as a running bridge** — its API was the *means to
+  configure A*. It stays documented as a direct-LAN fallback (a ~₹3–4k Pi, never
+  the laptop) if the device's cloud config ever can't reach our VPS.
 
-Option A is preferred (no on-prem hardware). Option B is the resilient fallback
-if the device's command channel can't be pointed at our VPS.
+No on-prem hardware, no always-on laptop — exactly the hard constraint.
 
 ## Next steps
-1. **A:** installer points the device command/cloud server → `attend.eduworld-livekit.duckdns.org:8443` (or `116.203.116.141:8099`), confirm a `receive_cmd` poll reaches our VPS.
-2. **B:** obtain the device's **port-80 admin credentials** + any BioMax HTTP-API
-   doc → probe `http://<device>/` on the LAN for a user-management endpoint → if
-   present, spec a small on-prem bridge.
-3. Keep the platform side dormant behind the flag until one path is live.
+1. **Verify persistence:** confirm the device keeps `serverHost` → our VPS across a
+   reboot / power cycle. If it reverts, re-apply via the port-80 API (scriptable) or
+   have the installer set it on the device menu once.
+2. **Reconcile as ground truth:** wire the Device-sync page's "confirmed" state to
+   the device user table (`GetUserIdList` / the `realtime_enroll_data` mirror) rather
+   than the ambiguous empty `send_cmd_result`.
+3. **Push real students** from the Device-sync page for the roster and monitor the
+   queue moves to `confirmed`.
 
 ## Testing log
 - 2026-07-30: port scan above. Port 80 = `lighttpd/1.4.54`, Digest realm
@@ -95,3 +114,20 @@ if the device's command channel can't be pointed at our VPS.
   `curl --digest -u <user>:<pass> http://192.168.1.7/<path>` for a
   user-management / attendance endpoint (run by the operator so the password is
   never handled by the assistant).
+- 2026-07-30: **UNBLOCKED** — device port-80 API is `POST /bin/cmd`, Digest
+  `admin`/`admin`, JSON `{"cmd":...,"data":{...}}` → `{"result_code":0,...}`.
+  Verified commands: `GetDeviceInfo`, `GetDeviceSetting`, `SetDeviceSetting`,
+  `GetUserIdList`, `GetUserInfo`. (PowerShell strips quotes from inline `-d` —
+  write the body to a file and use `curl --data-binary @file`.)
+- 2026-07-30: `GetDeviceSetting` showed `serverHost=192.168.1.5:82` (SmartOffice)
+  but `pushServerHost=116.203.116.141:8099` (our VPS) — i.e. punches already came
+  to us, commands went to SmartOffice. Root cause of "device never polled us."
+- 2026-07-30: **`SetDeviceSetting` → `serverHost=116.203.116.141:8099`** (both
+  channels now our VPS). Device began `receive_cmd` polling our VPS within ~20s.
+- 2026-07-30: ✅ **END-TO-END PROVEN.** Queued `SET_USER_INFO` for `9990009 / WEB
+  TEST`; device fetched it (emit trans_id=445744715), applied it — `GetUserIdList`
+  count 6→7 with `WEB TEST` present. Real student `2801300 / Gauravi` pushed the
+  same way and registered. **Webpage → device user push works.**
+- 2026-07-30: device acks success with an **empty** `send_cmd_result` (trans_id
+  echoed, no return code) → backend previously mis-marked these `failed`. Fixed:
+  absence of an explicit failure code now = confirmed.
