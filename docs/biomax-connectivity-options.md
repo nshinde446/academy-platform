@@ -83,5 +83,15 @@ if the device's command channel can't be pointed at our VPS.
 
 ## Testing log
 - 2026-07-30: port scan above. Port 80 = `lighttpd/1.4.54`, Digest realm
-  `"Login"`, all paths 401 without creds. Port 5005 open (binary). Awaiting
-  device admin creds to probe the port-80 API.
+  `"Login"`, all paths 401 without creds. Port 5005 open (binary).
+- 2026-07-30: **port 5005** accepts TCP connections but returns nothing to any
+  text probe (`""`, `\x00`, HTTP, `CMD`) — it waits for a **binary SDK frame**.
+  Confirmed proprietary binary LAN SDK; needs the vendor SDK/library. Hard path.
+- 2026-07-30: **port 80** — every probed path (`/`, `/device.rsp`, `/info`,
+  `/status`, `/csl/getuser`, `/cgi-bin/deviceinfo.cgi`, `/iclock/cdata`, …)
+  returns **401**. The device requires **Digest auth on all endpoints**, so
+  Option B cannot be probed further **without the device admin credentials**.
+- **BLOCKED ON:** the device's port-80 admin username/password. With it, probe
+  `curl --digest -u <user>:<pass> http://192.168.1.7/<path>` for a
+  user-management / attendance endpoint (run by the operator so the password is
+  never handled by the assistant).
