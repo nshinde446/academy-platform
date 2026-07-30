@@ -90,6 +90,30 @@ async def get_command(
     return result.scalar_one_or_none()
 
 
+async def find_by_trans_id(
+    session: AsyncSession, dev_id: str, trans_id: str
+) -> DeviceCommand | None:
+    """Match a device's ``send_cmd_result`` back to the command we emitted.
+
+    Keyed on the ``trans_id`` we set when the command was served (``mark_sent``)
+    and echoed by the device. Device-scoped (not branch-scoped) — the device only
+    knows its own ``dev_id`` and the opaque ``trans_id``. Newest send first, so a
+    re-used token resolves to the latest emission."""
+    if not trans_id:
+        return None
+    result = await session.execute(
+        select(DeviceCommand)
+        .where(
+            DeviceCommand.dev_id == dev_id,
+            DeviceCommand.trans_id == trans_id,
+            DeviceCommand.is_deleted == False,
+        )
+        .order_by(DeviceCommand.sent_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def list_commands(
     session: AsyncSession,
     branch_id: uuid.UUID,
