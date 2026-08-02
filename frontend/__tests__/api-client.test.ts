@@ -18,6 +18,16 @@ vi.mock("axios", async () => {
   };
 });
 
+// jsdom's window.location is read-only; swap in a stub without an `any` cast.
+function stubLocation(pathname: string) {
+  delete (window as unknown as { location?: unknown }).location;
+  (
+    window as unknown as {
+      location: { href: string; pathname: string; search: string };
+    }
+  ).location = { href: "", pathname, search: "" };
+}
+
 describe("apiClient", () => {
   let apiClient: any;
   let mockInstance: any;
@@ -74,9 +84,9 @@ describe("apiClient", () => {
     if (!responseInterceptorError) return;
 
     delete (window as any).location;
-    (window as any).location = { href: "" };
+    (window as any).location = { href: "", pathname: "/attendance", search: "" };
 
-    const originalRequest = { _retry: false };
+    const originalRequest = { _retry: false, url: "/api/v1/some-endpoint" };
     const error = { response: { status: 401 }, config: originalRequest };
 
     mockInstance.post.mockRejectedValueOnce(new Error("refresh failed"));
@@ -87,7 +97,41 @@ describe("apiClient", () => {
       // expected
     }
 
-    expect(window.location.href).toBe("/login");
+    // Redirects to /login and preserves where the user was.
+    expect(window.location.href).toContain("/login");
+    expect(window.location.href).toContain("redirect=");
+  });
+
+  it("does NOT recurse when the refresh endpoint itself 401s", async () => {
+    if (!responseInterceptorError) return;
+
+    stubLocation("/attendance");
+
+    // A 401 whose own request is /auth/refresh must go straight to login,
+    // never trigger another POST /auth/refresh (the infinite-loop bug).
+    const error = {
+      response: { status: 401 },
+      config: { url: "/api/v1/auth/refresh" },
+    };
+
+    await expect(responseInterceptorError(error)).rejects.toEqual(error);
+    expect(mockInstance.post).not.toHaveBeenCalledWith("/api/v1/auth/refresh");
+    expect(window.location.href).toContain("/login");
+  });
+
+  it("does NOT redirect when already on the login page", async () => {
+    if (!responseInterceptorError) return;
+
+    stubLocation("/login");
+
+    // A bad-password login 401 shouldn't bounce the login page to itself.
+    const error = {
+      response: { status: 401 },
+      config: { url: "/api/v1/auth/login" },
+    };
+
+    await expect(responseInterceptorError(error)).rejects.toEqual(error);
+    expect(window.location.href).toBe("");
   });
 
   it("interceptor rejects non-401 errors", async () => {
