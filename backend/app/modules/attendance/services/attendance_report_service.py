@@ -102,6 +102,30 @@ async def batch_report(
     return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME
 
 
+async def daily_ledger_report(
+    session: AsyncSession, *, branch_id: uuid.UUID, start: date, end: date, fmt: str,
+) -> tuple[str, bytes, str]:
+    """The immutable all-students daily ledger — every student's per-day record
+    over the range, batch-independent (survives batch/subject/profile changes)."""
+    _check_fmt(fmt)
+    tz = await daily_service.branch_timezone(session, branch_id)
+    ledger = await daily_service.daily_ledger(
+        session, branch_id=branch_id, start=start, end=end,
+    )
+    brand = get_settings().ACADEMY_BRAND_NAME
+    base = f"attendance-daily-ledger-{start}-{end}"
+
+    if fmt == "xlsx":
+        data = ex.daily_ledger_xlsx(
+            brand=brand, start=start, end=end, ledger=ledger, tz_name=tz,
+        )
+        return f"{base}.xlsx", data, XLSX_MIME
+    html = ex.daily_ledger_html(
+        brand=brand, start=start, end=end, ledger=ledger, tz_name=tz,
+    )
+    return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME
+
+
 async def all_batches_report(
     session: AsyncSession, *, branch_id: uuid.UUID, start: date, end: date, fmt: str,
 ) -> tuple[str, bytes, str]:

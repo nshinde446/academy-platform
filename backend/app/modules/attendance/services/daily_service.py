@@ -372,6 +372,60 @@ async def student_timeline(
     )).scalars().all())
 
 
+async def daily_ledger(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    start: date,
+    end: date,
+) -> list[dict]:
+    """Reference C — the immutable all-students daily ledger.
+
+    One row per student per day that has a ``DailyAttendance`` record in the
+    range, joined to the student's identity. Deliberately **batch-independent**:
+    it reads only Layer-1 day facts, so a student's history is complete and
+    unchanged by any later batch / subject / profile edit — the permanent record
+    the institute reviews per candidate. Ordered by student, then date.
+    """
+    rows = (await session.execute(
+        select(
+            Student.id,
+            Student.first_name,
+            Student.last_name,
+            Student.enrollment_number,
+            DailyAttendance.attendance_date,
+            DailyAttendance.first_in,
+            DailyAttendance.last_out,
+            DailyAttendance.day_status,
+            DailyAttendance.signoff,
+            DailyAttendance.source,
+        )
+        .join(DailyAttendance, DailyAttendance.student_id == Student.id)
+        .where(
+            DailyAttendance.branch_id == branch_id,
+            DailyAttendance.attendance_date >= start,
+            DailyAttendance.attendance_date <= end,
+            DailyAttendance.is_deleted == False,
+            Student.is_deleted == False,
+        )
+        .order_by(Student.first_name, Student.last_name, DailyAttendance.attendance_date)
+    )).all()
+    return [
+        {
+            "student_id": r.id,
+            "name": f"{r.first_name} {r.last_name}".strip(),
+            "enrollment_number": r.enrollment_number,
+            "attendance_date": r.attendance_date,
+            "first_in": r.first_in,
+            "last_out": r.last_out,
+            "day_status": r.day_status,
+            "signoff": r.signoff,
+            "source": r.source,
+        }
+        for r in rows
+    ]
+
+
 async def classroom_register(
     session: AsyncSession,
     *,
@@ -475,9 +529,15 @@ async def batch_matrix(
     tz_name: str | None = None,
 ) -> dict:
     """Register matrix for one batch: students × working-day columns, each cell
-    P/L/A, plus per-student % and per-day present totals."""
+    P/L/A, plus per-student % and per-day present totals.
+
+    Columns are the *union* of scheduled-lecture days and any day a current batch
+    member actually has an attendance record — so a real punch is never hidden
+    just because no lecture was timetabled that day (e.g. a batch with no
+    schedule, or a student moved into it). Absent-sweep rows only exist on
+    scheduled days, so the union adds exactly the extra punch-days and nothing
+    else."""
     tz_name = tz_name or await branch_timezone(session, branch_id)
-    dates = await _batch_working_dates(session, branch_id, batch_id, start, end, tz_name)
 
     students = (await session.execute(
         select(Student)
@@ -490,6 +550,23 @@ async def batch_matrix(
         .order_by(Student.first_name, Student.last_name)
     )).scalars().unique().all()
     student_ids = [s.id for s in students]
+
+    scheduled = await _batch_working_dates(session, branch_id, batch_id, start, end, tz_name)
+    attended: set[date] = set()
+    if student_ids:
+        attended = {
+            d for d in (await session.execute(
+                select(DailyAttendance.attendance_date).where(
+                    DailyAttendance.student_id.in_(student_ids),
+                    DailyAttendance.branch_id == branch_id,
+                    DailyAttendance.attendance_date >= start,
+                    DailyAttendance.attendance_date <= end,
+                    DailyAttendance.day_status.in_(_PRESENT_STATUSES),
+                    DailyAttendance.is_deleted == False,
+                ).distinct()
+            )).scalars().all()
+        }
+    dates = sorted(set(scheduled) | attended)
 
     by_student_date: dict[uuid.UUID, dict[date, str]] = {}
     if student_ids and dates:

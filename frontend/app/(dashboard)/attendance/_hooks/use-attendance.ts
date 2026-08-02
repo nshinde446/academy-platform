@@ -145,7 +145,7 @@ export function useBranchSummary(
 }
 
 // Download an attendance report (Excel / PDF) as a blob and save it.
-export type ReportScope = "student" | "batch" | "all-batches";
+export type ReportScope = "student" | "batch" | "all-batches" | "daily-ledger";
 
 export function useDownloadAttendanceReport(branchId: string | undefined) {
   return useMutation({
@@ -167,7 +167,9 @@ export function useDownloadAttendanceReport(branchId: string | undefined) {
           ? `/api/v1/attendance/reports/student/${id}`
           : scope === "batch"
             ? `/api/v1/attendance/reports/batch/${id}`
-            : `/api/v1/attendance/reports/all-batches`;
+            : scope === "daily-ledger"
+              ? `/api/v1/attendance/reports/daily-ledger`
+              : `/api/v1/attendance/reports/all-batches`;
       const res = await apiClient.get(path, {
         params: { branch_id: branchId, start, end, fmt },
         responseType: "blob",
