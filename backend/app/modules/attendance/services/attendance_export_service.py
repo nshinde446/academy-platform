@@ -205,6 +205,45 @@ def all_batches_xlsx(
     return _xlsx_bytes(wb)
 
 
+def daily_ledger_xlsx(
+    *, brand: str, start: date, end: date, ledger: list[dict], tz_name: str,
+) -> bytes:
+    """The immutable all-students daily ledger — one row per student per day with
+    a record, batch-independent (see daily_service.daily_ledger)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Daily ledger"
+
+    ws["A1"] = f"{brand} — daily attendance ledger"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = _period(start, end)
+    students = len({r["student_id"] for r in ledger})
+    ws["A3"] = f"{students} students · {len(ledger)} day records"
+
+    head = 5
+    headers = ["#", "Student", "Enroll", "Date", "In", "Out", "Status", "Sign-off"]
+    for c, h in enumerate(headers, start=1):
+        cell = ws.cell(row=head, column=c, value=h)
+        cell.font = _BOLD
+        cell.fill = _HEAD_FILL
+
+    for i, r in enumerate(ledger, start=1):
+        row = head + i
+        ws.cell(row=row, column=1, value=i)
+        ws.cell(row=row, column=2, value=r["name"])
+        ws.cell(row=row, column=3, value=r["enrollment_number"] or "")
+        ws.cell(row=row, column=4, value=r["attendance_date"].isoformat())
+        ws.cell(row=row, column=5, value=_fmt_time(r["first_in"], tz_name))
+        ws.cell(row=row, column=6, value=_fmt_time(r["last_out"], tz_name))
+        ws.cell(row=row, column=7, value=r["day_status"])
+        ws.cell(row=row, column=8, value=r["signoff"])
+
+    ws.column_dimensions["B"].width = 24
+    for col in ("C", "D", "E", "F", "G", "H"):
+        ws.column_dimensions[col].width = 12
+    return _xlsx_bytes(wb)
+
+
 # ── PDF (HTML -> headless Chromium) ─────────────────────────────────────────
 
 _PDF_CSS = """
@@ -231,6 +270,15 @@ def _doc(body: str) -> str:
 
 def _esc(v: Any) -> str:
     return html.escape(str(v))
+
+
+def _status_class(day_status: str | None) -> str:
+    """PDF cell tint class for a day status: P present / L late / A absent."""
+    if day_status == "PRESENT":
+        return "c P"
+    if day_status == "LATE":
+        return "c L"
+    return "c A"
 
 
 def student_html(
@@ -306,6 +354,30 @@ def all_batches_html(
         f"<p class='sub'>Attendance summary · {_period(start, end)}</p>"
         f"<table><tr><th>Batch</th><th>Code</th><th>Students</th><th>Working days</th>"
         f"<th>Present</th><th>Total</th><th>Avg %</th></tr>{rows}</table>"
+    )
+    return _doc(body)
+
+
+def daily_ledger_html(
+    *, brand: str, start: date, end: date, ledger: list[dict], tz_name: str,
+) -> str:
+    students = len({r["student_id"] for r in ledger})
+    rows = "".join(
+        f"<tr><td class='c'>{i}</td><td>{_esc(r['name'])}</td>"
+        f"<td>{_esc(r['enrollment_number'] or '')}</td>"
+        f"<td>{_esc(r['attendance_date'].isoformat())}</td>"
+        f"<td class='c'>{_esc(_fmt_time(r['first_in'], tz_name))}</td>"
+        f"<td class='c'>{_esc(_fmt_time(r['last_out'], tz_name))}</td>"
+        f"<td class='{_status_class(r['day_status'])}'>{_esc(r['day_status'])}</td>"
+        f"<td>{_esc(r['signoff'])}</td></tr>"
+        for i, r in enumerate(ledger, start=1)
+    )
+    body = (
+        f"<h1>{_esc(brand)} — daily attendance ledger</h1>"
+        f"<p class='sub'>{_period(start, end)} · {students} students · "
+        f"{len(ledger)} day records</p>"
+        f"<table><tr><th>#</th><th>Student</th><th>Enroll</th><th>Date</th>"
+        f"<th>In</th><th>Out</th><th>Status</th><th>Sign-off</th></tr>{rows}</table>"
     )
     return _doc(body)
 

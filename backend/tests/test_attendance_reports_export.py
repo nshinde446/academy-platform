@@ -64,6 +64,57 @@ async def test_batch_matrix_codes_and_totals(db_session, seed_data):
 
 
 @pytest.mark.usefixtures("seed_data")
+async def test_batch_matrix_shows_punch_day_without_lecture(db_session, seed_data):
+    """A real punch must never be hidden just because no lecture was scheduled
+    that day (the moved-student / no-timetable batch case). The register column
+    for the punch-day appears and the student reads present, not 0%."""
+    db_session.add(StudentBatchMapping(
+        student_id=seed_data["student"].id, batch_id=seed_data["batch"].id,
+        branch_id=seed_data["branch_a"].id, status="active", is_deleted=False,
+    ))
+    # No lecture at all for the batch — but the student punched LATE on the 22nd.
+    db_session.add(DailyAttendance(
+        student_id=seed_data["student"].id, branch_id=seed_data["branch_a"].id,
+        attendance_date=date(2026, 6, 22), day_status="LATE", signoff="COMPLETE",
+        source="BIOMETRIC",
+    ))
+    await db_session.commit()
+
+    m = await daily_service.batch_matrix(
+        session=db_session, branch_id=seed_data["branch_a"].id,
+        batch_id=seed_data["batch"].id, start=START, end=END,
+    )
+    assert m["dates"] == [date(2026, 6, 22)]  # punch-day is a column despite no lecture
+    row = m["students"][0]
+    assert row["cells"] == ["L"]
+    assert row["present"] == 1
+    assert row["attendance_pct"] == 100.0
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_daily_ledger_is_batch_independent(db_session, seed_data):
+    """The ledger reads Layer-1 day facts only — a student with a record but no
+    (current) batch mapping still appears, so history survives a batch move."""
+    # No StudentBatchMapping at all for this student.
+    db_session.add(DailyAttendance(
+        student_id=seed_data["student"].id, branch_id=seed_data["branch_a"].id,
+        attendance_date=date(2026, 6, 22), day_status="LATE",
+        first_in=datetime(2026, 6, 22, 3, 59, tzinfo=timezone.utc),
+        last_out=datetime(2026, 6, 22, 9, 0, tzinfo=timezone.utc),
+        signoff="COMPLETE", source="BIOMETRIC",
+    ))
+    await db_session.commit()
+
+    ledger = await daily_service.daily_ledger(
+        session=db_session, branch_id=seed_data["branch_a"].id, start=START, end=END,
+    )
+    mine = [r for r in ledger if r["student_id"] == seed_data["student"].id]
+    assert len(mine) == 1
+    assert mine[0]["attendance_date"] == date(2026, 6, 22)
+    assert mine[0]["day_status"] == "LATE"
+
+
+@pytest.mark.usefixtures("seed_data")
 async def test_branch_summary_aggregates(db_session, seed_data):
     db_session.add(StudentBatchMapping(
         student_id=seed_data["student"].id, batch_id=seed_data["batch"].id,
@@ -150,6 +201,36 @@ def test_all_batches_xlsx_summary_plus_sheet():
     assert "NEET-12-B" in wb.sheetnames  # per-batch detail sheet
     summary_flat = [c.value for row in wb["Summary"].iter_rows() for c in row]
     assert "NEET-12-B" in summary_flat
+
+
+def _ledger():
+    return [
+        {"student_id": "s1", "name": "Aarav Patil", "enrollment_number": "EN1",
+         "attendance_date": date(2026, 6, 22),
+         "first_in": datetime(2026, 6, 22, 3, 59, tzinfo=timezone.utc),
+         "last_out": datetime(2026, 6, 22, 9, 0, tzinfo=timezone.utc),
+         "day_status": "LATE", "signoff": "COMPLETE", "source": "BIOMETRIC"},
+    ]
+
+
+def test_daily_ledger_xlsx_has_rows():
+    data = ex.daily_ledger_xlsx(
+        brand="MSA", start=START, end=END, ledger=_ledger(), tz_name="Asia/Kolkata",
+    )
+    wb = load_workbook(io.BytesIO(data))
+    ws = wb["Daily ledger"]
+    flat = [c.value for row in ws.iter_rows() for c in row if c.value is not None]
+    assert "Aarav Patil" in str(flat)
+    assert "2026-06-22" in str(flat)
+    assert "09:29" in str(flat)  # 03:59 UTC -> 09:29 IST
+
+
+def test_daily_ledger_html_contains_data():
+    s = ex.daily_ledger_html(
+        brand="MSA", start=START, end=END, ledger=_ledger(), tz_name="Asia/Kolkata",
+    )
+    assert "daily attendance ledger" in s
+    assert "Aarav Patil" in s and "LATE" in s
 
 
 def test_html_builders_contain_data():

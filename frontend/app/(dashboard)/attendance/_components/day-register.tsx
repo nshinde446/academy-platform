@@ -80,7 +80,10 @@ export function DayRegister({ branchId, batches }: DayRegisterProps) {
   );
 
   const download = useDownloadAttendanceReport(branchId);
-  function pull(scope: "student" | "batch" | "all-batches", fmt: "xlsx" | "pdf") {
+  function pull(
+    scope: "student" | "batch" | "all-batches" | "daily-ledger",
+    fmt: "xlsx" | "pdf",
+  ) {
     download.mutate({
       scope,
       id: scope === "student" ? studentId : scope === "batch" ? batchId : undefined,
@@ -197,7 +200,9 @@ export function DayRegister({ branchId, batches }: DayRegisterProps) {
               <p className="text-xs text-muted-foreground">
                 {studentId
                   ? "Download covers the selected student for the date range."
-                  : "No student selected — download covers the whole batch for the date range."}
+                  : "No student selected — download covers the whole batch for the date range."}{" "}
+                The daily ledger is the permanent per-student record — it stays
+                complete even after batch or profile changes.
               </p>
               <div className="flex flex-wrap gap-4">
                 <DownloadGroup
@@ -211,6 +216,12 @@ export function DayRegister({ branchId, batches }: DayRegisterProps) {
                   disabled={download.isPending}
                   onExcel={() => pull("all-batches", "xlsx")}
                   onPdf={() => pull("all-batches", "pdf")}
+                />
+                <DownloadGroup
+                  label="Daily ledger (all students)"
+                  disabled={download.isPending}
+                  onExcel={() => pull("daily-ledger", "xlsx")}
+                  onPdf={() => pull("daily-ledger", "pdf")}
                 />
               </div>
             </div>

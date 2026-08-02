@@ -282,6 +282,23 @@ async def download_all_batches_report(
     return _download(filename, data, mime)
 
 
+@router.get("/reports/daily-ledger")
+async def download_daily_ledger_report(
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    fmt: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Immutable all-students daily ledger — every student's per-day record over
+    the range, unaffected by later batch/subject/profile changes."""
+    filename, data, mime = await attendance_report_service.daily_ledger_report(
+        session, branch_id=branch_id, start=start, end=end, fmt=fmt,
+    )
+    return _download(filename, data, mime)
+
+
 @router.post("/exceptions", response_model=ExceptionResponse)
 async def create_exception(
     body: ExceptionCreate,
