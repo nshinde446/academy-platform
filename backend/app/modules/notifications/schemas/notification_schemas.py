@@ -8,11 +8,15 @@ VALID_CHANNELS = {"EMAIL", "SMS", "WHATSAPP", "PUSH"}
 VALID_EVENT_TYPES = {
     "ATTENDANCE_MARKED",
     "STUDENT_ABSENT",  # emitted per student by the nightly absent sweep -> parent notify
+    "DAILY_ATTENDANCE_DIGEST",  # daily per-student status -> parent (all or absent-only)
     "LECTURE_COMPLETED",
     "LECTURE_CANCELLED",
     "TEST_UPLOADED",
     "MARKS_UPDATED",
 }
+
+# Daily digest recipient scope — the UI switch.
+VALID_DIGEST_SCOPES = {"ALL", "ABSENT_ONLY"}
 
 
 class TemplateCreate(BaseModel):
@@ -24,6 +28,9 @@ class TemplateCreate(BaseModel):
     is_active: bool = True
     condition_json: dict | None = None
     branch_id: uuid.UUID | None = None
+    # WHATSAPP only — the Meta-approved template name + language code.
+    provider_template_name: str | None = None
+    provider_language: str | None = None
 
 
 class TemplateUpdate(BaseModel):
@@ -34,6 +41,8 @@ class TemplateUpdate(BaseModel):
     body_template: str | None = None
     is_active: bool | None = None
     condition_json: dict | None = None
+    provider_template_name: str | None = None
+    provider_language: str | None = None
 
 
 class TemplateResponse(BaseModel):
@@ -46,8 +55,21 @@ class TemplateResponse(BaseModel):
     is_active: bool
     condition: dict | None = None
     branch_id: uuid.UUID | None = None
+    provider_template_name: str | None = None
+    provider_language: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class SettingsUpdate(BaseModel):
+    daily_digest_enabled: bool | None = None
+    daily_digest_scope: str | None = None
+
+
+class SettingsResponse(BaseModel):
+    branch_id: uuid.UUID
+    daily_digest_enabled: bool
+    daily_digest_scope: str
 
 
 class QueueItemResponse(BaseModel):

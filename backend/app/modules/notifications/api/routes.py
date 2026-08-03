@@ -7,6 +7,8 @@ from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import require_roles
 from app.modules.notifications.schemas.notification_schemas import (
     QueueItemResponse,
+    SettingsResponse,
+    SettingsUpdate,
     TemplateCreate,
     TemplateResponse,
     TemplateUpdate,
@@ -71,6 +73,32 @@ async def delete_template(
 ):
     await notification_service.delete_template(
         session, template_id,
+        current_user_id=current_user["user_id"],
+        ip_address=request.client.host if request.client else None,
+    )
+
+
+@router.get("/settings", response_model=SettingsResponse)
+async def get_settings(
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    return await notification_service.get_notification_settings(session, branch_id)
+
+
+@router.put("/settings", response_model=SettingsResponse)
+async def update_settings(
+    body: SettingsUpdate,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    return await notification_service.update_notification_settings(
+        session,
+        branch_id=branch_id,
+        data=body.model_dump(exclude_unset=True),
         current_user_id=current_user["user_id"],
         ip_address=request.client.host if request.client else None,
     )

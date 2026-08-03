@@ -8,6 +8,7 @@ core takes an injected session so tests drive it against the test DB.
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import date, datetime, timezone
 
@@ -19,6 +20,9 @@ from app.core.jobs.celery_app import celery_app
 from app.modules.attendance.services import daily_service
 from app.modules.attendance.time_utils import get_tz
 from app.modules.auth.models.auth_models import Branch
+from app.modules.notifications.repositories import notification_repository
+
+logger = logging.getLogger(__name__)
 
 # The nightly sweep runs during this local hour (nominal 23:30). Beat fires
 # every 15 min; whichever firing lands in 23:00–23:59 local triggers it, and the
@@ -53,6 +57,19 @@ async def sweep_due_branches(
         created = await daily_service.run_absent_sweep(
             session, branch_id=branch_id, day=local_date, tz_name=tz_name
         )
+        # Daily parent digest, only for branches that switched it on. Runs after
+        # the sweep so every student has a resolved day status. Side-effect of
+        # the sweep run; kept out of the return tuple to preserve its contract.
+        settings = await notification_repository.get_settings(session, branch_id)
+        if settings and settings.daily_digest_enabled:
+            events = await daily_service.run_daily_digest(
+                session, branch_id=branch_id, day=local_date,
+                scope=settings.daily_digest_scope, tz_name=tz_name,
+            )
+            logger.info(
+                "daily digest emitted: branch=%s day=%s scope=%s count=%d",
+                branch_id, local_date, settings.daily_digest_scope, len(events),
+            )
         swept.append((branch_id, local_date, len(created)))
     return swept
 

@@ -53,7 +53,18 @@ celery_app.conf.update(
             "task": "attendance.smartoffice_poll",
             "schedule": crontab(minute="*/2"),
         },
+        # Notification pipeline: consume emitted events -> queue -> deliver.
+        # Safe to always schedule — WhatsApp sends are gated behind
+        # WHATSAPP_ENABLED (default off), so this is a no-op charge-wise until a
+        # token is set and the flag is flipped on.
+        "notifications-process-pipeline": {
+            "task": "notifications.process_pipeline",
+            "schedule": crontab(minute="*/5"),
+        },
     },
     # Explicit import so the worker registers our tasks without autodiscover.
-    imports=("app.modules.attendance.jobs.tasks",),
+    imports=(
+        "app.modules.attendance.jobs.tasks",
+        "app.modules.notifications.jobs.tasks",
+    ),
 )

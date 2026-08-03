@@ -17,6 +17,10 @@ class NotificationTemplate(BaseModel):
     body_template: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     condition_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # WhatsApp (Meta Cloud API) only: the pre-approved Meta template name and its
+    # language code. NULL for EMAIL/SMS/PUSH, which send body_template directly.
+    provider_template_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    provider_language: Mapped[str | None] = mapped_column(String(15), nullable=True)
     branch_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=True
     )
@@ -45,6 +49,24 @@ class NotificationQueue(BaseModel):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     branch_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=True
+    )
+
+
+class NotificationSettings(BaseModel):
+    __tablename__ = "notification_settings"
+
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False, unique=True
+    )
+    # Master opt-in for the daily WhatsApp attendance digest. Default off — a
+    # branch never messages parents until it deliberately turns this on.
+    daily_digest_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    # "ALL" (every parent gets their child's status) or "ABSENT_ONLY" (only
+    # absent students' parents). Default ABSENT_ONLY — cheaper, higher signal.
+    daily_digest_scope: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="ABSENT_ONLY"
     )
 
 
