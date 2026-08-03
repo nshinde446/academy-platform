@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LogIn, LogOut } from "lucide-react";
 import { useUserStore } from "@/store/user-store";
 import { useAuthStore } from "@/store/auth-store";
 
@@ -136,25 +137,35 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="flex items-center gap-2.5 border-t px-3 py-2.5">
-        <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full border bg-muted text-[11px] font-semibold text-foreground">
-          {initials}
+      <div className="flex flex-col gap-2 border-t px-3 py-2.5">
+        <div className="flex items-center gap-2.5">
+          <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full border bg-muted text-[11px] font-semibold text-foreground">
+            {initials}
+          </div>
+          <div className="flex min-w-0 flex-1 flex-col leading-tight">
+            <span className="truncate text-[12.5px] font-medium">{fullName}</span>
+            <span className="truncate text-[11px] text-muted-foreground">
+              {roleLabel}
+            </span>
+          </div>
         </div>
-        <div className="flex min-w-0 flex-1 flex-col leading-tight">
-          <span className="truncate text-[12.5px] font-medium">{fullName}</span>
-          <span className="truncate text-[11px] text-muted-foreground">
-            {roleLabel}
-          </span>
-        </div>
-        {user && (
+        {user ? (
           <button
             onClick={logout}
-            className="text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+            className="flex items-center justify-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[12.5px] font-medium text-foreground transition-colors hover:bg-muted"
             title="Sign out"
-            aria-label="Sign out"
           >
-            ⏻
+            <LogOut className="h-3.5 w-3.5" aria-hidden />
+            Sign out
           </button>
+        ) : (
+          <Link
+            href="/login"
+            className="flex items-center justify-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[12.5px] font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            <LogIn className="h-3.5 w-3.5" aria-hidden />
+            Sign in
+          </Link>
         )}
       </div>
     </aside>
