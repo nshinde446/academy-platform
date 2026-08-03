@@ -24,6 +24,9 @@ class TemplateCreate(BaseModel):
     is_active: bool = True
     condition_json: dict | None = None
     branch_id: uuid.UUID | None = None
+    # WHATSAPP only — the Meta-approved template name + language code.
+    provider_template_name: str | None = None
+    provider_language: str | None = None
 
 
 class TemplateUpdate(BaseModel):
@@ -34,6 +37,8 @@ class TemplateUpdate(BaseModel):
     body_template: str | None = None
     is_active: bool | None = None
     condition_json: dict | None = None
+    provider_template_name: str | None = None
+    provider_language: str | None = None
 
 
 class TemplateResponse(BaseModel):
@@ -46,6 +51,8 @@ class TemplateResponse(BaseModel):
     is_active: bool
     condition: dict | None = None
     branch_id: uuid.UUID | None = None
+    provider_template_name: str | None = None
+    provider_language: str | None = None
     created_at: datetime
     updated_at: datetime
 

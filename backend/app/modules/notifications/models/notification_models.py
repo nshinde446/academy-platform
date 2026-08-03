@@ -17,6 +17,10 @@ class NotificationTemplate(BaseModel):
     body_template: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     condition_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # WhatsApp (Meta Cloud API) only: the pre-approved Meta template name and its
+    # language code. NULL for EMAIL/SMS/PUSH, which send body_template directly.
+    provider_template_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    provider_language: Mapped[str | None] = mapped_column(String(15), nullable=True)
     branch_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=True
     )

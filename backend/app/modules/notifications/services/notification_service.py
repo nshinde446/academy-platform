@@ -1,16 +1,31 @@
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config.settings import get_settings
 from app.modules.audit.services import audit_service
+from app.modules.events.repositories import event_repository
+from app.modules.events.services import event_service
+from app.modules.notifications.integrations.whatsapp import client as whatsapp_client
 from app.modules.notifications.repositories import notification_repository
 from app.modules.notifications.schemas.notification_schemas import VALID_CHANNELS, VALID_EVENT_TYPES
 
+# This consumer's name in processed_events — its own high-water mark, so it
+# never re-enqueues an event another consumer (analytics, …) already handled.
+CONSUMER_NAME = "notifications"
+
 logger = logging.getLogger(__name__)
+
+# Placeholder names in a body_template, in the order they appear. This ordering
+# is what maps the template's {name} tokens onto a Meta template's positional
+# {{1}}, {{2}}, … body parameters, so the admin keeps a single human-readable
+# source of truth for both.
+_PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
 
 COMPARISON_OPS = {
     "lt": lambda a, b: a < b,
@@ -53,6 +68,8 @@ async def create_template(
         is_active=data.get("is_active", True),
         condition_json=condition_json,
         branch_id=data.get("branch_id"),
+        provider_template_name=data.get("provider_template_name"),
+        provider_language=data.get("provider_language"),
     )
 
     await audit_service.log_action(
@@ -98,7 +115,10 @@ async def update_template(
     template_record_id = template.id
 
     updates = {}
-    for field in ["name", "event_type", "channel", "subject", "body_template", "is_active"]:
+    for field in [
+        "name", "event_type", "channel", "subject", "body_template", "is_active",
+        "provider_template_name", "provider_language",
+    ]:
         if data.get(field) is not None:
             updates[field] = data[field]
 
@@ -155,6 +175,61 @@ async def delete_template(
         ip_address=ip_address,
         branch_id=template.branch_id,
     )
+
+
+async def consume_events(session: AsyncSession, limit: int = 100) -> dict:
+    """Turn emitted ``AcademicEvent`` rows into queued notifications.
+
+    This is the bridge between the event bus and the notification engine: the
+    absent sweep (and any other producer) only *emits* events; nothing enqueued
+    a message until this consumer read them. Idempotent via ``processed_events``
+    keyed on this consumer name, so an event is enqueued at most once even if the
+    drain runs repeatedly.
+
+    An event whose type has no active template simply enqueues nothing and is
+    still marked processed, so it isn't re-examined forever.
+    """
+    events = await event_repository.get_unprocessed_events(
+        session, CONSUMER_NAME, limit=limit
+    )
+
+    consumed = 0
+    enqueued = 0
+    for event in events:
+        metadata = {}
+        if event.metadata_json:
+            try:
+                loaded = json.loads(event.metadata_json)
+                metadata = loaded if isinstance(loaded, dict) else {}
+            except (json.JSONDecodeError, TypeError):
+                metadata = {}
+
+        # metadata carries the human fields (student_name, attendance_date,
+        # recipient=parent_mobile); the columns carry the ids. Flatten both so a
+        # template body and its condition can reference either.
+        event_data = {
+            "event_type": event.event_type,
+            "event_id": str(event.event_id),
+            "branch_id": str(event.branch_id) if event.branch_id else None,
+            "student_id": str(event.student_id) if event.student_id else None,
+            **metadata,
+        }
+
+        try:
+            queued = await process_event(session, event_data)
+            enqueued += len(queued)
+            await event_service.process_event(
+                session, event.event_id, CONSUMER_NAME, success=True
+            )
+        except Exception as exc:  # noqa: BLE001 — record & move on, don't wedge the drain
+            logger.exception("Failed to consume event %s", event.event_id)
+            await event_service.process_event(
+                session, event.event_id, CONSUMER_NAME,
+                success=False, error_message=str(exc)[:500],
+            )
+        consumed += 1
+
+    return {"consumed": consumed, "enqueued": enqueued}
 
 
 async def process_event(
@@ -245,41 +320,109 @@ async def process_queue(session: AsyncSession) -> dict:
 
     sent_count = 0
     failed_count = 0
+    skipped_count = 0
 
     for item in pending:
-        success = await send_notification(item)
-        if success:
+        template = await notification_repository.get_template(session, item.template_id)
+        outcome, error, retryable = await send_notification(item, template)
+        if outcome == "SENT":
             await notification_repository.mark_sent(session, item)
             sent_count += 1
-        else:
+        elif outcome == "SKIP":
+            skipped_count += 1  # left PENDING — e.g. channel disabled
+        else:  # FAILED
             await notification_repository.mark_failed(
-                session, item, "Delivery failed (placeholder sender)"
+                session, item, error or "Delivery failed"
             )
+            # A permanent failure (bad number, unknown template, auth) can never
+            # succeed on retry — exhaust it now rather than burning three drains.
+            if not retryable and item.delivery_status != "FAILED":
+                item.delivery_status = "FAILED"
+                await session.flush()
             failed_count += 1
 
-    return {"sent": sent_count, "failed": failed_count, "total": len(pending)}
+    return {
+        "sent": sent_count,
+        "failed": failed_count,
+        "skipped": skipped_count,
+        "total": len(pending),
+    }
 
 
-async def send_notification(queue_item) -> bool:
-    payload = None
+def _ordered_body_params(body_template: str, payload: dict) -> list[str]:
+    """The payload values for a template's {name} tokens, in appearance order —
+    the positional parameters a Meta template's {{1}}, {{2}}, … expect."""
+    return [str(payload.get(name, "")) for name in _PLACEHOLDER_RE.findall(body_template)]
+
+
+async def send_notification(queue_item, template=None) -> tuple[str, str | None, bool]:
+    """Deliver one queued notification.
+
+    Returns ``(outcome, error_message, retryable)`` where outcome is
+    ``"SENT"`` | ``"FAILED"`` | ``"SKIP"``. SKIP leaves the row PENDING (e.g. the
+    channel is disabled) so it flushes once enabled, without consuming retries.
+
+    EMAIL/SMS/PUSH remain log-only stubs (real senders can slot in the same way
+    WhatsApp does); only WHATSAPP is wired to a live provider.
+    """
+    payload = {}
     if queue_item.payload_json:
         try:
-            payload = json.loads(queue_item.payload_json)
+            loaded = json.loads(queue_item.payload_json)
+            payload = loaded if isinstance(loaded, dict) else {}
         except (json.JSONDecodeError, TypeError):
-            payload = queue_item.payload_json
+            payload = {}
 
-    body = ""
-    if payload and isinstance(payload, dict):
-        body = json.dumps(payload, default=str)[:200]
+    if queue_item.channel == "WHATSAPP":
+        return await _send_whatsapp(queue_item, template, payload)
 
+    # EMAIL / SMS / PUSH — not yet wired to a provider; log and treat as sent so
+    # the queue drains in dev exactly as before.
     logger.info(
         "NOTIFICATION [%s] to=%s channel=%s payload=%s",
         queue_item.delivery_status,
         queue_item.recipient,
         queue_item.channel,
-        body,
+        json.dumps(payload, default=str)[:200],
     )
-    return True
+    return "SENT", None, False
+
+
+async def _send_whatsapp(queue_item, template, payload: dict) -> tuple[str, str | None, bool]:
+    settings = get_settings()
+    if not settings.WHATSAPP_ENABLED:
+        return "SKIP", None, False  # feature off — leave PENDING, don't charge
+    if not settings.WHATSAPP_ACCESS_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
+        return "FAILED", "WhatsApp enabled but access token / phone number id unset", False
+    if template is None:
+        return "FAILED", "Template not found for queue item", False
+    if not template.provider_template_name or not template.provider_language:
+        return (
+            "FAILED",
+            "WHATSAPP template missing provider_template_name / provider_language",
+            False,
+        )
+
+    to = whatsapp_client.normalize_recipient(queue_item.recipient or "")
+    if not to:
+        return "FAILED", f"Unusable recipient number: {queue_item.recipient!r}", False
+
+    body_params = _ordered_body_params(template.body_template, payload)
+    try:
+        message_id = await whatsapp_client.send_template_message(
+            access_token=settings.WHATSAPP_ACCESS_TOKEN,
+            phone_number_id=settings.WHATSAPP_PHONE_NUMBER_ID,
+            api_version=settings.WHATSAPP_API_VERSION,
+            to=to,
+            template_name=template.provider_template_name,
+            language=template.provider_language,
+            body_params=body_params,
+        )
+    except whatsapp_client.WhatsAppError as exc:
+        return "FAILED", str(exc), exc.retryable
+
+    logger.info("WHATSAPP sent to=%s wamid=%s", to, message_id)
+    return "SENT", None, False
 
 
 async def list_queue(
@@ -313,6 +456,8 @@ def _format_template(t):
         "is_active": t.is_active,
         "condition": condition,
         "branch_id": t.branch_id,
+        "provider_template_name": t.provider_template_name,
+        "provider_language": t.provider_language,
         "created_at": t.created_at,
         "updated_at": t.updated_at,
     }

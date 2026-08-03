@@ -140,6 +140,24 @@ class Settings(BaseSettings):
     # PC and this server.
     SMARTOFFICE_INGEST_TOKEN: str = ""
 
+    # ── WhatsApp (Meta Cloud API) parent notifications ─────────────────────
+    # We send transactional "utility" template messages (attendance alerts)
+    # to parents directly through Meta's Cloud API — no BSP middleman. Off by
+    # default: while false the sender is a no-op and the queue-drain job skips
+    # WhatsApp rows, so shipping the plumbing cannot send a message or incur a
+    # Meta charge until a real token + phone-number id are set and this is
+    # flipped on (mirrors BIOMAX_PROVISIONING_ENABLED). See
+    # docs/whatsapp-attendance-notifications.md.
+    WHATSAPP_ENABLED: bool = False
+    # Permanent access token from the Meta app (System User token recommended).
+    WHATSAPP_ACCESS_TOKEN: str = ""
+    # The WhatsApp Business phone number's ID (not the phone number itself) —
+    # from Meta > WhatsApp > API Setup.
+    WHATSAPP_PHONE_NUMBER_ID: str = ""
+    # Graph API version the Cloud API is called against. Pinned so a Meta
+    # version bump can't silently change behaviour; raise deliberately.
+    WHATSAPP_API_VERSION: str = "v21.0"
+
 
 @lru_cache
 def get_settings() -> Settings:
