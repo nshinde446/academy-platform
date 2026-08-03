@@ -13,6 +13,7 @@ edit) is never overwritten. See docs/biometric-attendance-design.md §3.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
@@ -32,6 +33,7 @@ from app.modules.attendance.time_utils import (
     local_date_of,
 )
 from app.modules.auth.models.auth_models import Branch
+from app.modules.events.models.event_models import AcademicEvent
 from app.modules.events.services import event_service
 from app.modules.lectures.models.lecture_models import Lecture
 from app.modules.lectures.repositories import lecture_repository
@@ -342,6 +344,120 @@ async def run_absent_sweep(
 
     await session.flush()
     return created
+
+
+# Parent-facing status label for the digest message.
+_STATUS_LABEL = {"PRESENT": "Present", "LATE": "Late", "ABSENT": "Absent"}
+
+
+async def run_daily_digest(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    day: date,
+    scope: str = "ABSENT_ONLY",
+    tz_name: str | None = None,
+) -> list[AcademicEvent]:
+    """Emit one ``DAILY_ATTENDANCE_DIGEST`` event per parent for a branch's day.
+
+    ``scope`` is the UI switch:
+
+    * ``ALL``         — every active student with a working day (present, late,
+      or absent) gets their status sent to their parent.
+    * ``ABSENT_ONLY`` — only absent students' parents are messaged.
+
+    Runs after the absent sweep so every student already has a resolved day
+    status. Idempotent: a student who already has a digest event emitted for this
+    local day is skipped, so repeated firings in the nightly window never
+    double-notify. Returns the events emitted.
+    """
+    tz_name = tz_name or await branch_timezone(session, branch_id)
+    start, end = day_bounds(day, tz_name)
+
+    batch_ids = await _scheduled_batch_ids(session, branch_id, start, end)
+    if not batch_ids:
+        return []  # no lectures today -> not a working day for anyone
+
+    student_rows = (await session.execute(
+        select(
+            Student.id,
+            Student.first_name,
+            Student.last_name,
+            Student.parent_mobile,
+        )
+        .join(StudentBatchMapping, StudentBatchMapping.student_id == Student.id)
+        .where(
+            StudentBatchMapping.batch_id.in_(batch_ids),
+            StudentBatchMapping.is_deleted == False,
+            Student.branch_id == branch_id,
+            Student.status == "active",
+            Student.is_deleted == False,
+        )
+        .distinct()
+    )).all()
+    if not student_rows:
+        return []
+
+    student_ids = [r[0] for r in student_rows]
+
+    # Resolved day status per student (no row -> ABSENT, matching the sweep).
+    status_by_student = {
+        sid: day_status
+        for sid, day_status in (await session.execute(
+            select(DailyAttendance.student_id, DailyAttendance.day_status).where(
+                DailyAttendance.student_id.in_(student_ids),
+                DailyAttendance.attendance_date == day,
+                DailyAttendance.is_deleted == False,
+            )
+        )).all()
+    }
+
+    # Idempotency: students already digested for this attendance date. Keyed on
+    # the date carried in the event metadata, not the event timestamp — the job
+    # stamps wall-clock time, which needn't fall on the attendance day (e.g. a
+    # late or replayed run).
+    day_iso = day.isoformat()
+    prior = (await session.execute(
+        select(AcademicEvent.student_id, AcademicEvent.metadata_json).where(
+            AcademicEvent.event_type == "DAILY_ATTENDANCE_DIGEST",
+            AcademicEvent.student_id.in_(student_ids),
+            AcademicEvent.is_deleted == False,
+        )
+    )).all()
+    already = set()
+    for sid, metadata_json in prior:
+        try:
+            meta = json.loads(metadata_json) if metadata_json else {}
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        if meta.get("attendance_date") == day_iso:
+            already.add(sid)
+
+    emitted: list[AcademicEvent] = []
+    for sid, first_name, last_name, parent_mobile in student_rows:
+        if sid in already:
+            continue
+        day_status = status_by_student.get(sid, "ABSENT")
+        is_present = day_status in _PRESENT_STATUSES
+        if scope == "ABSENT_ONLY" and is_present:
+            continue
+
+        event = await event_service.emit_event(
+            session,
+            event_type="DAILY_ATTENDANCE_DIGEST",
+            branch_id=branch_id,
+            student_id=sid,
+            metadata={
+                "attendance_date": day.isoformat(),
+                "student_name": f"{first_name} {last_name}".strip(),
+                "status": _STATUS_LABEL.get(day_status, day_status),
+                "recipient": parent_mobile or "",
+            },
+        )
+        emitted.append(event)
+
+    await session.flush()
+    return emitted
 
 
 # ── Reports (Layer 1) ──────────────────────────────────────────────────────

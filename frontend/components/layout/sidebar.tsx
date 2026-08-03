@@ -90,7 +90,10 @@ const ADMIN_ROLES = ["super_admin", "branch_admin"];
 // Only branch/super admins manage staff accounts.
 const ADMIN_SECTION: NavSection = {
   label: "Administration",
-  items: [{ label: "Users", href: "/users" }],
+  items: [
+    { label: "Users", href: "/users" },
+    { label: "Settings", href: "/settings" },
+  ],
 };
 
 export function Sidebar() {

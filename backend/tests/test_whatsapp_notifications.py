@@ -271,3 +271,63 @@ async def test_consume_events_enqueues_and_is_idempotent(
     await db_session.commit()
     assert second["consumed"] == 0
     assert second["enqueued"] == 0
+
+
+# ─── Notification settings (the daily-digest UI switch) ─────────────────────
+
+async def _login_admin(client):
+    resp = await client.post("/api/v1/auth/login", json={
+        "email": "admin@test.com", "password": "Admin123!",
+    })
+    assert resp.status_code == 200
+
+
+async def test_settings_default_when_never_saved(client, seed_data):
+    await _login_admin(client)
+    resp = await client.get(
+        "/api/v1/notifications/settings", params={"branch_id": BRANCH_A_ID}
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["daily_digest_enabled"] is False
+    assert data["daily_digest_scope"] == "ABSENT_ONLY"
+
+
+async def test_settings_update_and_persist(client, seed_data):
+    await _login_admin(client)
+    resp = await client.put(
+        "/api/v1/notifications/settings",
+        params={"branch_id": BRANCH_A_ID},
+        json={"daily_digest_enabled": True, "daily_digest_scope": "ALL"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["daily_digest_enabled"] is True
+    assert resp.json()["daily_digest_scope"] == "ALL"
+
+    # Persisted (upsert, not a fresh default).
+    resp = await client.get(
+        "/api/v1/notifications/settings", params={"branch_id": BRANCH_A_ID}
+    )
+    assert resp.json()["daily_digest_enabled"] is True
+    assert resp.json()["daily_digest_scope"] == "ALL"
+
+
+async def test_settings_rejects_invalid_scope(client, seed_data):
+    await _login_admin(client)
+    resp = await client.put(
+        "/api/v1/notifications/settings",
+        params={"branch_id": BRANCH_A_ID},
+        json={"daily_digest_scope": "SOMETIMES"},
+    )
+    assert resp.status_code == 400
+
+
+async def test_settings_requires_admin(client, seed_data):
+    resp = await client.post("/api/v1/auth/login", json={
+        "email": "teacher@test.com", "password": "Teacher123!",
+    })
+    assert resp.status_code == 200
+    resp = await client.get(
+        "/api/v1/notifications/settings", params={"branch_id": BRANCH_A_ID}
+    )
+    assert resp.status_code == 403

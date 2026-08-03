@@ -95,6 +95,52 @@ POST /api/v1/notifications/templates
 Here `{student_name}` → `{{1}}` and `{attendance_date}` → `{{2}}`, both pulled
 from the `STUDENT_ABSENT` event metadata.
 
+## Daily digest to parents (the UI switch)
+
+Beyond the real-time `STUDENT_ABSENT` alert, a branch can send a **daily
+attendance digest** to parents, configured from **Settings → Daily WhatsApp
+attendance digest** (`/settings`, branch/super admin only):
+
+- **On/off switch** — `daily_digest_enabled`. Off by default; nothing is sent
+  until a branch turns it on.
+- **Recipient scope** — `daily_digest_scope`:
+  - **All students** (`ALL`) — every parent gets their child's status
+    (Present / Late / Absent).
+  - **Absent only** (`ABSENT_ONLY`, default) — only absent students' parents.
+
+Settings persist per branch in `notification_settings` (migration 0048), read/
+written via `GET|PUT /api/v1/notifications/settings?branch_id=…`.
+
+**How it runs:** the nightly sweep task, after marking absentees, calls
+`daily_service.run_daily_digest(scope=…)` for each branch whose digest is on. It
+emits one `DAILY_ATTENDANCE_DIGEST` event per targeted parent
+(`{student_name, attendance_date, status, recipient}`), which the same
+`consume_events` → `process_queue` path delivers. It is **idempotent** per
+student per attendance date (keyed on the date in the event metadata), so
+repeated firings in the nightly window never double-notify.
+
+**Wire its template** like any WHATSAPP template, on event type
+`DAILY_ATTENDANCE_DIGEST`:
+
+```http
+POST /api/v1/notifications/templates
+{
+  "name": "daily_digest_whatsapp",
+  "event_type": "DAILY_ATTENDANCE_DIGEST",
+  "channel": "WHATSAPP",
+  "body_template": "{student_name} — attendance on {attendance_date}: {status}.",
+  "provider_template_name": "attendance_daily_status",
+  "provider_language": "en",
+  "is_active": true
+}
+```
+
+`{student_name}` → `{{1}}`, `{attendance_date}` → `{{2}}`, `{status}` → `{{3}}`.
+
+> **Avoid double-sends:** if you run the digest in `ABSENT_ONLY` mode, don't also
+> keep an active `STUDENT_ABSENT` WHATSAPP template — absentees would get two
+> messages. Pick one path (the digest is the configurable one).
+
 ## Recipient handling
 
 `normalize_recipient` reduces `parent_mobile` to the digits-only, country-code
@@ -124,9 +170,7 @@ rather than being sent malformed.
 
 ## Not yet built (deferred)
 
-- **Daily digest to *all* parents** (present + absent). The consumer/sender are
-  channel-generic; this needs only a new daily emission for every active student
-  plus its own approved "daily status" template — drops in as a second event.
-- **Per-parent opt-out flag** and a frontend template-management UI.
+- **Per-parent opt-out flag** and a frontend template-management UI (templates
+  are currently created via the API).
 - **Delivery-status webhooks** (read receipts) — we currently record only the
   send outcome and the returned `wamid`.

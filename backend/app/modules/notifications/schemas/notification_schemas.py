@@ -8,11 +8,15 @@ VALID_CHANNELS = {"EMAIL", "SMS", "WHATSAPP", "PUSH"}
 VALID_EVENT_TYPES = {
     "ATTENDANCE_MARKED",
     "STUDENT_ABSENT",  # emitted per student by the nightly absent sweep -> parent notify
+    "DAILY_ATTENDANCE_DIGEST",  # daily per-student status -> parent (all or absent-only)
     "LECTURE_COMPLETED",
     "LECTURE_CANCELLED",
     "TEST_UPLOADED",
     "MARKS_UPDATED",
 }
+
+# Daily digest recipient scope — the UI switch.
+VALID_DIGEST_SCOPES = {"ALL", "ABSENT_ONLY"}
 
 
 class TemplateCreate(BaseModel):
@@ -55,6 +59,17 @@ class TemplateResponse(BaseModel):
     provider_language: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class SettingsUpdate(BaseModel):
+    daily_digest_enabled: bool | None = None
+    daily_digest_scope: str | None = None
+
+
+class SettingsResponse(BaseModel):
+    branch_id: uuid.UUID
+    daily_digest_enabled: bool
+    daily_digest_scope: str
 
 
 class QueueItemResponse(BaseModel):

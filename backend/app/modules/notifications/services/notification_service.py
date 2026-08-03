@@ -13,7 +13,15 @@ from app.modules.events.repositories import event_repository
 from app.modules.events.services import event_service
 from app.modules.notifications.integrations.whatsapp import client as whatsapp_client
 from app.modules.notifications.repositories import notification_repository
-from app.modules.notifications.schemas.notification_schemas import VALID_CHANNELS, VALID_EVENT_TYPES
+from app.modules.notifications.schemas.notification_schemas import (
+    VALID_CHANNELS,
+    VALID_DIGEST_SCOPES,
+    VALID_EVENT_TYPES,
+)
+
+# Defaults returned when a branch has never saved settings (no row yet).
+_DEFAULT_DIGEST_ENABLED = False
+_DEFAULT_DIGEST_SCOPE = "ABSENT_ONLY"
 
 # This consumer's name in processed_events — its own high-water mark, so it
 # never re-enqueues an event another consumer (analytics, …) already handled.
@@ -437,6 +445,62 @@ async def list_queue(
         offset=offset, limit=limit,
     )
     return [_format_queue_item(i) for i in items]
+
+
+async def get_notification_settings(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> dict:
+    """The branch's digest settings, or sensible defaults if never saved."""
+    settings = await notification_repository.get_settings(session, branch_id)
+    if settings is None:
+        return {
+            "branch_id": branch_id,
+            "daily_digest_enabled": _DEFAULT_DIGEST_ENABLED,
+            "daily_digest_scope": _DEFAULT_DIGEST_SCOPE,
+        }
+    return {
+        "branch_id": settings.branch_id,
+        "daily_digest_enabled": settings.daily_digest_enabled,
+        "daily_digest_scope": settings.daily_digest_scope,
+    }
+
+
+async def update_notification_settings(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    data: dict,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    if data.get("daily_digest_scope") is not None and (
+        data["daily_digest_scope"] not in VALID_DIGEST_SCOPES
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid scope. Must be one of: {', '.join(sorted(VALID_DIGEST_SCOPES))}",
+        )
+
+    fields = {k: v for k, v in data.items() if v is not None}
+    settings = await notification_repository.upsert_settings(
+        session, branch_id, **fields
+    )
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="UPDATE",
+        table_name="notification_settings",
+        record_id=settings.id,
+        new_values=fields,
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+
+    return {
+        "branch_id": settings.branch_id,
+        "daily_digest_enabled": settings.daily_digest_enabled,
+        "daily_digest_scope": settings.daily_digest_scope,
+    }
 
 
 def _format_template(t):

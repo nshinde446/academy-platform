@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.notifications.models.notification_models import (
     NotificationEvent,
     NotificationQueue,
+    NotificationSettings,
     NotificationTemplate,
 )
 
@@ -165,3 +166,44 @@ async def create_notification_event(
     session.add(event)
     await session.flush()
     return event
+
+
+async def get_settings(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> NotificationSettings | None:
+    result = await session.execute(
+        select(NotificationSettings).where(
+            NotificationSettings.branch_id == branch_id,
+            NotificationSettings.is_deleted == False,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def upsert_settings(
+    session: AsyncSession, branch_id: uuid.UUID, **fields
+) -> NotificationSettings:
+    settings = await get_settings(session, branch_id)
+    if settings is None:
+        settings = NotificationSettings(branch_id=branch_id, **fields)
+        session.add(settings)
+    else:
+        for key, value in fields.items():
+            setattr(settings, key, value)
+    await session.flush()
+    await session.refresh(settings)
+    return settings
+
+
+async def list_settings_enabled_for_digest(
+    session: AsyncSession,
+) -> list[NotificationSettings]:
+    """Every branch whose daily digest is switched on — the nightly task's
+    worklist."""
+    result = await session.execute(
+        select(NotificationSettings).where(
+            NotificationSettings.daily_digest_enabled == True,
+            NotificationSettings.is_deleted == False,
+        )
+    )
+    return list(result.scalars().all())

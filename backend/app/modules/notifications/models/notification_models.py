@@ -52,6 +52,24 @@ class NotificationQueue(BaseModel):
     )
 
 
+class NotificationSettings(BaseModel):
+    __tablename__ = "notification_settings"
+
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False, unique=True
+    )
+    # Master opt-in for the daily WhatsApp attendance digest. Default off — a
+    # branch never messages parents until it deliberately turns this on.
+    daily_digest_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    # "ALL" (every parent gets their child's status) or "ABSENT_ONLY" (only
+    # absent students' parents). Default ABSENT_ONLY — cheaper, higher signal.
+    daily_digest_scope: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="ABSENT_ONLY"
+    )
+
+
 class NotificationEvent(BaseModel):
     __tablename__ = "notification_events"
 
