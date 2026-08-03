@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogIn, LogOut } from "lucide-react";
+import { KeyRound, LogIn, LogOut } from "lucide-react";
 import { useUserStore } from "@/store/user-store";
 import { useAuthStore } from "@/store/auth-store";
+import { ChangePasswordDialog } from "@/components/layout/change-password-dialog";
 
 interface NavItem {
   label: string;
@@ -83,10 +85,22 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
+const ADMIN_ROLES = ["super_admin", "branch_admin"];
+
+// Only branch/super admins manage staff accounts.
+const ADMIN_SECTION: NavSection = {
+  label: "Administration",
+  items: [{ label: "Users", href: "/users" }],
+};
+
 export function Sidebar() {
   const pathname = usePathname() ?? "";
   const user = useUserStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const [changePwOpen, setChangePwOpen] = useState(false);
+
+  const isAdmin = (user?.roles ?? []).some((r) => ADMIN_ROLES.includes(r));
+  const sections = isAdmin ? [...SECTIONS, ADMIN_SECTION] : SECTIONS;
 
   const initials =
     user?.first_name && user?.last_name
@@ -115,7 +129,7 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto p-2">
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <div key={section.label || "top"} className="flex flex-col gap-0.5">
             {section.label ? (
               <div className="px-3 pb-1 pt-3.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
@@ -150,14 +164,24 @@ export function Sidebar() {
           </div>
         </div>
         {user ? (
-          <button
-            onClick={logout}
-            className="flex items-center justify-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[12.5px] font-medium text-foreground transition-colors hover:bg-muted"
-            title="Sign out"
-          >
-            <LogOut className="h-3.5 w-3.5" aria-hidden />
-            Sign out
-          </button>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => setChangePwOpen(true)}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[12.5px] font-medium text-foreground transition-colors hover:bg-muted"
+              title="Change password"
+            >
+              <KeyRound className="h-3.5 w-3.5" aria-hidden />
+              Password
+            </button>
+            <button
+              onClick={logout}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[12.5px] font-medium text-foreground transition-colors hover:bg-muted"
+              title="Sign out"
+            >
+              <LogOut className="h-3.5 w-3.5" aria-hidden />
+              Sign out
+            </button>
+          </div>
         ) : (
           <Link
             href="/login"
@@ -168,6 +192,7 @@ export function Sidebar() {
           </Link>
         )}
       </div>
+      <ChangePasswordDialog open={changePwOpen} onOpenChange={setChangePwOpen} />
     </aside>
   );
 }

@@ -1,3 +1,4 @@
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
@@ -6,11 +7,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config.settings import get_settings
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
-from app.modules.auth.schemas.auth_schemas import LoginRequest, UserMeResponse
-from app.modules.auth.services import auth_service
+from app.modules.auth.schemas.auth_schemas import (
+    AdminUserResponse,
+    ChangePasswordRequest,
+    LoginRequest,
+    PasswordResetRequest,
+    RoleOption,
+    UserCreateRequest,
+    UserMeResponse,
+    UserUpdateRequest,
+)
+from app.modules.auth.services import auth_service, user_admin_service
 
 settings = get_settings()
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Who may manage staff accounts.
+_USER_ADMIN_ROLES = ["super_admin", "branch_admin"]
+
+
+def _actor_branch_id(current_user: dict) -> uuid.UUID | None:
+    """The acting admin's branch from the token (stored as a string)."""
+    raw = current_user.get("branch_id")
+    return uuid.UUID(raw) if raw else None
 
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str):
@@ -106,6 +125,99 @@ async def get_me(
     session: AsyncSession = Depends(get_db),
 ):
     return await auth_service.get_me(session, current_user["user_id"])
+
+
+@router.post("/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Signed-in user changes their own password (e.g. off a temp password)."""
+    await user_admin_service.change_own_password(
+        session,
+        user_id=current_user["user_id"],
+        current_password=body.current_password,
+        new_password=body.new_password,
+    )
+    return {"message": "Password changed"}
+
+
+# ── admin user management (no public signup) ─────────────────────────────────
+
+
+@router.get("/roles", response_model=list[RoleOption])
+async def list_roles(
+    current_user: dict = Depends(require_roles(_USER_ADMIN_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Assignable roles for the user-admin picker."""
+    return await user_admin_service.list_roles(session)
+
+
+@router.get("/users", response_model=list[AdminUserResponse])
+async def list_users(
+    current_user: dict = Depends(require_roles(_USER_ADMIN_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    return await user_admin_service.list_users(session)
+
+
+@router.post("/users", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    body: UserCreateRequest,
+    current_user: dict = Depends(require_roles(_USER_ADMIN_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    return await user_admin_service.create_user(
+        session,
+        body=body,
+        actor_id=current_user["user_id"],
+        actor_roles=current_user.get("roles", []),
+        branch_id=_actor_branch_id(current_user),
+    )
+
+
+@router.patch("/users/{user_id}", response_model=AdminUserResponse)
+async def update_user(
+    user_id: uuid.UUID,
+    body: UserUpdateRequest,
+    current_user: dict = Depends(require_roles(_USER_ADMIN_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    return await user_admin_service.update_user(
+        session,
+        user_id=user_id,
+        body=body,
+        actor_id=current_user["user_id"],
+        actor_roles=current_user.get("roles", []),
+        branch_id=_actor_branch_id(current_user),
+    )
+
+
+@router.post("/users/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: uuid.UUID,
+    body: PasswordResetRequest,
+    current_user: dict = Depends(require_roles(_USER_ADMIN_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    await user_admin_service.reset_password(
+        session, user_id=user_id, new_password=body.password
+    )
+    return {"message": "Password reset"}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: uuid.UUID,
+    current_user: dict = Depends(require_roles(_USER_ADMIN_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    await user_admin_service.delete_user(
+        session, user_id=user_id, actor_id=current_user["user_id"]
+    )
+    return {"message": "User deleted"}
 
 
 @router.get("/branch-test/{branch_id}")
