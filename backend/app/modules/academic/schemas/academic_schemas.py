@@ -84,6 +84,26 @@ class SubjectResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SubjectSeedRequest(BaseModel):
+    """Populate a course's subjects from a known syllabus (JEE / NEET / MHT-CET
+    …). Idempotent — a course that already has subjects is left untouched."""
+
+    branch_id: uuid.UUID
+    course_id: uuid.UUID
+    syllabus_key: str
+
+
+class SubjectSeedResponse(BaseModel):
+    created: int
+    subjects: list[SubjectResponse]
+
+
+class SyllabusOption(BaseModel):
+    key: str
+    label: str
+    subjects: list[str]
+
+
 class ChapterCreate(BaseModel):
     branch_id: uuid.UUID
     academic_year_id: uuid.UUID

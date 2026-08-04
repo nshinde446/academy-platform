@@ -11,7 +11,7 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.academic import curriculum
+from app.modules.academic import subject_seeding
 from app.modules.academic.repositories import academic_repository
 from app.modules.audit.services import audit_service
 from app.modules.batch.models.batch_models import Batch
@@ -109,22 +109,10 @@ TARGET_EXAM_MONTH_DAY: dict[str, tuple[int, int]] = {
     "Both": (5, 4),
 }
 
-# Subject skeletons per syllabus (design §2/§5). DEFAULTS the coaching can edit
-# — §6 leaves Biology-vs-Botany/Zoology and the MHT-CET stream split as open
-# decisions, so we only auto-create for the unambiguous tracks and skip the
-# rest (no subjects rather than a wrong guess).
-SUBJECT_SETS: dict[str, list[str]] = {
-    "NEET": ["Physics", "Chemistry", "Botany", "Zoology"],
-    "JEE": ["Physics", "Chemistry", "Mathematics"],
-    "PCMB": ["Physics", "Chemistry", "Mathematics", "Biology"],
-    "MHT-CET-PCM": ["Physics", "Chemistry", "Mathematics"],
-    "MHT-CET-PCB": ["Physics", "Chemistry", "Biology"],
-    # MHT-CET with no explicit stream: carry the *union* on the course (P/C are
-    # shared; Maths is PCM-only; Biology is PCB-only) and let each student's
-    # `stream` select their subset at read time.
-    "MHT-CET": ["Physics", "Chemistry", "Mathematics", "Biology"],
-    "FOUNDATION": ["Science", "Mathematics", "Mental Ability"],
-}
+# Subject skeletons per syllabus + free-text aliases now live in the academic
+# domain (shared with the Courses "Subjects" manager); re-exported here under
+# their historical names so the import rules below read unchanged.
+SUBJECT_SETS = subject_seeding.SUBJECT_SETS
 
 # Target -> default syllabus key when the row has no explicit Syllabus. MHT-CET
 # now maps to its union set (the course carries all four subjects; per-student
@@ -138,31 +126,8 @@ TARGET_SYLLABUS: dict[str, str] = {
     "Foundation": "FOUNDATION",
 }
 
-# Free-text Syllabus values normalized to a SUBJECT_SETS key.
-_SYLLABUS_ALIASES: dict[str, str] = {
-    "neet": "NEET",
-    "pcb": "NEET",
-    "jee": "JEE",
-    "pcm": "JEE",
-    "pcmb": "PCMB",
-    "both": "PCMB",
-    "mht-cet-pcm": "MHT-CET-PCM",
-    "mhtcet-pcm": "MHT-CET-PCM",
-    "mht-cet-pcb": "MHT-CET-PCB",
-    "mhtcet-pcb": "MHT-CET-PCB",
-    "foundation": "FOUNDATION",
-}
-
-_SUBJECT_CODES: dict[str, str] = {
-    "Physics": "PHY",
-    "Chemistry": "CHE",
-    "Mathematics": "MAT",
-    "Biology": "BIO",
-    "Botany": "BOT",
-    "Zoology": "ZOO",
-    "Science": "SCI",
-    "Mental Ability": "MA",
-}
+# Free-text Syllabus values normalized to a SUBJECT_SETS key (shared).
+_SYLLABUS_ALIASES = subject_seeding.SYLLABUS_ALIASES
 
 # Subjects that satisfy a target's exam requirement, for §3 Target×Syllabus
 # consistency: NEET needs a biology subject, JEE needs maths.
@@ -176,14 +141,6 @@ def _syllabus_key(syllabus: str | None, target: str | None) -> str | None:
     if syllabus:
         return _SYLLABUS_ALIASES.get(syllabus.strip().lower())
     return TARGET_SYLLABUS.get(target or "")
-
-
-def _subjects_for(key: str | None) -> list[str]:
-    return SUBJECT_SETS.get(key or "", [])
-
-
-def _subject_code(name: str) -> str:
-    return _SUBJECT_CODES.get(name, name[:3].upper())
 
 
 def _split_name(value: str) -> tuple[str, str]:
@@ -938,94 +895,6 @@ async def _get_or_create_course(
     return course
 
 
-async def _ensure_subject_skeleton(
-    session: AsyncSession,
-    branch_id: uuid.UUID,
-    course,
-    academic_year,
-    syllabus_key: str | None,
-    import_id: uuid.UUID | None,
-) -> int:
-    """Create the course's subject skeleton from the resolved syllabus (design
-    §4 step 3). The §8 protection: only ever create when the course has *no*
-    subjects yet — never overwrite an existing skeleton or a curriculum that a
-    syllabus import has since loaded (§7.4). Returns how many were created.
-
-    Matched by ``(course, name)`` ignoring AY, so the later syllabus import
-    finds and reuses these subjects when it attaches chapters."""
-    names = _subjects_for(syllabus_key)
-    if not names:
-        return 0
-    existing = await academic_repository.list_subjects(session, branch_id, course.id)
-    if existing:
-        return 0
-
-    from app.modules.academic.models.academic_models import (
-        Chapter,
-        Subject,
-        Topic,
-    )
-
-    # Build the whole subject -> chapter -> topic tree in memory (ids
-    # pre-generated so children can reference parents) and insert it level by
-    # level — subjects, then chapters, then topics — flushing between levels so
-    # every parent row exists before its children. (One bulk add_all of the
-    # whole tree doesn't guarantee insert order without ORM relationships, which
-    # Postgres rejects as a FK violation; SQLite silently allowed it.) Still far
-    # faster than the old per-row create+flush. Tagged with import_id so undo can
-    # reclaim them. Foundation/Other have no curriculum and add nothing.
-    subjects: list = []
-    chapters: list = []
-    topics_rows: list = []
-    for name in names:
-        subject_id = uuid.uuid4()
-        subjects.append(
-            Subject(
-                id=subject_id,
-                branch_id=branch_id,
-                academic_year_id=academic_year.id,
-                course_id=course.id,
-                name=name,
-                code=_subject_code(name),
-                import_id=import_id,
-            )
-        )
-        for ch_order, (ch_name, topics) in enumerate(
-            curriculum.chapters_for(syllabus_key or "", name)
-        ):
-            chapter_id = uuid.uuid4()
-            chapters.append(
-                Chapter(
-                    id=chapter_id,
-                    branch_id=branch_id,
-                    academic_year_id=academic_year.id,
-                    subject_id=subject_id,
-                    name=ch_name,
-                    order=ch_order,
-                    import_id=import_id,
-                )
-            )
-            for t_order, t_name in enumerate(topics):
-                topics_rows.append(
-                    Topic(
-                        id=uuid.uuid4(),
-                        branch_id=branch_id,
-                        academic_year_id=academic_year.id,
-                        chapter_id=chapter_id,
-                        name=t_name,
-                        order=t_order,
-                        import_id=import_id,
-                    )
-                )
-    session.add_all(subjects)
-    await session.flush()
-    session.add_all(chapters)
-    await session.flush()
-    session.add_all(topics_rows)
-    await session.flush()
-    return len(names)
-
-
 async def _create_derived_batch(
     session: AsyncSession,
     branch_id: uuid.UUID,
@@ -1091,7 +960,7 @@ async def _create_derived_batch(
     if import_id is not None:
         batch.import_id = import_id
     syllabus_key = _syllabus_key((overrides or {}).get("syllabus"), target)
-    subjects_created = await _ensure_subject_skeleton(
+    subjects_created = await subject_seeding.build_subject_skeleton(
         session, branch_id, course, start_ay, syllabus_key, import_id
     )
     await session.flush()

@@ -12,9 +12,11 @@ from app.modules.academic.schemas.academic_schemas import (
     CourseCreate, CourseResponse, CourseUpdate,
     InstituteCreate, InstituteResponse,
     SubjectCreate, SubjectResponse,
+    SubjectSeedRequest, SubjectSeedResponse, SyllabusOption,
     SubtopicCreate, SubtopicResponse,
     TopicCreate, TopicResponse,
 )
+from app.modules.academic import subject_seeding
 from app.modules.academic.services import academic_service
 
 router = APIRouter(prefix="/academic", tags=["academic"])
@@ -149,6 +151,42 @@ async def list_subjects(
     session: AsyncSession = Depends(get_db),
 ):
     return await academic_repository.list_subjects(session, branch_id, course_id)
+
+
+@router.get("/syllabi", response_model=list[SyllabusOption])
+async def list_syllabi(
+    _current_user: dict = Depends(get_current_user),
+):
+    """The syllabus presets the Courses "Seed from syllabus" picker offers."""
+    return subject_seeding.AVAILABLE_SYLLABI
+
+
+@router.post("/subjects/seed", response_model=SubjectSeedResponse)
+async def seed_subjects(
+    body: SubjectSeedRequest,
+    request: Request,
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    created, subjects = await academic_service.seed_course_subjects(
+        session, body.branch_id, body.course_id, body.syllabus_key,
+        current_user["user_id"], request.client.host if request.client else None,
+    )
+    return SubjectSeedResponse(created=created, subjects=subjects)
+
+
+@router.delete("/subjects/{subject_id}", status_code=204)
+async def delete_subject(
+    subject_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    await academic_service.delete_subject(
+        session, subject_id, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
 
 
 @router.post("/chapters", response_model=ChapterResponse)

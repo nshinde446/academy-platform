@@ -168,6 +168,28 @@ async def list_subjects(
     return list(result.scalars().all())
 
 
+async def soft_delete_subject(session: AsyncSession, subject: Subject) -> None:
+    subject.is_deleted = True
+    await session.flush()
+
+
+async def count_lectures_using_subject(
+    session: AsyncSession, subject_id: uuid.UUID
+) -> int:
+    """How many live lectures reference this subject — the delete guard. Imported
+    lazily so the academic repo doesn't hard-depend on the lectures module at
+    import time (a subject with scheduled lectures must not be removed)."""
+    from app.modules.lectures.models.lecture_models import Lecture
+
+    result = await session.execute(
+        select(func.count(Lecture.id)).where(
+            Lecture.subject_id == subject_id,
+            Lecture.is_deleted == False,
+        )
+    )
+    return int(result.scalar_one() or 0)
+
+
 async def find_subjects_by_names(
     session: AsyncSession, branch_id: uuid.UUID, names: list[str]
 ) -> list[Subject]:

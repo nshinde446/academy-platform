@@ -16,6 +16,7 @@ interface CourseTableProps {
   courses: CourseResponse[];
   onEdit: (course: CourseResponse) => void;
   onDelete: (course: CourseResponse) => void;
+  onManageSubjects: (course: CourseResponse) => void;
   // Row selection for bulk delete — optional; when omitted the checkbox
   // column is hidden.
   selectedIds?: Set<string>;
@@ -27,6 +28,7 @@ export function CourseTable({
   courses,
   onEdit,
   onDelete,
+  onManageSubjects,
   selectedIds,
   onToggleSelect,
   onToggleSelectAll,
@@ -87,6 +89,14 @@ export function CourseTable({
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex justify-end gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onManageSubjects(c)}
+                  >
+                    Subjects
+                  </Button>
                   <Button
                     type="button"
                     size="sm"
