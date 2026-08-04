@@ -242,15 +242,23 @@ async def reconcile(
     mirror = await device_command_repo.list_device_users(session, branch_id, dev_id)
     device: dict[str, object] = {u.vendor_user_id: u for u in mirror}
 
-    on_platform_only: list[ReconcileRow] = []
+    # Identities we've already confirmed onto the device (per its ack). A student
+    # not in the mirror but with a confirmed push isn't "unpushed" — the device
+    # just hasn't mirrored them back (typically no face enrolled yet), so the real
+    # next step is enrolment at the terminal, not another push.
+    confirmed = await device_command_repo.confirmed_user_ids(
+        session, dev_id, list(platform.keys())
+    )
+
+    need_push: list[ReconcileRow] = []
+    awaiting_face: list[ReconcileRow] = []
     drift: list[ReconcileRow] = []
     for uid, student in platform.items():
         if uid not in device:
-            on_platform_only.append(
-                ReconcileRow(
-                    vendor_user_id=uid, name=device_name(student), student_id=student.id
-                )
+            row = ReconcileRow(
+                vendor_user_id=uid, name=device_name(student), student_id=student.id
             )
+            (awaiting_face if uid in confirmed else need_push).append(row)
         elif getattr(device[uid], "name", None) != device_name(student):
             drift.append(
                 ReconcileRow(
@@ -266,7 +274,8 @@ async def reconcile(
 
     return ReconcileResponse(
         dev_id=dev_id,
-        on_platform_not_on_device=on_platform_only,
+        on_platform_not_on_device=need_push,
+        awaiting_face_enrollment=awaiting_face,
         on_device_not_on_platform=on_device_only,
         drift=drift,
     )

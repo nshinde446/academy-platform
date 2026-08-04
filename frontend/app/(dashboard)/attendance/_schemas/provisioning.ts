@@ -24,7 +24,8 @@ export interface ReconcileRow {
 
 export interface ReconcileResponse {
   dev_id: string;
-  on_platform_not_on_device: ReconcileRow[]; // need pushing
+  on_platform_not_on_device: ReconcileRow[]; // truly un-pushed identities
+  awaiting_face_enrollment?: ReconcileRow[]; // pushed+confirmed, no face on device yet
   on_device_not_on_platform: ReconcileRow[]; // stale/manual device entries
   drift: ReconcileRow[]; // present on both, name differs
 }

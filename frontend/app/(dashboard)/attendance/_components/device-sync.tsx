@@ -173,11 +173,15 @@ export function DeviceSync({ branchId }: DeviceSyncProps) {
       {enabled && data && (
         <Card size="sm">
           <CardContent>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
               <Tile
                 label="Need pushing"
                 value={data.on_platform_not_on_device.length}
                 tone="warn"
+              />
+              <Tile
+                label="Awaiting face"
+                value={(data.awaiting_face_enrollment ?? []).length}
               />
               <Tile
                 label="Only on device"
@@ -237,12 +241,19 @@ export function DeviceSync({ branchId }: DeviceSyncProps) {
       ) : !data ? null : (
         <div className="flex flex-col gap-6">
           <ReconcileSection
-            title="On the platform, not on the device"
-            hint="Students who have a valid device userId (roll number) but aren't in the device's user table yet — select and push to register them."
+            title="Need pushing (no identity on device yet)"
+            hint="Students with a valid device userId (roll number) that we have NOT confirmed onto the device — select and push to register their identity."
             rows={data.on_platform_not_on_device}
-            emptyText="Every student with a device userId is already on the device."
+            emptyText="Every student's identity has been pushed to the device."
             linkStudents
             selection={selection}
+          />
+          <ReconcileSection
+            title="Awaiting face enrollment"
+            hint="Identity already pushed and confirmed on the device, but the device hasn't mirrored them back — in practice because no face is enrolled yet. The next step is enrolling their face at the terminal, NOT another push."
+            rows={data.awaiting_face_enrollment ?? []}
+            emptyText="No students are waiting on a face enrollment."
+            linkStudents
           />
           <ReconcileSection
             title="Name drift"

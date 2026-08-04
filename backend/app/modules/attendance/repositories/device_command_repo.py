@@ -56,6 +56,26 @@ async def inflight_user_ids(
     return {row[0] for row in result.all() if row[0] is not None}
 
 
+async def confirmed_user_ids(
+    session: AsyncSession, dev_id: str, vendor_user_ids: list[str]
+) -> set[str]:
+    """Which of these userIds have a CONFIRMED push for the device — i.e. their
+    identity has already been applied on the device (per the device's ack), even
+    if the enrollment mirror hasn't reflected them yet (no face enrolled). Lets
+    reconcile separate "still needs pushing" from "pushed, awaiting face"."""
+    if not vendor_user_ids:
+        return set()
+    result = await session.execute(
+        select(DeviceCommand.vendor_user_id).where(
+            DeviceCommand.dev_id == dev_id,
+            DeviceCommand.vendor_user_id.in_(vendor_user_ids),
+            DeviceCommand.command_status == STATUS_CONFIRMED,
+            DeviceCommand.is_deleted == False,
+        )
+    )
+    return {row[0] for row in result.all() if row[0] is not None}
+
+
 async def next_pending(session: AsyncSession, dev_id: str) -> DeviceCommand | None:
     """Oldest pending command for a device.
 

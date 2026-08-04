@@ -195,6 +195,39 @@ async def test_reconcile_platform_only_when_mirror_empty(db_session, seed_data):
 
 
 @pytest.mark.usefixtures("seed_data")
+async def test_reconcile_confirmed_push_is_awaiting_face_not_need_push(
+    db_session, seed_data
+):
+    """A confirmed push that the device hasn't mirrored back (no face enrolled)
+    is 'awaiting face enrolment', not 'needs pushing' — so the panel stops
+    telling staff to re-push identities that are already on the device."""
+    s = await _student(db_session, seed_data, rfid="6100")
+    await provisioning_service.enqueue_students(
+        db_session, seed_data["branch_a"].id, DEV, [s.id]
+    )
+    cmd = (await db_session.execute(
+        select(DeviceCommand).where(DeviceCommand.vendor_user_id == "6100")
+    )).scalar_one()
+    await device_command_repo.mark_confirmed(db_session, cmd)
+    await db_session.commit()
+
+    rec = await provisioning_service.reconcile(db_session, seed_data["branch_a"].id, DEV)
+    # Not in the mirror, but confirmed -> awaiting face, not need-push.
+    assert [r.vendor_user_id for r in rec.on_platform_not_on_device] == []
+    assert [r.vendor_user_id for r in rec.awaiting_face_enrollment] == ["6100"]
+
+    # Once the device mirrors it back (face enrolled), it leaves both buckets.
+    await device_command_repo.upsert_device_user(
+        db_session, branch_id=seed_data["branch_a"].id, dev_id=DEV,
+        vendor_user_id="6100", name="Ravi Kumar", has_face=True,
+    )
+    await db_session.commit()
+    rec2 = await provisioning_service.reconcile(db_session, seed_data["branch_a"].id, DEV)
+    assert rec2.on_platform_not_on_device == []
+    assert rec2.awaiting_face_enrollment == []
+
+
+@pytest.mark.usefixtures("seed_data")
 async def test_reconcile_matches_and_detects_drift(db_session, seed_data):
     s = await _student(db_session, seed_data, rfid="6002", first="Ravi", last="Kumar")
     # Mirror says the device has this user with the SAME name -> matched (no diff).
