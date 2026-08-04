@@ -25,6 +25,7 @@ import { CourseTable } from "./_components/course-table";
 import { CourseEmptyState } from "./_components/course-empty-state";
 import { CreateCourseDialog } from "./_components/create-course-dialog";
 import { EditCourseDialog } from "./_components/edit-course-dialog";
+import { ManageSubjectsDialog } from "./_components/manage-subjects-dialog";
 
 function filterCourses(
   courses: CourseResponse[],
@@ -51,6 +52,8 @@ export default function CoursesPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CourseResponse | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [manageTarget, setManageTarget] = useState<CourseResponse | null>(null);
+  const [manageOpen, setManageOpen] = useState(false);
 
   const toast = useToast();
   const selection = useRowSelection();
@@ -82,6 +85,11 @@ export default function CoursesPage() {
 
   function handleDeleteClick(course: CourseResponse) {
     setDeleteTarget(course);
+  }
+
+  function handleManageSubjects(course: CourseResponse) {
+    setManageTarget(course);
+    setManageOpen(true);
   }
 
   async function handleDeleteConfirm() {
@@ -147,11 +155,19 @@ export default function CoursesPage() {
           courses={filtered}
           onEdit={handleEdit}
           onDelete={handleDeleteClick}
+          onManageSubjects={handleManageSubjects}
           selectedIds={selection.selectedIds}
           onToggleSelect={selection.toggle}
           onToggleSelectAll={() => selection.toggleAll(filtered.map((c) => c.id))}
         />
       )}
+
+      <ManageSubjectsDialog
+        course={manageTarget}
+        open={manageOpen}
+        onOpenChange={setManageOpen}
+        branchId={branchId}
+      />
 
       <EditCourseDialog
         course={editTarget}

@@ -27,6 +27,7 @@ const MOCK_COURSES: CourseResponse[] = [
 
 const mockEdit = vi.fn();
 const mockDelete = vi.fn();
+const mockManage = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -35,7 +36,7 @@ beforeEach(() => {
 describe("CourseTable", () => {
   it("renders table headers", () => {
     render(
-      <CourseTable courses={[]} onEdit={mockEdit} onDelete={mockDelete} />
+      <CourseTable courses={[]} onEdit={mockEdit} onDelete={mockDelete} onManageSubjects={mockManage} />
     );
 
     expect(screen.getByText("Name")).toBeInTheDocument();
@@ -52,6 +53,7 @@ describe("CourseTable", () => {
         courses={MOCK_COURSES}
         onEdit={mockEdit}
         onDelete={mockDelete}
+        onManageSubjects={mockManage}
       />
     );
 
@@ -68,6 +70,7 @@ describe("CourseTable", () => {
         courses={MOCK_COURSES}
         onEdit={mockEdit}
         onDelete={mockDelete}
+        onManageSubjects={mockManage}
       />
     );
 
@@ -80,6 +83,7 @@ describe("CourseTable", () => {
         courses={MOCK_COURSES}
         onEdit={mockEdit}
         onDelete={mockDelete}
+        onManageSubjects={mockManage}
       />
     );
 
@@ -92,6 +96,7 @@ describe("CourseTable", () => {
         courses={MOCK_COURSES}
         onEdit={mockEdit}
         onDelete={mockDelete}
+        onManageSubjects={mockManage}
       />
     );
 
@@ -101,7 +106,7 @@ describe("CourseTable", () => {
 
   it("renders empty tbody when no courses", () => {
     const { container } = render(
-      <CourseTable courses={[]} onEdit={mockEdit} onDelete={mockDelete} />
+      <CourseTable courses={[]} onEdit={mockEdit} onDelete={mockDelete} onManageSubjects={mockManage} />
     );
     const rows = container.querySelectorAll("tbody tr");
     expect(rows).toHaveLength(0);
@@ -114,6 +119,7 @@ describe("CourseTable", () => {
         courses={MOCK_COURSES}
         onEdit={mockEdit}
         onDelete={mockDelete}
+        onManageSubjects={mockManage}
       />
     );
 
@@ -123,6 +129,23 @@ describe("CourseTable", () => {
     expect(mockEdit).toHaveBeenCalledWith(MOCK_COURSES[0]);
   });
 
+  it("invokes onManageSubjects with the row's course", async () => {
+    const user = userEvent.setup();
+    render(
+      <CourseTable
+        courses={MOCK_COURSES}
+        onEdit={mockEdit}
+        onDelete={mockDelete}
+        onManageSubjects={mockManage}
+      />
+    );
+
+    const subjectButtons = screen.getAllByRole("button", { name: /^subjects$/i });
+    await user.click(subjectButtons[0]);
+
+    expect(mockManage).toHaveBeenCalledWith(MOCK_COURSES[0]);
+  });
+
   it("invokes onDelete with the row's course", async () => {
     const user = userEvent.setup();
     render(
@@ -130,6 +153,7 @@ describe("CourseTable", () => {
         courses={MOCK_COURSES}
         onEdit={mockEdit}
         onDelete={mockDelete}
+        onManageSubjects={mockManage}
       />
     );
 
