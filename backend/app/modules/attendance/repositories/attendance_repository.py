@@ -48,6 +48,25 @@ async def get_raw_punches_for_lecture(
     return list(result.scalars().all())
 
 
+async def student_ids_with_punches(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """Distinct students who have ever punched on this branch's device(s).
+
+    A punch is physical proof the identity is on the device AND has a face
+    enrolled (a face template can only be created at the terminal). This is the
+    ground-truth enrolment signal — used by provisioning reconcile instead of the
+    device-user mirror, which isn't reliably populated in prod.
+    """
+    result = await session.execute(
+        select(RawPunchLog.student_id).where(
+            RawPunchLog.branch_id == branch_id,
+            RawPunchLog.is_deleted == False,
+        )
+    )
+    return {row[0] for row in result.all()}
+
+
 async def create_attendance_record(session: AsyncSession, **kwargs) -> AttendanceRecord:
     record = AttendanceRecord(**kwargs)
     session.add(record)

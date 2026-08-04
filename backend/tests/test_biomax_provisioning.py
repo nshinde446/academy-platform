@@ -7,12 +7,14 @@ exercised here.
 """
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.modules.attendance.integrations.biomax import provisioning_routes
+from app.modules.attendance.models.attendance_models import RawPunchLog
 from app.modules.attendance.models.provisioning_models import (
     CMD_SET_USER_INFO,
     STATUS_PENDING,
@@ -225,6 +227,40 @@ async def test_reconcile_confirmed_push_is_awaiting_face_not_need_push(
     rec2 = await provisioning_service.reconcile(db_session, seed_data["branch_a"].id, DEV)
     assert rec2.on_platform_not_on_device == []
     assert rec2.awaiting_face_enrollment == []
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_reconcile_punched_student_is_enrolled_not_awaiting(
+    db_session, seed_data
+):
+    """A student who has ever punched is definitively enrolled (a face template
+    only exists after enrolment at the terminal). Even with a confirmed push and
+    an empty mirror — the exact state that used to read as 'awaiting face' — the
+    punch removes them from BOTH buckets, so the panel stops over-counting the
+    people who are actively marking attendance."""
+    s = await _student(db_session, seed_data, rfid="6200")
+    await provisioning_service.enqueue_students(
+        db_session, seed_data["branch_a"].id, DEV, [s.id]
+    )
+    cmd = (await db_session.execute(
+        select(DeviceCommand).where(DeviceCommand.vendor_user_id == "6200")
+    )).scalar_one()
+    await device_command_repo.mark_confirmed(db_session, cmd)
+    db_session.add(
+        RawPunchLog(
+            id=uuid.uuid4(),
+            branch_id=seed_data["branch_a"].id,
+            student_id=s.id,
+            device_id=DEV,
+            punch_timestamp=datetime.now(timezone.utc),
+            is_deleted=False,
+        )
+    )
+    await db_session.commit()
+
+    rec = await provisioning_service.reconcile(db_session, seed_data["branch_a"].id, DEV)
+    assert [r.vendor_user_id for r in rec.awaiting_face_enrollment] == []
+    assert [r.vendor_user_id for r in rec.on_platform_not_on_device] == []
 
 
 @pytest.mark.usefixtures("seed_data")

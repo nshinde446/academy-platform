@@ -21,7 +21,10 @@ from app.modules.attendance.models.provisioning_models import (
     DEFAULT_VALID_START,
     STATUS_PENDING,
 )
-from app.modules.attendance.repositories import device_command_repo
+from app.modules.attendance.repositories import (
+    attendance_repository,
+    device_command_repo,
+)
 from app.modules.attendance.schemas.provisioning_schemas import (
     PlannedCommand,
     ProvisionPlanResponse,
@@ -250,11 +253,23 @@ async def reconcile(
         session, dev_id, list(platform.keys())
     )
 
+    # Ground-truth enrolment: a student who has ever punched is definitively on
+    # the device WITH a face enrolled (a template only exists after enrolment at
+    # the terminal). Trust this over the mirror, which isn't reliably populated in
+    # prod — otherwise actively-punching students wrongly read as "awaiting face".
+    enrolled_student_ids = await attendance_repository.student_ids_with_punches(
+        session, branch_id
+    )
+
     need_push: list[ReconcileRow] = []
     awaiting_face: list[ReconcileRow] = []
     drift: list[ReconcileRow] = []
     for uid, student in platform.items():
         if uid not in device:
+            # A punch proves the identity is on the device and enrolled; such a
+            # student is fully reconciled regardless of the (empty) mirror.
+            if student.id in enrolled_student_ids:
+                continue
             row = ReconcileRow(
                 vendor_user_id=uid, name=device_name(student), student_id=student.id
             )
