@@ -122,7 +122,7 @@ describe("DeviceSync", () => {
 
     expect(screen.getByText("Provisioning on")).toBeInTheDocument();
     expect(
-      screen.getByText("On the platform, not on the device"),
+      screen.getByText("Need pushing (no identity on device yet)"),
     ).toBeInTheDocument();
     expect(screen.getByText("Ravi Kumar")).toBeInTheDocument();
     expect(screen.getByText("Ghost User")).toBeInTheDocument();
@@ -200,6 +200,27 @@ describe("DeviceSync", () => {
     expect(toastSuccess).toHaveBeenCalled();
   });
 
+  it("shows awaiting-face rows as a non-pushable, informational group", () => {
+    setDevices({ data: DEVICES });
+    setReconcile({
+      data: {
+        ...RECONCILE,
+        on_platform_not_on_device: [],
+        awaiting_face_enrollment: [
+          { vendor_user_id: "2001", name: "Meera Joshi", student_id: "s9" },
+        ],
+      },
+    });
+    render(<DeviceSync branchId="br1" />);
+
+    expect(screen.getByText("Awaiting face enrollment")).toBeInTheDocument();
+    expect(screen.getByText("Meera Joshi")).toBeInTheDocument();
+    // Not selectable — no "Select all" checkbox for this group.
+    expect(
+      screen.queryByRole("checkbox", { name: /Select all in Awaiting face/ }),
+    ).toBeNull();
+  });
+
   it("select-all in a section selects every row in it", () => {
     setDevices({ data: DEVICES });
     setReconcile({ data: RECONCILE });
@@ -207,7 +228,7 @@ describe("DeviceSync", () => {
 
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /Select all in On the platform, not on the device/,
+        name: /Select all in Need pushing/,
       }),
     );
     expect(screen.getByText("2 students selected")).toBeInTheDocument();

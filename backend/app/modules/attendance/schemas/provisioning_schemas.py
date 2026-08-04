@@ -87,9 +87,16 @@ class ReconcileRow(BaseModel):
 
 
 class ReconcileResponse(BaseModel):
-    """Three-way diff between platform students and the device's user mirror."""
+    """Diff between platform students and the device's user mirror.
+
+    ``on_platform_not_on_device`` is now *truly* un-pushed identities (no
+    confirmed push). ``awaiting_face_enrollment`` are identities we've confirmed
+    onto the device but which the device hasn't mirrored back — in practice
+    because no face is enrolled yet, so the next action is enrolment at the
+    terminal, not another push."""
 
     dev_id: str
     on_platform_not_on_device: list[ReconcileRow]
+    awaiting_face_enrollment: list[ReconcileRow] = []
     on_device_not_on_platform: list[ReconcileRow]
     drift: list[ReconcileRow]  # present on both, name/validity differs
