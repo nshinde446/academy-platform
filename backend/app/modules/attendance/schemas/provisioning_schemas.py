@@ -93,7 +93,9 @@ class ReconcileResponse(BaseModel):
     confirmed push). ``awaiting_face_enrollment`` are identities we've confirmed
     onto the device but which the device hasn't mirrored back — in practice
     because no face is enrolled yet, so the next action is enrolment at the
-    terminal, not another push."""
+    terminal, not another push. Students who have ever punched are treated as
+    fully enrolled (a face template only exists after enrolment at the terminal)
+    and appear in neither bucket, regardless of the mirror."""
 
     dev_id: str
     on_platform_not_on_device: list[ReconcileRow]
