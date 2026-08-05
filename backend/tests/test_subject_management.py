@@ -73,6 +73,44 @@ async def test_seed_from_syllabus_creates_subjects(client, seed_data):
 
 
 @pytest.mark.usefixtures("seed_data")
+async def test_create_course_with_syllabus_key_seeds_subjects(client, seed_data):
+    """Creating a course with an exam target seeds its subjects on the spot, so
+    the course's batches are schedulable without a separate step. NEET -> PCB
+    (Physics, Chemistry, Biology) per the hard rule."""
+    token = await _admin_token(client)
+    created = await client.post(
+        "/api/v1/academic/courses",
+        json={"branch_id": BRANCH, "name": "NEET Fresh", "code": "NEET-F", "syllabus_key": "NEET"},
+        cookies={"access_token": token},
+    )
+    assert created.status_code == 200
+    course_id = created.json()["id"]
+
+    listing = await client.get(
+        f"/api/v1/academic/subjects?branch_id={BRANCH}&course_id={course_id}",
+        cookies={"access_token": token},
+    )
+    names = {s["name"] for s in listing.json()}
+    assert names == {"Physics", "Chemistry", "Biology"}
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_create_course_without_syllabus_key_has_no_subjects(client, seed_data):
+    token = await _admin_token(client)
+    created = await client.post(
+        "/api/v1/academic/courses",
+        json={"branch_id": BRANCH, "name": "Bare", "code": "BARE-1"},
+        cookies={"access_token": token},
+    )
+    course_id = created.json()["id"]
+    listing = await client.get(
+        f"/api/v1/academic/subjects?branch_id={BRANCH}&course_id={course_id}",
+        cookies={"access_token": token},
+    )
+    assert listing.json() == []
+
+
+@pytest.mark.usefixtures("seed_data")
 async def test_seed_is_idempotent(client, seed_data):
     token = await _admin_token(client)
     course_id = await _empty_course(client, token, "CET2-02")

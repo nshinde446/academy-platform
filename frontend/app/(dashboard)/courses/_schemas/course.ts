@@ -16,6 +16,8 @@ export interface CourseCreate {
   code: string;
   description?: string | null;
   duration_years?: number;
+  // Optional exam target — seeds the course's standard subjects on creation.
+  syllabus_key?: string | null;
 }
 
 export interface CourseUpdate {

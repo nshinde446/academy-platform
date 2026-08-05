@@ -13,6 +13,10 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import type { CourseCreate } from "../_schemas/course";
+import { useSyllabi } from "../_hooks/use-subjects";
+
+const SELECT_CLASS =
+  "flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm";
 
 interface CreateCourseDialogProps {
   onSubmit: (data: Omit<CourseCreate, "branch_id">) => Promise<void> | void;
@@ -24,6 +28,7 @@ const EMPTY_FORM = {
   code: "",
   description: "",
   duration_years: "1",
+  syllabus_key: "",
 };
 
 export function CreateCourseDialog({
@@ -33,6 +38,7 @@ export function CreateCourseDialog({
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState("");
+  const syllabiQuery = useSyllabi();
 
   function reset() {
     setForm(EMPTY_FORM);
@@ -57,6 +63,7 @@ export function CreateCourseDialog({
         code: form.code,
         description: form.description || null,
         duration_years: duration,
+        syllabus_key: form.syllabus_key || null,
       });
       reset();
       setOpen(false);
@@ -131,6 +138,29 @@ export function CreateCourseDialog({
                 placeholder="Optional"
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="course_syllabus">Exam target — auto-add subjects</Label>
+            <select
+              id="course_syllabus"
+              value={form.syllabus_key}
+              onChange={(e) =>
+                setForm({ ...form, syllabus_key: e.target.value })
+              }
+              className={SELECT_CLASS}
+            >
+              <option value="">None (add subjects later)</option>
+              {(syllabiQuery.data ?? []).map((o) => (
+                <option key={o.key} value={o.key}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Picks the standard subject set so this course&apos;s batches are
+              schedulable straight away. You can adjust subjects afterwards.
+            </p>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

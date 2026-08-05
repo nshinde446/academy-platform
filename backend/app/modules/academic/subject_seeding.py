@@ -25,19 +25,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.academic import curriculum
 from app.modules.academic.repositories import academic_repository
 
-# Subject skeletons per syllabus (design §2/§5). DEFAULTS the coaching can edit
-# — §6 leaves Biology-vs-Botany/Zoology and the MHT-CET stream split as open
-# decisions, so we only auto-create for the unambiguous tracks and skip the
-# rest (no subjects rather than a wrong guess).
+# Subject skeletons per exam target (the coaching's hard rule):
+#   JEE     -> PCM  (Physics, Chemistry, Mathematics)
+#   NEET    -> PCB  (Physics, Chemistry, Biology)
+#   MHT-CET -> PCMB (Physics, Chemistry, Mathematics, Biology; per-student stream
+#              selects the subset at read time)
+# "Biology" is the parent subject — Botany/Zoology are NOT modelled as separate
+# subjects (their chapters live under Biology). Keep the whole set to "Biology".
 SUBJECT_SETS: dict[str, list[str]] = {
-    "NEET": ["Physics", "Chemistry", "Botany", "Zoology"],
+    "NEET": ["Physics", "Chemistry", "Biology"],
     "JEE": ["Physics", "Chemistry", "Mathematics"],
     "PCMB": ["Physics", "Chemistry", "Mathematics", "Biology"],
     "MHT-CET-PCM": ["Physics", "Chemistry", "Mathematics"],
     "MHT-CET-PCB": ["Physics", "Chemistry", "Biology"],
-    # MHT-CET with no explicit stream: carry the *union* on the course (P/C are
-    # shared; Maths is PCM-only; Biology is PCB-only) and let each student's
-    # `stream` select their subset at read time.
     "MHT-CET": ["Physics", "Chemistry", "Mathematics", "Biology"],
     "FOUNDATION": ["Science", "Mathematics", "Mental Ability"],
 }
@@ -73,9 +73,9 @@ SUBJECT_CODES: dict[str, str] = {
 AVAILABLE_SYLLABI: list[dict[str, object]] = [
     {"key": key, "label": label, "subjects": SUBJECT_SETS[key]}
     for key, label in (
-        ("JEE", "JEE (Physics, Chemistry, Maths)"),
-        ("NEET", "NEET (Physics, Chemistry, Botany, Zoology)"),
-        ("MHT-CET", "MHT-CET (all four — per-student stream filters)"),
+        ("JEE", "JEE — PCM (Physics, Chemistry, Maths)"),
+        ("NEET", "NEET — PCB (Physics, Chemistry, Biology)"),
+        ("MHT-CET", "MHT-CET — PCMB (all four — per-student stream filters)"),
         ("MHT-CET-PCM", "MHT-CET PCM (Physics, Chemistry, Maths)"),
         ("MHT-CET-PCB", "MHT-CET PCB (Physics, Chemistry, Biology)"),
         ("PCMB", "PCB + PCM (all four subjects)"),
