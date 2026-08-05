@@ -57,12 +57,26 @@ async def delete_academic_year(
 
 
 async def create_course(session: AsyncSession, data: dict, current_user_id: uuid.UUID, ip_address: str | None = None):
+    # syllabus_key isn't a course column — it only asks us to seed the standard
+    # subject set after the course exists (so new batches are schedulable at
+    # once). Strip it before building the ORM row.
+    syllabus_key = data.pop("syllabus_key", None)
     course = await academic_repository.create_course(session, **data)
     await audit_service.log_action(
         session, user_id=current_user_id, action="CREATE",
         table_name="courses", record_id=course.id, new_values=data,
         ip_address=ip_address, branch_id=data.get("branch_id"),
     )
+    if syllabus_key and syllabus_key in subject_seeding.SUBJECT_SETS:
+        years = await academic_repository.list_academic_years(
+            session, course.branch_id
+        )
+        if years:  # can't seed without an academic year; course still created
+            academic_year = max(years, key=lambda y: getattr(y, "start_year", 0) or 0)
+            await subject_seeding.build_subject_skeleton(
+                session, course.branch_id, course, academic_year, syllabus_key,
+                import_id=None,
+            )
     return course
 
 

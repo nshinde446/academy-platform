@@ -740,12 +740,11 @@ class TestStudentImportSubjectSkeleton:
             cookies={"access_token": token},
         )
         data = resp.json()
-        assert data["subjects_created"] == 4
+        assert data["subjects_created"] == 3
         assert await self._course_subjects(db_session, "NEET") == {
             "Physics",
             "Chemistry",
-            "Botany",
-            "Zoology",
+            "Biology",
         }
 
     @pytest.mark.usefixtures("seed_data")
@@ -763,7 +762,7 @@ class TestStudentImportSubjectSkeleton:
         data = resp.json()
         assert sorted(data["batches_created"]) == ["SK-A", "SK-B"]
         # Both batches share the NEET course, so its skeleton is made just once.
-        assert data["subjects_created"] == 4
+        assert data["subjects_created"] == 3
 
     @pytest.mark.usefixtures("seed_data")
     async def test_explicit_syllabus_overrides_subject_set(
@@ -841,7 +840,7 @@ class TestStudentImportSubjectSkeleton:
         )
         data = resp.json()
         import_id = data["import_id"]
-        assert data["subjects_created"] == 4
+        assert data["subjects_created"] == 3
 
         # A syllabus import later loads a chapter onto one subject.
         course = (
@@ -876,8 +875,8 @@ class TestStudentImportSubjectSkeleton:
             cookies={"access_token": token},
         )
         u = undo.json()
-        # The 3 bare subjects go; Physics (now has a chapter) is protected.
-        assert u["subjects_deleted"] == 3
+        # The 2 bare subjects go; Physics (now has a chapter) is protected.
+        assert u["subjects_deleted"] == 2
         remaining = (
             await db_session.execute(
                 select(Subject).where(
@@ -957,7 +956,7 @@ class TestStudentImportCurriculum:
             f"/api/v1/students/import/{import_id}/undo?branch_id={BRANCH}",
             cookies={"access_token": token},
         )
-        assert undo.json()["subjects_deleted"] == 4
+        assert undo.json()["subjects_deleted"] == 3
         # No foreign chapters were added, so all auto-created curriculum is gone.
         await db_session.commit()  # refresh snapshot to see undo's commit
         assert await self._live_chapter_count(db_session, "NEET") == 0

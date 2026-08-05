@@ -45,6 +45,10 @@ class CourseCreate(BaseModel):
     code: str
     description: str | None = None
     duration_years: int = 1
+    # Optional exam target — when set, the course's standard subjects are seeded
+    # on creation (JEE->PCM, NEET->PCB, MHT-CET->PCMB) so its batches are
+    # schedulable immediately. Not stored on the course; used only to seed.
+    syllabus_key: str | None = None
 
 
 class CourseUpdate(BaseModel):
