@@ -80,6 +80,38 @@ class ProvisionDevicesResponse(BaseModel):
     devices: list[ProvisionDevice]
 
 
+class DeviceUserSnapshotRow(BaseModel):
+    """One user as read from the terminal's own table (local ``GetUserInfo``).
+
+    ``has_face`` is the whole point: the device reports whether a face template
+    exists for this user (``face`` field present), which is the ground truth
+    reconcile needs. Biometric blobs are NEVER sent — the agent extracts only
+    presence, never the template."""
+
+    vendor_user_id: str
+    name: str | None = None
+    privilege: int = 0
+    has_face: bool = False
+    valid_start: str | None = None
+    valid_end: str | None = None
+
+
+class DeviceUserSnapshotRequest(BaseModel):
+    """Full snapshot of a device's user table, pushed by the on-site sync agent.
+    Full-replace semantics: users absent from ``users`` are removed from the
+    mirror (they were deleted on the device)."""
+
+    dev_id: str
+    users: list[DeviceUserSnapshotRow]
+
+
+class DeviceUserSnapshotResponse(BaseModel):
+    dev_id: str
+    upserted: int
+    removed: int
+    total: int
+
+
 class ReconcileRow(BaseModel):
     vendor_user_id: str
     name: str | None = None

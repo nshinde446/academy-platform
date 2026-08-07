@@ -211,6 +211,45 @@ async def list_device_users(
     return list(result.scalars().all())
 
 
+async def replace_device_users(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    dev_id: str,
+    rows: list[dict],
+) -> tuple[int, int]:
+    """Rebuild the mirror for a device from a full snapshot of its user table
+    (read on-site via the terminal's local API). Full-replace semantics: every
+    snapshot row is upserted; any existing mirror row for this device whose
+    ``vendor_user_id`` is NOT in the snapshot is soft-deleted (the user was
+    removed on the device). Returns ``(upserted, removed)``.
+
+    This is the ground-truth path: unlike the device's one-time
+    ``realtime_enroll_data`` push (which we only catch if we happen to be
+    listening at the moment of enrolment), a snapshot reflects exactly who is on
+    the device right now — including whether each has a face (``has_face``).
+    """
+    seen: set[str] = set()
+    for row in rows:
+        await upsert_device_user(session, branch_id=branch_id, dev_id=dev_id, **row)
+        seen.add(row["vendor_user_id"])
+
+    existing = await session.execute(
+        select(DeviceUser).where(
+            DeviceUser.dev_id == dev_id,
+            DeviceUser.branch_id == branch_id,
+            DeviceUser.is_deleted == False,
+        )
+    )
+    removed = 0
+    for du in existing.scalars().all():
+        if du.vendor_user_id not in seen:
+            du.is_deleted = True
+            removed += 1
+    await session.flush()
+    return len(seen), removed
+
+
 async def upsert_device_user(
     session: AsyncSession,
     *,

@@ -21,6 +21,7 @@ from app.modules.attendance.models.provisioning_models import (
     DeviceCommand,
 )
 from app.modules.attendance.repositories import device_command_repo
+from app.modules.attendance.schemas.provisioning_schemas import DeviceUserSnapshotRow
 from app.modules.attendance.services import provisioning_service
 from app.modules.attendance.services.provisioning_service import (
     PayloadError,
@@ -266,13 +267,15 @@ async def test_reconcile_punched_student_is_enrolled_not_awaiting(
 @pytest.mark.usefixtures("seed_data")
 async def test_reconcile_matches_and_detects_drift(db_session, seed_data):
     s = await _student(db_session, seed_data, rfid="6002", first="Ravi", last="Kumar")
-    # Mirror says the device has this user with the SAME name -> matched (no diff).
+    # Mirror says the device has this user WITH A FACE and the SAME name -> matched.
+    # (has_face is what makes them "enrolled" rather than "awaiting face".)
     await device_command_repo.upsert_device_user(
         db_session,
         branch_id=seed_data["branch_a"].id,
         dev_id=DEV,
         vendor_user_id="6002",
         name="Ravi Kumar",
+        has_face=True,
     )
     await db_session.commit()
     rec = await provisioning_service.reconcile(db_session, seed_data["branch_a"].id, DEV)
@@ -286,6 +289,7 @@ async def test_reconcile_matches_and_detects_drift(db_session, seed_data):
         dev_id=DEV,
         vendor_user_id="6002",
         name="Wrong Name",
+        has_face=True,
     )
     await db_session.commit()
     rec2 = await provisioning_service.reconcile(db_session, seed_data["branch_a"].id, DEV)
@@ -332,6 +336,94 @@ async def test_cancel_pending_and_list(db_session, seed_data):
     )
     await db_session.commit()
     assert again.enqueued == 1
+
+
+# ── device-user snapshot sync (ground truth from the terminal) ────────────────
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_sync_snapshot_with_face_clears_awaiting_face(db_session, seed_data):
+    """A confirmed-but-unmirrored student reads as 'awaiting face'. Once the
+    on-site agent's snapshot reports the device holds their FACE, they're enrolled
+    — out of awaiting-face entirely. This is the fix for stale 'awaiting face'."""
+    s = await _student(db_session, seed_data, rfid="6300", first="Ravi", last="Kumar")
+    await provisioning_service.enqueue_students(db_session, seed_data["branch_a"].id, DEV, [s.id])
+    cmd = (await db_session.execute(
+        select(DeviceCommand).where(DeviceCommand.vendor_user_id == "6300")
+    )).scalar_one()
+    await device_command_repo.mark_confirmed(db_session, cmd)
+    await db_session.commit()
+
+    rec = await provisioning_service.reconcile(db_session, seed_data["branch_a"].id, DEV)
+    assert [r.vendor_user_id for r in rec.awaiting_face_enrollment] == ["6300"]
+
+    upserted, removed = await provisioning_service.sync_device_users(
+        db_session, seed_data["branch_a"].id, DEV,
+        [DeviceUserSnapshotRow(vendor_user_id="6300", name="Ravi Kumar", has_face=True)],
+    )
+    await db_session.commit()
+    assert (upserted, removed) == (1, 0)
+
+    rec2 = await provisioning_service.reconcile(db_session, seed_data["branch_a"].id, DEV)
+    assert rec2.awaiting_face_enrollment == []
+    assert rec2.drift == []  # name matches
+    assert rec2.on_platform_not_on_device == []
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_sync_snapshot_identity_only_stays_awaiting_face(db_session, seed_data):
+    """A snapshot user WITHOUT a face is on the device (identity pushed) but still
+    needs a face enrolled — so they stay in 'awaiting face', not matched."""
+    s = await _student(db_session, seed_data, rfid="6301", first="Sia", last="Rao")
+    await provisioning_service.sync_device_users(
+        db_session, seed_data["branch_a"].id, DEV,
+        [DeviceUserSnapshotRow(vendor_user_id="6301", name="Sia Rao", has_face=False)],
+    )
+    await db_session.commit()
+
+    rec = await provisioning_service.reconcile(db_session, seed_data["branch_a"].id, DEV)
+    assert [r.vendor_user_id for r in rec.awaiting_face_enrollment] == ["6301"]
+    assert rec.drift == []
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_sync_snapshot_full_replace_removes_absent(db_session, seed_data):
+    """Full-replace: a mirror user the device no longer holds is dropped."""
+    await device_command_repo.upsert_device_user(
+        db_session, branch_id=seed_data["branch_a"].id, dev_id=DEV,
+        vendor_user_id="8000", name="Old User", has_face=True,
+    )
+    await db_session.commit()
+
+    upserted, removed = await provisioning_service.sync_device_users(
+        db_session, seed_data["branch_a"].id, DEV,
+        [DeviceUserSnapshotRow(vendor_user_id="8001", name="New User", has_face=True)],
+    )
+    await db_session.commit()
+    assert (upserted, removed) == (1, 1)
+
+    mirror = await device_command_repo.list_device_users(db_session, seed_data["branch_a"].id, DEV)
+    assert {u.vendor_user_id for u in mirror} == {"8001"}
+
+
+def test_verify_sync_token_gate(monkeypatch):
+    # Unset token -> feature disabled (503); wrong token -> 401; correct -> passes.
+    monkeypatch.setattr(
+        provisioning_routes, "get_settings",
+        lambda: type("S", (), {"BIOMAX_SYNC_TOKEN": ""})(),
+    )
+    with pytest.raises(HTTPException) as off:
+        provisioning_routes._verify_sync_token("anything")
+    assert off.value.status_code == 503
+
+    monkeypatch.setattr(
+        provisioning_routes, "get_settings",
+        lambda: type("S", (), {"BIOMAX_SYNC_TOKEN": "secret"})(),
+    )
+    with pytest.raises(HTTPException) as bad:
+        provisioning_routes._verify_sync_token("wrong")
+    assert bad.value.status_code == 401
+    assert provisioning_routes._verify_sync_token("secret") is None
 
 
 # ── fail-safe flag gate ───────────────────────────────────────────────────────
