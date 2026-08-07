@@ -244,19 +244,25 @@ async def reconcile(
 
     mirror = await device_command_repo.list_device_users(session, branch_id, dev_id)
     device: dict[str, object] = {u.vendor_user_id: u for u in mirror}
+    # Users the device reports a FACE template for — the ground-truth "enrolled"
+    # signal once the on-site sync agent has pushed a snapshot (see
+    # sync_device_users). Identity-only mirror rows (has_face False) are on the
+    # device but still need a face enrolled at the terminal.
+    has_face_on_device = {
+        uid for uid, u in device.items() if getattr(u, "has_face", False)
+    }
 
     # Identities we've already confirmed onto the device (per its ack). A student
     # not in the mirror but with a confirmed push isn't "unpushed" — the device
-    # just hasn't mirrored them back (typically no face enrolled yet), so the real
-    # next step is enrolment at the terminal, not another push.
+    # just hasn't mirrored them back yet, so the real next step is enrolment at
+    # the terminal, not another push.
     confirmed = await device_command_repo.confirmed_user_ids(
         session, dev_id, list(platform.keys())
     )
 
-    # Ground-truth enrolment: a student who has ever punched is definitively on
-    # the device WITH a face enrolled (a template only exists after enrolment at
-    # the terminal). Trust this over the mirror, which isn't reliably populated in
-    # prod — otherwise actively-punching students wrongly read as "awaiting face".
+    # A student who has ever punched is definitively enrolled WITH a face (a
+    # template only exists after enrolment at the terminal), even if a mirror
+    # snapshot hasn't captured them — so trust a punch as face-proof too.
     enrolled_student_ids = await attendance_repository.student_ids_with_punches(
         session, branch_id
     )
@@ -265,21 +271,28 @@ async def reconcile(
     awaiting_face: list[ReconcileRow] = []
     drift: list[ReconcileRow] = []
     for uid, student in platform.items():
-        if uid not in device:
-            # A punch proves the identity is on the device and enrolled; such a
-            # student is fully reconciled regardless of the (empty) mirror.
-            if student.id in enrolled_student_ids:
-                continue
-            row = ReconcileRow(
-                vendor_user_id=uid, name=device_name(student), student_id=student.id
-            )
-            (awaiting_face if uid in confirmed else need_push).append(row)
-        elif getattr(device[uid], "name", None) != device_name(student):
-            drift.append(
-                ReconcileRow(
-                    vendor_user_id=uid, name=device_name(student), student_id=student.id
+        on_device = uid in device
+        # "Enrolled" = the device holds a face for them, OR they've punched.
+        enrolled = uid in has_face_on_device or student.id in enrolled_student_ids
+        if enrolled:
+            # Fully provisioned — the only thing to flag is a stale name on the
+            # device (a push re-registers the platform name).
+            if on_device and getattr(device[uid], "name", None) != device_name(student):
+                drift.append(
+                    ReconcileRow(
+                        vendor_user_id=uid, name=device_name(student), student_id=student.id
+                    )
                 )
-            )
+            continue
+        # No face yet. If the identity is on the device (mirror) or a push was
+        # confirmed, the next step is enrolment at the terminal, not another push.
+        row = ReconcileRow(
+            vendor_user_id=uid, name=device_name(student), student_id=student.id
+        )
+        if on_device or uid in confirmed:
+            awaiting_face.append(row)
+        else:
+            need_push.append(row)
 
     on_device_only = [
         ReconcileRow(vendor_user_id=uid, name=getattr(u, "name", None))
@@ -293,4 +306,32 @@ async def reconcile(
         awaiting_face_enrollment=awaiting_face,
         on_device_not_on_platform=on_device_only,
         drift=drift,
+    )
+
+
+async def sync_device_users(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    dev_id: str,
+    users: list,
+) -> tuple[int, int]:
+    """Rebuild the device-user mirror from a full snapshot the on-site agent read
+    off the terminal (local ``GetUserIdList`` + ``GetUserInfo``). Ground truth for
+    who is actually enrolled — and, via ``has_face``, who has a face — so
+    reconcile's "awaiting face" / "name drift" stop depending on catching the
+    device's one-time enrollment pushes. Full-replace: users the device no longer
+    holds are dropped from the mirror. Returns ``(upserted, removed)``."""
+    rows = [
+        {
+            "vendor_user_id": u.vendor_user_id,
+            "name": u.name,
+            "privilege": u.privilege,
+            "valid_start": u.valid_start,
+            "valid_end": u.valid_end,
+            "has_face": u.has_face,
+        }
+        for u in users
+    ]
+    return await device_command_repo.replace_device_users(
+        session, branch_id=branch_id, dev_id=dev_id, rows=rows
     )

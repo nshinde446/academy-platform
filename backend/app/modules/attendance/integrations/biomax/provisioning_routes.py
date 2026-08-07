@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.settings import get_settings
@@ -25,6 +25,8 @@ from app.modules.attendance.models.provisioning_models import STATUS_PENDING
 from app.modules.attendance.repositories import device_command_repo
 from app.modules.attendance.schemas.provisioning_schemas import (
     DeviceCommandResponse,
+    DeviceUserSnapshotRequest,
+    DeviceUserSnapshotResponse,
     ProvisionDevice,
     ProvisionDevicesResponse,
     ProvisionDryRunRequest,
@@ -47,6 +49,24 @@ def _require_enabled() -> None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="BioMax provisioning is disabled (BIOMAX_PROVISIONING_ENABLED).",
+        )
+
+
+def _verify_sync_token(provided: str | None) -> None:
+    """Authenticate the headless on-site sync agent via a shared secret. Fail-safe:
+    when the token is unset the endpoint rejects everything (a spoofed snapshot
+    could hide/forge who's enrolled), so the agent is disabled until a token is
+    configured on both the agent PC and this server."""
+    expected = get_settings().BIOMAX_SYNC_TOKEN
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Device-user sync disabled. Set BIOMAX_SYNC_TOKEN.",
+        )
+    if not provided or provided != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing sync token.",
         )
 
 
@@ -109,6 +129,30 @@ async def push(
     )
     await session.commit()
     return result
+
+
+@router.post("/device-users/sync", response_model=DeviceUserSnapshotResponse)
+async def sync_device_users(
+    body: DeviceUserSnapshotRequest,
+    x_biomax_sync_token: str | None = Header(None),
+    session: AsyncSession = Depends(get_db),
+):
+    """Rebuild the device-user mirror from a snapshot the on-site agent read off
+    the terminal's local API (``GetUserIdList`` + ``GetUserInfo``). This is the
+    ground-truth path for who's actually enrolled (and who has a face), so
+    reconcile stops depending on catching the device's one-time enrollment
+    pushes. Headless: authenticated by the shared ``X-BioMax-Sync-Token``, not an
+    admin session. Full-replace — users the device no longer holds are dropped."""
+    _verify_sync_token(x_biomax_sync_token)
+    _require_known_device(body.dev_id)
+    branch_id = _resolve_branch()
+    upserted, removed = await provisioning_service.sync_device_users(
+        session, branch_id, body.dev_id, body.users
+    )
+    await session.commit()
+    return DeviceUserSnapshotResponse(
+        dev_id=body.dev_id, upserted=upserted, removed=removed, total=len(body.users)
+    )
 
 
 @router.get("/commands", response_model=list[DeviceCommandResponse])

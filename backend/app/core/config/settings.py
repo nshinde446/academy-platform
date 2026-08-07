@@ -115,6 +115,15 @@ class Settings(BaseSettings):
     # device, so shipping the plumbing cannot affect live attendance. See
     # docs/biomax-provisioning-implementation.md.
     BIOMAX_PROVISIONING_ENABLED: bool = False
+    # Shared secret the on-site device-user sync agent presents
+    # (``X-BioMax-Sync-Token`` header) when it POSTs the device's real user table
+    # (read via the terminal's local ``/bin/cmd`` API) to
+    # ``/attendance/provisioning/device-users/sync``. That snapshot is the ground
+    # truth for which students are actually enrolled on the device — it rebuilds
+    # the ``device_users`` mirror so reconcile's "awaiting face" / name-drift stop
+    # relying on catching the device's one-time enrollment pushes. Empty = agent
+    # sync disabled (fail-safe: reject rather than accept a spoofed snapshot).
+    BIOMAX_SYNC_TOKEN: str = ""
 
     # SmartOffice (SmartOfficePayroll) cloud middleware — the ZKTeco devices
     # push to SmartOffice's server and we PULL the aggregated logs from its REST
