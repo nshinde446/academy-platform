@@ -160,16 +160,20 @@ async def sync_device_users(
 async def refresh_user_info(
     dev_id: str = Query(...),
     scope: str = Query("awaiting", pattern="^(awaiting|all)$"),
+    x_biomax_sync_token: str | None = Header(None),
     _enabled: None = Depends(_require_enabled),
-    _user: dict = Depends(_ADMIN),
     session: AsyncSession = Depends(get_db),
 ):
     """Cloud-async mirror refresh: queue GET_USER_INFO commands the device drains
     on its normal VPS poll, then returns each user's has-face in the result body
     (folded into the mirror by the aidata receiver). No on-site PC needed.
 
-    ``scope=awaiting`` (default) only re-checks students still 'awaiting face' —
-    small and cheap; ``scope=all`` refreshes every platform userId."""
+    Headless (meant to run from a daily cron), so it authenticates with the shared
+    ``X-BioMax-Sync-Token`` — same secret as the device-user sync — rather than an
+    admin session. ``scope=awaiting`` (default) only re-checks students still
+    'awaiting face' — small and cheap; ``scope=all`` refreshes every platform
+    userId."""
+    _verify_sync_token(x_biomax_sync_token)
     _require_known_device(dev_id)
     branch_id = _resolve_branch()
     user_ids = await provisioning_service.user_ids_for_refresh(

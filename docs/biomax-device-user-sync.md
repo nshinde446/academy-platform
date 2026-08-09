@@ -83,9 +83,10 @@ Reconcile then classifies each student as:
 The same mirror can be rebuilt with **no on-site PC** by pulling the device's user
 table over the `receive_cmd` channel the terminal already polls on the VPS.
 
-Trigger it (admin):
+Trigger it (headless — same `X-BioMax-Sync-Token` as the on-site sync):
 ```
 POST /api/v1/attendance/provisioning/refresh-user-info?dev_id=<serial>&scope=awaiting
+    -H "X-BioMax-Sync-Token: <secret>"
 ```
 - `scope=awaiting` (default) re-checks only students still "awaiting face" — small
   and cheap; `scope=all` refreshes every platform userId.
