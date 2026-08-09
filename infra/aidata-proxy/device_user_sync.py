@@ -34,7 +34,7 @@ Run it (Windows / any Python 3.9+, stdlib only — no pip installs)
     python device_user_sync.py
 
 Env vars (all optional except the token):
-    DEVICE_HOST        device LAN IP/host          (default 192.168.1.8)
+    DEVICE_HOST        device LAN IP/host  (default: AUTO-DISCOVER on the /24)
     DEVICE_PORT        device HTTP port            (default 80)
     DEVICE_USER        local-API user              (default admin)
     DEVICE_PASS        local-API password          (default admin)
@@ -50,14 +50,19 @@ Schedule it (so nobody runs it by hand): Windows Task Scheduler, e.g. daily —
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
+import socket
 import sys
 import urllib.error
 import urllib.request
 
 # ── config ────────────────────────────────────────────────────────────────────
-DEVICE_HOST = os.environ.get("DEVICE_HOST", "192.168.1.8")
+# DEVICE_HOST empty => auto-discover the terminal on the LAN (its DHCP IP changes
+# between networks — .8 at one site, .14 at another — so a hardcoded IP breaks a
+# scheduled run; discovery makes it self-locating).
+DEVICE_HOST = os.environ.get("DEVICE_HOST", "")
 DEVICE_PORT = os.environ.get("DEVICE_PORT", "80")
 DEVICE_USER = os.environ.get("DEVICE_USER", "admin")
 DEVICE_PASS = os.environ.get("DEVICE_PASS", "admin")
@@ -69,10 +74,73 @@ SYNC_TOKEN = os.environ.get("BIOMAX_SYNC_TOKEN", "")
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", "50"))
 DRY_RUN = os.environ.get("DRY_RUN", "") == "1"
 
-DEVICE_BASE = f"http://{DEVICE_HOST}:{DEVICE_PORT}"
+# Resolved once the device is located (env host or discovery); functions read it.
+DEVICE_BASE = ""
 # The presence of ANY of these on a GetUserInfo record means a biometric template
 # exists. We record only THAT it exists; the blob itself is never read out or sent.
 FACE_KEYS = ("face", "fps", "palm")
+
+
+def _base(host: str) -> str:
+    return f"http://{host}:{DEVICE_PORT}"
+
+
+def _is_biomax(host: str) -> bool:
+    """True iff ``host`` is the BioMax terminal — its ``/bin/cmd`` answers with a
+    lighttpd HTTP-Digest challenge (``realm="Login"``). Cheap fingerprint that
+    won't false-match a random web server or the SmartOffice/IIS box."""
+    try:
+        req = urllib.request.Request(
+            f"{_base(host)}/bin/cmd",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=2)
+    except urllib.error.HTTPError as exc:
+        auth = exc.headers.get("WWW-Authenticate", "") or ""
+        server = exc.headers.get("Server", "") or ""
+        return exc.code == 401 and "Digest" in auth and "lighttpd" in server.lower()
+    except Exception:
+        return False
+    return False
+
+
+def _local_subnet() -> str | None:
+    """This machine's private /24 base (e.g. '192.168.1'), via the default route."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+    except Exception:
+        return None
+    finally:
+        s.close()
+    parts = ip.split(".")
+    return ".".join(parts[:3]) if len(parts) == 4 else None
+
+
+def discover_device() -> str | None:
+    """Find the terminal on the local /24: probe port 80 in parallel, then confirm
+    each open host is the BioMax by its Digest fingerprint. Returns the IP or None."""
+    base3 = _local_subnet()
+    if not base3:
+        return None
+
+    def open80(i: int) -> str | None:
+        host = f"{base3}.{i}"
+        try:
+            with socket.create_connection((host, 80), timeout=0.4):
+                return host
+        except Exception:
+            return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=64) as ex:
+        candidates = [h for h in ex.map(open80, range(1, 255)) if h]
+    for host in candidates:
+        if _is_biomax(host):
+            return host
+    return None
 
 
 def _device_opener() -> urllib.request.OpenerDirector:
@@ -167,10 +235,32 @@ def post_snapshot(rows: list[dict]) -> dict:
         return json.loads(resp.read().decode("utf-8", errors="replace"))
 
 
+def resolve_device_host() -> str | None:
+    """Pick the terminal's address: the configured DEVICE_HOST if it really is the
+    terminal, otherwise auto-discover it on the LAN (its IP changes per network)."""
+    if DEVICE_HOST:
+        if _is_biomax(DEVICE_HOST):
+            return DEVICE_HOST
+        print(f"DEVICE_HOST {DEVICE_HOST} isn't answering as the terminal — discovering…")
+    else:
+        print("No DEVICE_HOST set — discovering the terminal on the LAN…")
+    host = discover_device()
+    if host:
+        print(f"  found terminal at {host}")
+    return host
+
+
 def main() -> int:
+    global DEVICE_BASE
     if not SYNC_TOKEN and not DRY_RUN:
         print("ERROR: set BIOMAX_SYNC_TOKEN (the shared secret configured on the server).")
         return 2
+    host = resolve_device_host()
+    if not host:
+        print("ERROR: could not find the BioMax terminal on this network.")
+        print("Is this machine on the SAME LAN as the terminal (no Wi-Fi client isolation)?")
+        return 1
+    DEVICE_BASE = _base(host)
     print(f"Reading device {DEV_ID} at {DEVICE_BASE} …")
     opener = _device_opener()
     try:

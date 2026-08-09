@@ -46,22 +46,28 @@ Reconcile then classifies each student as:
    ```
    Unset = the sync endpoint returns 503 (fail-safe).
 
-2. **On-site machine** (the institute PC on the same LAN as the terminal) — run
+2. **On the integration machine** (same LAN as the terminal) — run
    `infra/aidata-proxy/device_user_sync.py` with Python 3.9+ (stdlib only, no
-   pip installs):
+   pip installs). **It auto-discovers the terminal** on the local /24 (probes
+   port 80, confirms the lighttpd Digest fingerprint), so you don't hardcode an
+   IP — the terminal's DHCP address changes between networks:
    ```
-   set DEVICE_HOST=192.168.1.8            # the terminal's LAN IP
    set BIOMAX_SYNC_TOKEN=<same secret as the server>
+   set DRY_RUN=1                          & REM read + print counts, no write
    python device_user_sync.py
    ```
-   Add `set DRY_RUN=1` first to read the device and print counts without touching
-   the portal.
+   Set `DEVICE_HOST=<ip>` only to skip discovery (faster) when you know the IP.
 
 3. **Schedule it** so nobody runs it by hand (daily is plenty — it's not in the
-   punch path):
+   punch path). Keep the token in a small wrapper `.bat` OUTSIDE the repo and
+   point a task at it:
+   ```bat
+   REM C:\biomax-sync\run_sync.bat
+   set BIOMAX_SYNC_TOKEN=<secret>
+   "<repo>\backend\.venv\Scripts\python.exe" "<repo>\infra\aidata-proxy\device_user_sync.py" >> "%~dp0sync.log" 2>&1
    ```
-   schtasks /Create /SC DAILY /TN BioMaxUserSync ^
-     /TR "python C:/path/device_user_sync.py" /ST 21:00
+   ```
+   schtasks /Create /SC DAILY /TN BioMaxUserSync /TR "C:\biomax-sync\run_sync.bat" /ST 21:00 /F
    ```
 
 ## Notes / limits
