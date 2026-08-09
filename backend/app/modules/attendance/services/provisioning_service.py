@@ -401,16 +401,16 @@ async def apply_user_info_page(
     return n
 
 
-def _user_info_idempotency_key(dev_id: str, page_id: int, user_ids: list[str]) -> str:
-    joined = "_".join(user_ids)
-    return f"{dev_id}:{CMD_GET_USER_INFO}:{page_id}:{joined}"[:200]
-
-
 def build_user_info_command_row(
     branch_id: uuid.UUID, dev_id: str, user_ids: list[str], page_id: int = 0
 ) -> dict:
     """One GET_USER_INFO command row — asks the device for these users' info at the
-    given page. ``vendor_user_id`` is null (batch command)."""
+    given page. ``vendor_user_id`` is null (batch command). The idempotency key
+    carries a fresh nonce: a refresh is meant to re-run, and cross-run dedup would
+    collide with a same-batch command still in-flight (``sent``) — which is exactly
+    what happens when the device is draining fast — so each command gets a unique
+    key. Stale PENDING from a prior run is cleared by ``enqueue_user_info_refresh``."""
+    nonce = uuid.uuid4().hex[:12]
     return {
         "branch_id": branch_id,
         "dev_id": dev_id,
@@ -418,7 +418,7 @@ def build_user_info_command_row(
         "vendor_user_id": None,
         "payload": {"packageId": page_id, "usersId": list(user_ids)},
         "command_status": STATUS_PENDING,
-        "idempotency_key": _user_info_idempotency_key(dev_id, page_id, user_ids),
+        "idempotency_key": f"{dev_id}:{CMD_GET_USER_INFO}:{page_id}:{nonce}",
     }
 
 
