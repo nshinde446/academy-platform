@@ -72,6 +72,7 @@ from app.modules.attendance.integrations.biomax.iclock import (
 )
 from app.modules.attendance.integrations.biomax.schemas import PunchEvent
 from app.modules.attendance.integrations.biomax.service import ingest_punches
+from app.modules.attendance.integrations.biomax import biometrics
 from app.modules.attendance.models.provisioning_models import CMD_GET_USER_INFO
 from app.modules.attendance.repositories import device_command_repo
 from app.modules.attendance.services import daily_service, provisioning_service
@@ -418,6 +419,24 @@ async def aidata_push(
                     "AIData enroll mirror failed for %s — acking anyway",
                     payload.get("userId"),
                 )
+            # Real-time biometric backup (encrypted) — a distinct, key-gated step.
+            # In a SAVEPOINT so a backup hiccup rolls back ONLY itself, never the
+            # identity mirror above or the ack. Templates are never logged.
+            if biometrics.biometric_backup_enabled():
+                try:
+                    async with session.begin_nested():
+                        stored = await provisioning_service.capture_biometrics(
+                            session, branch_id, dev_id, payload
+                        )
+                    if stored:
+                        logger.info(
+                            "AIData biometric backup stored for %s", payload.get("userId")
+                        )
+                except Exception:
+                    logger.exception(
+                        "AIData biometric backup failed for %s — acking anyway",
+                        payload.get("userId"),
+                    )
         return _ack()
 
     try:

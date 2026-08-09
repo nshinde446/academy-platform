@@ -369,6 +369,65 @@ async def test_enroll_push_ack_and_drops_when_disabled(monkeypatch, db_session, 
     assert users == []  # flag off -> byte-identical ack-and-drop, nothing mirrored
 
 
+# ── real-time biometric backup (encrypted) from realtime_enroll_data ─────────
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_enroll_push_backs_up_biometrics_when_key_set(monkeypatch, db_session, seed_data):
+    """With a key set, an enrolment push stores the templates ENCRYPTED (decryptable
+    back to the exact device strings), maps to the student, and the identity mirror
+    still updates. Templates are never stored in cleartext."""
+    from cryptography.fernet import Fernet
+    import app.modules.attendance.integrations.biomax.biometrics as bio
+    from app.modules.attendance.models.provisioning_models import DeviceUserBiometric
+
+    key = Fernet.generate_key().decode()
+    monkeypatch.setattr(bio, "get_settings", lambda: type("S", (), {"BIOMAX_BIOMETRIC_KEY": key})())
+
+    branch_id = seed_data["branch_a"].id
+    await _student(db_session, seed_data, "3050")  # so student_id resolves
+
+    resp = await _invoke_aidata_push(
+        monkeypatch, db_session, branch_id, enabled=True,
+        body={"userId": "3050", "name": "RAM SIR", "face": "RkFDRV9URU1QTEFURQ==", "photo": "UEhPVE8="},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["response_code"] == "OK"
+
+    row = (await db_session.execute(
+        select(DeviceUserBiometric).where(DeviceUserBiometric.vendor_user_id == "3050")
+    )).scalar_one()
+    assert row.face_enc is not None and row.photo_enc is not None
+    assert row.student_id is not None
+    # encrypted at rest — cleartext template is NOT the stored bytes
+    assert b"RkFDRV9URU1QTEFURQ==" not in bytes(row.face_enc)
+    # ...but decrypts back to the exact device string (round-trip fidelity)
+    assert bio.decrypt_template(row.face_enc) == "RkFDRV9URU1QTEFURQ=="
+    assert bio.decrypt_template(row.photo_enc) == "UEhPVE8="
+
+    users = await device_command_repo.list_device_users(db_session, branch_id, DEV)
+    assert any(u.vendor_user_id == "3050" for u in users)  # mirror still updated
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_enroll_push_no_biometric_backup_without_key(monkeypatch, db_session, seed_data):
+    """No key => blobs are dropped exactly as before; only the identity mirror is kept."""
+    import app.modules.attendance.integrations.biomax.biometrics as bio
+    from app.modules.attendance.models.provisioning_models import DeviceUserBiometric
+
+    monkeypatch.setattr(bio, "get_settings", lambda: type("S", (), {"BIOMAX_BIOMETRIC_KEY": ""})())
+    branch_id = seed_data["branch_a"].id
+
+    await _invoke_aidata_push(
+        monkeypatch, db_session, branch_id, enabled=True,
+        body={"userId": "3051", "name": "X", "face": "RkFDRQ=="},
+    )
+    rows = (await db_session.execute(select(DeviceUserBiometric))).scalars().all()
+    assert rows == []
+    users = await device_command_repo.list_device_users(db_session, branch_id, DEV)
+    assert any(u.vendor_user_id == "3051" for u in users)  # mirror still updated
+
+
 # ── cloud-async GET_USER_INFO result folds into the mirror ───────────────────
 
 

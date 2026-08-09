@@ -124,6 +124,14 @@ class Settings(BaseSettings):
     # relying on catching the device's one-time enrollment pushes. Empty = agent
     # sync disabled (fail-safe: reject rather than accept a spoofed snapshot).
     BIOMAX_SYNC_TOKEN: str = ""
+    # Fernet key (urlsafe-base64 32 bytes) that encrypts the biometric backup —
+    # face/photo/fingerprint templates the device pushes on each enrolment, kept
+    # so a lost/reset terminal can be restored WITHOUT re-enrolling every student.
+    # Empty = biometric backup OFF (blobs are dropped as before; the identity
+    # mirror still works). This is sensitive PII: the key lives ONLY in the env,
+    # never in the repo, so a DB dump alone can't reveal templates. Generate with
+    # `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+    BIOMAX_BIOMETRIC_KEY: str = ""
 
     # SmartOffice (SmartOfficePayroll) cloud middleware — the ZKTeco devices
     # push to SmartOffice's server and we PULL the aggregated logs from its REST

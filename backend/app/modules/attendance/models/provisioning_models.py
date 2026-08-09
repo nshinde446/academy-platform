@@ -31,6 +31,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -169,4 +170,44 @@ class DeviceUser(BaseModel):
     has_face: Mapped[bool] = mapped_column(default=False, nullable=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+
+class DeviceUserBiometric(BaseModel):
+    """Encrypted backup of a user's biometric templates, captured in real time from
+    the device's ``realtime_enroll_data`` push (one per enrolment). Unlike
+    ``device_users`` (identity mirror, blob-free), THIS deliberately holds the
+    templates — face / photo / fingerprint — so a lost or reset terminal can be
+    restored WITHOUT re-enrolling every student.
+
+    Each blob is a Fernet token (see ``integrations/biomax/biometrics.py``);
+    the key lives only in the environment, so this table in a DB dump reveals no
+    template. Branch-isolated. Written only when ``BIOMAX_BIOMETRIC_KEY`` is set.
+    """
+
+    __tablename__ = "device_user_biometrics"
+    __table_args__ = (
+        UniqueConstraint(
+            "dev_id", "vendor_user_id", name="uq_device_biometrics_dev_user"
+        ),
+    )
+
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
+    )
+    dev_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    # == Student.rfid_number (device userId).
+    vendor_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Resolved to the platform student when the userId matches an rfid_number.
+    student_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("students.id"), nullable=True
+    )
+    name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Fernet-encrypted templates (the device's base64 strings, encrypted). NULL
+    # when that modality wasn't enrolled.
+    face_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    photo_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    fps_enc: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
     )
