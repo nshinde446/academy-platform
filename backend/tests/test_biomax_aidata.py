@@ -369,6 +369,71 @@ async def test_enroll_push_ack_and_drops_when_disabled(monkeypatch, db_session, 
     assert users == []  # flag off -> byte-identical ack-and-drop, nothing mirrored
 
 
+# ── cloud-async GET_USER_INFO result folds into the mirror ───────────────────
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_send_cmd_result_get_user_info_updates_mirror(monkeypatch, db_session, seed_data):
+    """A GET_USER_INFO result (device's user table page) is folded into the mirror
+    — identity + has_face only; the face/photo blobs in the body are dropped."""
+    from app.modules.attendance.services import provisioning_service
+
+    branch_id = seed_data["branch_a"].id
+    row = provisioning_service.build_user_info_command_row(branch_id, DEV, ["6400"])
+    (cmd,) = await device_command_repo.enqueue(db_session, [row])
+    await device_command_repo.mark_sent(db_session, cmd, "555")
+    await db_session.commit()
+
+    resp = await _invoke_aidata_push(
+        monkeypatch, db_session, branch_id, enabled=True,
+        request_code=aidata.SEND_CMD_RESULT_REQUEST_CODE,
+        body={
+            "trans_id": "555", "cmd_return_code": "OK", "packageId": 0, "usersCount": 1,
+            "users": [{
+                "userId": "6400", "name": "Aarav", "privilege": 0,
+                "face": "BIG_FACE_BLOB", "photo": "BIG_PHOTO_BLOB",
+                "vaildStart": "20200101", "vaildEnd": "20401231",
+            }],
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["response_code"] == "OK"
+
+    users = await device_command_repo.list_device_users(db_session, branch_id, DEV)
+    mirror = next(u for u in users if u.vendor_user_id == "6400")
+    assert mirror.has_face is True
+    assert mirror.name == "Aarav"
+    # No blob field exists on the mirror — the model can't hold the template — but
+    # assert the values never leaked in as the name/etc. either.
+    assert "BLOB" not in (mirror.name or "")
+
+    confirmed = await device_command_repo.get_command(db_session, cmd.id, branch_id)
+    assert confirmed.command_status == "confirmed"
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_send_cmd_result_get_user_info_no_face_flag_false(monkeypatch, db_session, seed_data):
+    """A user the device holds WITHOUT a template → mirror has_face False (still
+    'awaiting face' in reconcile)."""
+    from app.modules.attendance.services import provisioning_service
+
+    branch_id = seed_data["branch_a"].id
+    row = provisioning_service.build_user_info_command_row(branch_id, DEV, ["6401"])
+    (cmd,) = await device_command_repo.enqueue(db_session, [row])
+    await device_command_repo.mark_sent(db_session, cmd, "556")
+    await db_session.commit()
+
+    await _invoke_aidata_push(
+        monkeypatch, db_session, branch_id, enabled=True,
+        request_code=aidata.SEND_CMD_RESULT_REQUEST_CODE,
+        body={"trans_id": "556", "cmd_return_code": "OK", "packageId": 0, "usersCount": 1,
+              "users": [{"userId": "6401", "name": "Isha", "privilege": 0}]},
+    )
+    users = await device_command_repo.list_device_users(db_session, branch_id, DEV)
+    mirror = next(u for u in users if u.vendor_user_id == "6401")
+    assert mirror.has_face is False
+
+
 # ── end-to-end ingest ───────────────────────────────────────────────────────
 
 

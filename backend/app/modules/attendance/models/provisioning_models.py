@@ -43,10 +43,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database.base import BaseModel
 
 # ── Command vocabulary (captured from SmartOffice's DeviceCommands queue) ──────
-# Only SET_USER_INFO is ever emitted by this feature. The others are documented
-# for completeness / future use; a delete command has NOT been captured yet and
-# must be (§0.6) before any delete path is built.
+# SET_USER_INFO pushes an identity to the device; GET_USER_INFO reads the device's
+# user table back (used by the cloud-async mirror refresh — the device returns its
+# users, incl. whether each has a face, in the send_cmd_result body). A delete
+# command has NOT been captured yet and must be (§0.6) before any delete path.
 CMD_SET_USER_INFO = "SET_USER_INFO"
+CMD_GET_USER_INFO = "GET_USER_INFO"
 
 # ── Command queue statuses ────────────────────────────────────────────────────
 # Plain strings (matching day_status / attendance_status elsewhere), NOT a PG

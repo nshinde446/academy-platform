@@ -72,8 +72,9 @@ from app.modules.attendance.integrations.biomax.iclock import (
 )
 from app.modules.attendance.integrations.biomax.schemas import PunchEvent
 from app.modules.attendance.integrations.biomax.service import ingest_punches
+from app.modules.attendance.models.provisioning_models import CMD_GET_USER_INFO
 from app.modules.attendance.repositories import device_command_repo
-from app.modules.attendance.services import daily_service
+from app.modules.attendance.services import daily_service, provisioning_service
 from app.modules.attendance.time_utils import get_tz
 
 # Use the app's configured "academy" logger (JSON handler, INFO). A bare
@@ -312,19 +313,34 @@ async def _handle_cmd_result(
     if command is None:
         logger.warning("AIData send_cmd_result %s: unknown trans_id=%r", dev_id, trans_id)
         return
-    # This R6 acknowledges a SUCCESSFUL command with an EMPTY result — it echoes
-    # the trans_id but sends no return code. Confirmed live: users registered on
-    # the device while send_cmd_result carried ret=''. So treat the absence of an
-    # explicit failure as success; only a non-empty code that isn't "Success"/"0"
-    # is a real device-side failure. (Ground truth remains reconcile vs the
-    # device's user table — see the mirror/reconcile path.)
-    failed = ret != "" and ret.lower() != RESULT_SUCCESS.lower() and ret != "0"
+    # This R6 acknowledges a SUCCESSFUL command with an EMPTY result (SET_USER_INFO)
+    # or an explicit "OK" (GET_USER_INFO). Treat empty / Success / OK / 0 as
+    # success; only a different non-empty code is a real device-side failure.
+    ret_l = ret.lower()
+    failed = ret != "" and ret_l not in (RESULT_SUCCESS.lower(), "ok", "0")
     if failed:
         await device_command_repo.mark_failed(session, command, ret)
         logger.info("AIData cmd FAILED %s trans_id=%s ret=%r", command.command, trans_id, ret)
-    else:
-        await device_command_repo.mark_confirmed(session, command)
-        logger.info("AIData cmd CONFIRMED %s trans_id=%s (ret=%r)", command.command, trans_id, ret)
+        return
+
+    # GET_USER_INFO: the result body carries the device's users (with a face flag).
+    # Fold them into the mirror — identity + has_face only, blobs dropped.
+    if command.command == CMD_GET_USER_INFO:
+        users = body.get("users") if isinstance(body, dict) else None
+        n = await provisioning_service.apply_user_info_page(
+            session, command.branch_id, dev_id, users or []
+        )
+        # Keep batches small enough to fit one page; if the device still paged,
+        # warn (the unfetched users refresh on the next scheduled pull).
+        if isinstance(body, dict) and (body.get("packageId") or 0):
+            logger.warning(
+                "AIData GET_USER_INFO trans_id=%s paged (packageId=%s) — lower the batch size",
+                trans_id, body.get("packageId"),
+            )
+        logger.info("AIData GET_USER_INFO result trans_id=%s -> mirror upserted=%d", trans_id, n)
+
+    await device_command_repo.mark_confirmed(session, command)
+    logger.info("AIData cmd CONFIRMED %s trans_id=%s (ret=%r)", command.command, trans_id, ret)
 
 
 @router.post("/AIData.aspx")

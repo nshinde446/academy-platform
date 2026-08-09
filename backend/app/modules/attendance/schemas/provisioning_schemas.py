@@ -112,6 +112,17 @@ class DeviceUserSnapshotResponse(BaseModel):
     total: int
 
 
+class RefreshUserInfoResponse(BaseModel):
+    """Result of queueing a cloud-async user-info refresh: how many device userIds
+    were targeted and how many GET_USER_INFO commands were enqueued for the device
+    to drain on its normal poll."""
+
+    dev_id: str
+    scope: str
+    targeted_users: int
+    commands_enqueued: int
+
+
 class ReconcileRow(BaseModel):
     vendor_user_id: str
     name: str | None = None
