@@ -78,6 +78,39 @@ Reconcile then classifies each student as:
 - Env vars: `DEVICE_HOST/PORT/USER/PASS`, `DEV_ID`, `PORTAL_BASE_URL`,
   `BIOMAX_SYNC_TOKEN`, `BATCH_SIZE`, `DRY_RUN`. Defaults match the current prod
   device (`AMDB26013800122`).
-- A later, fully-cloud variant can pull the same table over the `receive_cmd`
-  channel (no on-site machine), once its `GET_USER_INFO` response format is
-  captured on-device. This local-API agent is the reliable path today.
+## Cloud-async refresh (no on-site machine)
+
+The same mirror can be rebuilt with **no on-site PC** by pulling the device's user
+table over the `receive_cmd` channel the terminal already polls on the VPS.
+
+Trigger it (admin):
+```
+POST /api/v1/attendance/provisioning/refresh-user-info?dev_id=<serial>&scope=awaiting
+```
+- `scope=awaiting` (default) re-checks only students still "awaiting face" — small
+  and cheap; `scope=all` refreshes every platform userId.
+- It queues `GET_USER_INFO` commands (batched small — each returned user carries
+  face/photo blobs and the device's response buffer is ~400 KB). The device drains
+  them on its normal ~20 s poll and returns each user's info in `send_cmd_result`;
+  the aidata receiver folds identity + `has_face` into the mirror, **dropping the
+  biometric blobs**.
+- Automate daily with a VPS cron hitting the endpoint (admin-authed), e.g. off
+  hours. No laptop, no LAN, no Wi-Fi-isolation problem.
+
+Captured protocol (all on `POST /AIData.aspx`):
+- `receive_cmd` (device→server, ~20 s): body is a status block
+  (`userCount/faceCount/fpCount/...`).
+- server reply headers `cmd_code: GET_USER_INFO` + `trans_id`, body
+  `{"packageId":0,"usersId":[…]}`.
+- `send_cmd_result` (device→server): `cmd_return_code: OK`, body
+  `{"packageId":N,"usersCount":N,"users":[{userId,name,face,fps,photo,vaildStart,
+  vaildEnd,timeGroups}]}` — `face`/`fps` present ⇒ `has_face`.
+
+## Which to use
+
+- **On-site agent + scheduled task** — reliable when the integration PC is on the
+  device's LAN (no Wi-Fi client isolation). Full-replace (also drops removed
+  users).
+- **Cloud-async refresh** — no on-site machine; works wherever the device reaches
+  the VPS. Upsert-only (doesn't remove); heavier per-user (blob transfer), so
+  prefer `scope=awaiting` for the daily run and `scope=all` occasionally.

@@ -406,6 +406,65 @@ async def test_sync_snapshot_full_replace_removes_absent(db_session, seed_data):
     assert {u.vendor_user_id for u in mirror} == {"8001"}
 
 
+@pytest.mark.usefixtures("seed_data")
+async def test_enqueue_user_info_refresh_batches_and_reruns(db_session, seed_data):
+    """Refresh queues batched GET_USER_INFO commands; a re-run clears the prior
+    pending ones first so they don't pile up."""
+    ids = [str(6500 + i) for i in range(12)]  # 12 ids, batch 5 -> 3 commands
+    n = await provisioning_service.enqueue_user_info_refresh(
+        db_session, seed_data["branch_a"].id, DEV, ids
+    )
+    await db_session.commit()
+    assert n == 3
+    pending = await device_command_repo.list_commands(
+        db_session, seed_data["branch_a"].id, DEV, STATUS_PENDING
+    )
+    gui = [c for c in pending if c.command == "GET_USER_INFO"]
+    assert len(gui) == 3
+    assert gui[0].payload["usersId"] == ids[:5]
+
+    # Re-run: prior pending cancelled, fresh set enqueued (still 3, not 6).
+    n2 = await provisioning_service.enqueue_user_info_refresh(
+        db_session, seed_data["branch_a"].id, DEV, ids
+    )
+    await db_session.commit()
+    assert n2 == 3
+    pending2 = await device_command_repo.list_commands(
+        db_session, seed_data["branch_a"].id, DEV, STATUS_PENDING
+    )
+    assert len([c for c in pending2 if c.command == "GET_USER_INFO"]) == 3
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_apply_user_info_page_sets_has_face_drops_blob(db_session, seed_data):
+    n = await provisioning_service.apply_user_info_page(
+        db_session, seed_data["branch_a"].id, DEV,
+        [
+            {"userId": "6600", "name": "Face User", "face": "BLOB", "vaildEnd": "20401231"},
+            {"userId": "6601", "name": "No Face"},
+            {"name": "junk-no-id"},  # skipped
+        ],
+    )
+    await db_session.commit()
+    assert n == 2
+    users = {u.vendor_user_id: u for u in await device_command_repo.list_device_users(
+        db_session, seed_data["branch_a"].id, DEV)}
+    assert users["6600"].has_face is True
+    assert users["6600"].valid_end == "20401231"
+    assert users["6601"].has_face is False
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_user_ids_for_refresh_all_scope(db_session, seed_data):
+    await _student(db_session, seed_data, rfid="7100")
+    await _student(db_session, seed_data, rfid="ABC")  # non-numeric -> excluded
+    ids = await provisioning_service.user_ids_for_refresh(
+        db_session, seed_data["branch_a"].id, DEV, "all"
+    )
+    assert "7100" in ids
+    assert "ABC" not in ids
+
+
 def test_verify_sync_token_gate(monkeypatch):
     # Unset token -> feature disabled (503); wrong token -> 401; correct -> passes.
     monkeypatch.setattr(

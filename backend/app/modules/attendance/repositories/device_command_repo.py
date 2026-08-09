@@ -195,6 +195,27 @@ async def cancel_pending(
     return command
 
 
+async def cancel_pending_by_command(
+    session: AsyncSession, dev_id: str, command: str
+) -> int:
+    """Cancel all still-PENDING commands of a given kind for a device (e.g. clear
+    stale GET_USER_INFO before a fresh refresh so they don't pile up). Sent ones
+    are left alone — the device already has them. Returns how many were cancelled."""
+    result = await session.execute(
+        select(DeviceCommand).where(
+            DeviceCommand.dev_id == dev_id,
+            DeviceCommand.command == command,
+            DeviceCommand.command_status == STATUS_PENDING,
+            DeviceCommand.is_deleted == False,
+        )
+    )
+    rows = list(result.scalars().all())
+    for cmd in rows:
+        cmd.command_status = STATUS_CANCELLED
+    await session.flush()
+    return len(rows)
+
+
 # ── device_users (mirror) ─────────────────────────────────────────────────────
 
 

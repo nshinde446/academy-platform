@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.attendance.models.provisioning_models import (
+    CMD_GET_USER_INFO,
     CMD_SET_USER_INFO,
     DEFAULT_VALID_END,
     DEFAULT_VALID_START,
@@ -335,3 +336,135 @@ async def sync_device_users(
     return await device_command_repo.replace_device_users(
         session, branch_id=branch_id, dev_id=dev_id, rows=rows
     )
+
+
+# ── cloud-async user-info refresh (GET_USER_INFO over the receive_cmd channel) ──
+# Instead of an on-site agent reading the terminal's local API, the portal queues
+# GET_USER_INFO commands the device fetches on its normal VPS poll, and the device
+# returns its users (incl. whether each has a face) in the send_cmd_result body.
+# No on-site PC / LAN dependency. The device includes biometric blobs in that
+# body; we read ONLY the has-a-template boolean and identity — never the blob.
+
+# Batch small: each returned user carries face+photo blobs (~50 KB), and the
+# device's response buffer is ~400 KB, so keep a page comfortably under it (the
+# device pages via packageId as a backstop, which we follow).
+USER_INFO_BATCH_SIZE = 5
+# A GET_USER_INFO record counts as "has a face/biometric" if any template field is
+# present — matches the on-site agent + the enrollment-mirror rule.
+_FACE_FIELDS = ("face", "fps", "palm")
+
+
+def _user_info_to_mirror(u: dict) -> dict | None:
+    """Map one device user record (from a GET_USER_INFO result) to mirror fields —
+    identity + ``has_face`` ONLY. Biometric blobs (``face``/``photo``/``fps``…) are
+    never read out here, so they can't be persisted downstream."""
+    uid = str(u.get("userId") or "").strip()
+    if not uid:
+        return None
+    name = (str(u.get("name") or "").strip() or None)
+    if name:
+        name = name[:DEVICE_NAME_MAX]
+    try:
+        privilege = int(u.get("privilege") or 0)
+    except (TypeError, ValueError):
+        privilege = 0
+    has_face = any(bool(u.get(k)) for k in _FACE_FIELDS)
+    vs = str(u.get("vaildStart") or u.get("validStart") or "").strip()
+    ve = str(u.get("vaildEnd") or u.get("validEnd") or "").strip()
+    return {
+        "vendor_user_id": uid,
+        "name": name,
+        "privilege": privilege,
+        "has_face": has_face,
+        "valid_start": vs if vs.isdigit() else None,
+        "valid_end": ve if ve.isdigit() else None,
+    }
+
+
+async def apply_user_info_page(
+    session: AsyncSession, branch_id: uuid.UUID, dev_id: str, users: list
+) -> int:
+    """Upsert one page of GET_USER_INFO users into the mirror (identity + has_face,
+    blobs dropped). Upsert-only — a single page isn't authoritative over the whole
+    table, so it never removes rows. Returns how many rows were upserted."""
+    n = 0
+    for u in users or []:
+        if not isinstance(u, dict):
+            continue
+        fields = _user_info_to_mirror(u)
+        if fields is None:
+            continue
+        await device_command_repo.upsert_device_user(
+            session, branch_id=branch_id, dev_id=dev_id, **fields
+        )
+        n += 1
+    return n
+
+
+def _user_info_idempotency_key(dev_id: str, page_id: int, user_ids: list[str]) -> str:
+    joined = "_".join(user_ids)
+    return f"{dev_id}:{CMD_GET_USER_INFO}:{page_id}:{joined}"[:200]
+
+
+def build_user_info_command_row(
+    branch_id: uuid.UUID, dev_id: str, user_ids: list[str], page_id: int = 0
+) -> dict:
+    """One GET_USER_INFO command row — asks the device for these users' info at the
+    given page. ``vendor_user_id`` is null (batch command)."""
+    return {
+        "branch_id": branch_id,
+        "dev_id": dev_id,
+        "command": CMD_GET_USER_INFO,
+        "vendor_user_id": None,
+        "payload": {"packageId": page_id, "usersId": list(user_ids)},
+        "command_status": STATUS_PENDING,
+        "idempotency_key": _user_info_idempotency_key(dev_id, page_id, user_ids),
+    }
+
+
+async def enqueue_user_info_refresh(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    dev_id: str,
+    user_ids: list[str],
+    batch_size: int = USER_INFO_BATCH_SIZE,
+) -> int:
+    """Queue GET_USER_INFO commands (batched) for the given device userIds. Clears
+    any still-pending GET_USER_INFO for the device first so a re-trigger doesn't
+    pile up. The device drains them on its normal poll and returns each user's
+    has-face; the send_cmd_result handler folds the results into the mirror.
+    Returns the number of commands enqueued."""
+    await device_command_repo.cancel_pending_by_command(session, dev_id, CMD_GET_USER_INFO)
+    ids = [i for i in user_ids if i]
+    rows = [
+        build_user_info_command_row(branch_id, dev_id, ids[i : i + batch_size])
+        for i in range(0, len(ids), batch_size)
+    ]
+    if rows:
+        await device_command_repo.enqueue(session, rows)
+    return len(rows)
+
+
+async def user_ids_for_refresh(
+    session: AsyncSession, branch_id: uuid.UUID, dev_id: str, scope: str
+) -> list[str]:
+    """The device userIds to refresh. ``scope='awaiting'`` (default) targets only
+    students still 'awaiting face' — the ones whose enrolment status might have
+    changed — which keeps the pull small; ``scope='all'`` refreshes every
+    platform userId."""
+    if scope == "awaiting":
+        rec = await reconcile(session, branch_id, dev_id)
+        return [r.vendor_user_id for r in rec.awaiting_face_enrollment]
+    result = await session.execute(
+        select(Student).where(
+            Student.branch_id == branch_id,
+            Student.is_deleted == False,
+            Student.rfid_number.isnot(None),
+        )
+    )
+    ids = []
+    for s in result.scalars().all():
+        rfid = (s.rfid_number or "").strip()
+        if rfid.isdigit():
+            ids.append(rfid)
+    return ids

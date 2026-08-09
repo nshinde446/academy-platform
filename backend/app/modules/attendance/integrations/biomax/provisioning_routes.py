@@ -28,6 +28,7 @@ from app.modules.attendance.schemas.provisioning_schemas import (
     DeviceUserSnapshotRequest,
     DeviceUserSnapshotResponse,
     ProvisionDevice,
+    RefreshUserInfoResponse,
     ProvisionDevicesResponse,
     ProvisionDryRunRequest,
     ProvisionPlanResponse,
@@ -152,6 +153,35 @@ async def sync_device_users(
     await session.commit()
     return DeviceUserSnapshotResponse(
         dev_id=body.dev_id, upserted=upserted, removed=removed, total=len(body.users)
+    )
+
+
+@router.post("/refresh-user-info", response_model=RefreshUserInfoResponse)
+async def refresh_user_info(
+    dev_id: str = Query(...),
+    scope: str = Query("awaiting", pattern="^(awaiting|all)$"),
+    _enabled: None = Depends(_require_enabled),
+    _user: dict = Depends(_ADMIN),
+    session: AsyncSession = Depends(get_db),
+):
+    """Cloud-async mirror refresh: queue GET_USER_INFO commands the device drains
+    on its normal VPS poll, then returns each user's has-face in the result body
+    (folded into the mirror by the aidata receiver). No on-site PC needed.
+
+    ``scope=awaiting`` (default) only re-checks students still 'awaiting face' —
+    small and cheap; ``scope=all`` refreshes every platform userId."""
+    _require_known_device(dev_id)
+    branch_id = _resolve_branch()
+    user_ids = await provisioning_service.user_ids_for_refresh(
+        session, branch_id, dev_id, scope
+    )
+    enqueued = await provisioning_service.enqueue_user_info_refresh(
+        session, branch_id, dev_id, user_ids
+    )
+    await session.commit()
+    return RefreshUserInfoResponse(
+        dev_id=dev_id, scope=scope,
+        targeted_users=len(user_ids), commands_enqueued=enqueued,
     )
 
 
