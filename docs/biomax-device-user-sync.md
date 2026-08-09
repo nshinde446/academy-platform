@@ -107,6 +107,27 @@ Captured protocol (all on `POST /AIData.aspx`):
   `{"packageId":N,"usersCount":N,"users":[{userId,name,face,fps,photo,vaildStart,
   vaildEnd,timeGroups}]}` — `face`/`fps` present ⇒ `has_face`.
 
+## Biometric backup (encrypted, real-time)
+
+So a lost/reset terminal can be restored **without re-enrolling every student**,
+the platform backs up each enrolment's templates as they happen:
+
+- The device pushes `realtime_enroll_data` (face/photo/fingerprint blobs) on every
+  enrolment. When `BIOMAX_BIOMETRIC_KEY` is set, the receiver stores those blobs
+  **Fernet-encrypted** in `device_user_biometrics` (identity mirror stays blob-free).
+  No key ⇒ blobs are dropped exactly as before.
+- **This is sensitive PII.** The encryption key lives ONLY in the env
+  (`BIOMAX_BIOMETRIC_KEY`), so a DB dump alone can never reveal a template. Ensure
+  you have consent/authority to retain it. Generate the key with:
+  ```
+  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+  ```
+- **Real-time** covers future enrolments automatically. For students already
+  enrolled before this shipped, a one-time backfill (on-site agent reading the
+  templates) can seed the table — that path, plus **restore** (push templates back
+  via `SET_USER_INFO`), is the next increment; verify a one-user restore round-trip
+  before trusting the backup for DR.
+
 ## Which to use
 
 - **On-site agent + scheduled task** — reliable when the integration PC is on the

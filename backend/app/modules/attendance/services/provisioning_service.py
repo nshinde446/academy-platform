@@ -10,10 +10,13 @@ Payload + identity contract: docs/biomax-provisioning-implementation.md §0.6.
 
 from __future__ import annotations
 
+import json
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.modules.attendance.integrations.biomax import biometrics
 
 from app.modules.attendance.models.provisioning_models import (
     CMD_GET_USER_INFO,
@@ -443,6 +446,65 @@ async def enqueue_user_info_refresh(
     if rows:
         await device_command_repo.enqueue(session, rows)
     return len(rows)
+
+
+# ── real-time biometric backup (from realtime_enroll_data) ────────────────────
+# The device pushes the full templates (face/photo/fps) on each enrolment. When a
+# key is configured we store them ENCRYPTED so a lost/reset terminal can be
+# restored without re-enrolling. Off (no key) => blobs are simply never read here.
+
+
+def _template_str(value: object) -> str | None:
+    """The device's template values are base64 strings (face/photo); fingerprints
+    can be a list. Normalise to a string we can encrypt and later re-push verbatim."""
+    if value in (None, "", [], {}):
+        return None
+    return value if isinstance(value, str) else json.dumps(value)
+
+
+async def _student_id_for_rfid(
+    session: AsyncSession, branch_id: uuid.UUID, rfid: str
+) -> uuid.UUID | None:
+    result = await session.execute(
+        select(Student.id).where(
+            Student.branch_id == branch_id,
+            Student.rfid_number == rfid,
+            Student.is_deleted == False,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def capture_biometrics(
+    session: AsyncSession, branch_id: uuid.UUID, dev_id: str, body: dict
+) -> bool:
+    """Back up one enrolment's biometric templates (encrypted). No-op returning
+    False when backup is disabled, the record has no userId, or it carries no
+    template. NEVER logs or returns the blob."""
+    if not biometrics.biometric_backup_enabled():
+        return False
+    uid = str(body.get("userId") or "").strip()
+    if not uid:
+        return False
+    face = _template_str(body.get("face"))
+    photo = _template_str(body.get("photo") or body.get("logPhoto"))
+    fps = _template_str(body.get("fps"))
+    if not any((face, photo, fps)):
+        return False
+    name = (str(body.get("name") or "").strip()[:DEVICE_NAME_MAX] or None)
+    student_id = await _student_id_for_rfid(session, branch_id, uid)
+    await device_command_repo.upsert_biometric(
+        session,
+        branch_id=branch_id,
+        dev_id=dev_id,
+        vendor_user_id=uid,
+        student_id=student_id,
+        name=name,
+        face_enc=biometrics.encrypt_template(face),
+        photo_enc=biometrics.encrypt_template(photo),
+        fps_enc=biometrics.encrypt_template(fps),
+    )
+    return True
 
 
 async def user_ids_for_refresh(

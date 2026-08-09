@@ -21,6 +21,7 @@ from app.modules.attendance.models.provisioning_models import (
     STATUS_SENT,
     DeviceCommand,
     DeviceUser,
+    DeviceUserBiometric,
 )
 
 
@@ -313,5 +314,59 @@ async def upsert_device_user(
         row.valid_end = valid_end
         row.has_face = has_face
         row.last_seen_at = now
+    await session.flush()
+    return row
+
+
+async def upsert_biometric(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    dev_id: str,
+    vendor_user_id: str,
+    student_id: uuid.UUID | None,
+    name: str | None,
+    face_enc: bytes | None,
+    photo_enc: bytes | None,
+    fps_enc: bytes | None,
+) -> DeviceUserBiometric:
+    """Insert/update the encrypted biometric backup for one user. A given
+    ``realtime_enroll_data`` push may carry only some modalities, so a blob is
+    overwritten ONLY when the new value is present — never wiped to NULL by a
+    push that omitted it (so a prior photo survives a face-only re-enrol)."""
+    result = await session.execute(
+        select(DeviceUserBiometric).where(
+            DeviceUserBiometric.dev_id == dev_id,
+            DeviceUserBiometric.vendor_user_id == vendor_user_id,
+            DeviceUserBiometric.is_deleted == False,
+        )
+    )
+    row = result.scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    if row is None:
+        row = DeviceUserBiometric(
+            branch_id=branch_id,
+            dev_id=dev_id,
+            vendor_user_id=vendor_user_id,
+            student_id=student_id,
+            name=name,
+            face_enc=face_enc,
+            photo_enc=photo_enc,
+            fps_enc=fps_enc,
+            captured_at=now,
+        )
+        session.add(row)
+    else:
+        if student_id is not None:
+            row.student_id = student_id
+        if name is not None:
+            row.name = name
+        if face_enc is not None:
+            row.face_enc = face_enc
+        if photo_enc is not None:
+            row.photo_enc = photo_enc
+        if fps_enc is not None:
+            row.fps_enc = fps_enc
+        row.captured_at = now
     await session.flush()
     return row
