@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.attendance.models.provisioning_models import (
@@ -316,6 +316,38 @@ async def upsert_device_user(
         row.last_seen_at = now
     await session.flush()
     return row
+
+
+async def get_biometric(
+    session: AsyncSession, dev_id: str, vendor_user_id: str
+) -> DeviceUserBiometric | None:
+    result = await session.execute(
+        select(DeviceUserBiometric).where(
+            DeviceUserBiometric.dev_id == dev_id,
+            DeviceUserBiometric.vendor_user_id == vendor_user_id,
+            DeviceUserBiometric.is_deleted == False,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def list_backed_up_users(
+    session: AsyncSession, branch_id: uuid.UUID, dev_id: str
+) -> list[tuple[str, str | None]]:
+    """(vendor_user_id, name) for every user that has a matchable biometric
+    template backed up (face or fingerprint) — the set a restore re-pushes."""
+    result = await session.execute(
+        select(DeviceUserBiometric.vendor_user_id, DeviceUserBiometric.name).where(
+            DeviceUserBiometric.branch_id == branch_id,
+            DeviceUserBiometric.dev_id == dev_id,
+            DeviceUserBiometric.is_deleted == False,
+            or_(
+                DeviceUserBiometric.face_enc.isnot(None),
+                DeviceUserBiometric.fps_enc.isnot(None),
+            ),
+        )
+    )
+    return [(r[0], r[1]) for r in result.all()]
 
 
 async def upsert_biometric(

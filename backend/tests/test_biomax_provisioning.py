@@ -465,6 +465,79 @@ async def test_user_ids_for_refresh_all_scope(db_session, seed_data):
     assert "ABC" not in ids
 
 
+@pytest.mark.usefixtures("seed_data")
+async def test_apply_user_info_page_backfills_biometrics(monkeypatch, db_session, seed_data):
+    """A GET_USER_INFO page also backs up templates (encrypted) when a key is set —
+    that's the one-time backfill for already-enrolled students via scope=all."""
+    import app.modules.attendance.integrations.biomax.biometrics as bio
+    from cryptography.fernet import Fernet
+
+    key = Fernet.generate_key().decode()  # ONE key — a fresh one per call breaks decrypt
+    monkeypatch.setattr(bio, "get_settings", lambda: type("S", (), {"BIOMAX_BIOMETRIC_KEY": key})())
+    branch = seed_data["branch_a"].id
+    n = await provisioning_service.apply_user_info_page(
+        db_session, branch, DEV,
+        [{"userId": "7200", "name": "Face U", "face": "RkFDRQ==", "photo": "UEg="},
+         {"userId": "7201", "name": "No Face"}],
+    )
+    await db_session.commit()
+    assert n == 2  # both mirrored
+    row = await device_command_repo.get_biometric(db_session, DEV, "7200")
+    assert row is not None and row.face_enc is not None
+    assert bio.decrypt_template(row.face_enc) == "RkFDRQ=="
+    assert await device_command_repo.get_biometric(db_session, DEV, "7201") is None  # no template
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_restore_emit_injects_templates_without_storing_cleartext(monkeypatch, db_session, seed_data):
+    """Restore queues identity + a flag only (no plaintext at rest); the templates
+    are decrypted and injected at emit time, leaving the stored command untouched."""
+    import app.modules.attendance.integrations.biomax.biometrics as bio
+    from cryptography.fernet import Fernet
+
+    key = Fernet.generate_key().decode()  # ONE key — a fresh one per call breaks decrypt
+    monkeypatch.setattr(bio, "get_settings", lambda: type("S", (), {"BIOMAX_BIOMETRIC_KEY": key})())
+    branch = seed_data["branch_a"].id
+    await device_command_repo.upsert_biometric(
+        db_session, branch_id=branch, dev_id=DEV, vendor_user_id="7300",
+        student_id=None, name="R",
+        face_enc=bio.encrypt_template("RkFDRQ=="), photo_enc=None,
+        fps_enc=bio.encrypt_template('["FP1"]'),
+    )
+    await db_session.commit()
+
+    n = await provisioning_service.enqueue_restore(db_session, branch, DEV)
+    await db_session.commit()
+    assert n == 1
+    cmd = next(c for c in await device_command_repo.list_commands(
+        db_session, branch, DEV, STATUS_PENDING) if c.command == "SET_USER_INFO")
+
+    # stored payload: identity + flag, NO plaintext template
+    assert cmd.payload.get("restore_biometrics") is True
+    assert "face" not in cmd.payload["users"][0]
+
+    emit = await provisioning_service.build_restore_emit_payload(db_session, DEV, cmd)
+    assert "restore_biometrics" not in emit          # flag stripped for the wire
+    assert emit["users"][0]["face"] == "RkFDRQ=="    # template injected
+    assert emit["users"][0]["fps"] == ["FP1"]        # fps decoded back to a list
+    assert "face" not in cmd.payload["users"][0]     # stored command untouched
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_list_backed_up_users_needs_a_template(db_session, seed_data):
+    branch = seed_data["branch_a"].id
+    # face -> included; photo-only -> excluded
+    await device_command_repo.upsert_biometric(
+        db_session, branch_id=branch, dev_id=DEV, vendor_user_id="7400",
+        student_id=None, name="Has Face", face_enc=b"x", photo_enc=None, fps_enc=None)
+    await device_command_repo.upsert_biometric(
+        db_session, branch_id=branch, dev_id=DEV, vendor_user_id="7401",
+        student_id=None, name="Photo Only", face_enc=None, photo_enc=b"x", fps_enc=None)
+    await db_session.commit()
+    ids = {u for u, _ in await device_command_repo.list_backed_up_users(db_session, branch, DEV)}
+    assert ids == {"7400"}
+
+
 def test_verify_sync_token_gate(monkeypatch):
     # Unset token -> feature disabled (503); wrong token -> 401; correct -> passes.
     monkeypatch.setattr(

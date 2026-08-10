@@ -122,11 +122,37 @@ the platform backs up each enrolment's templates as they happen:
   ```
   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
   ```
-- **Real-time** covers future enrolments automatically. For students already
-  enrolled before this shipped, a one-time backfill (on-site agent reading the
-  templates) can seed the table — that path, plus **restore** (push templates back
-  via `SET_USER_INFO`), is the next increment; verify a one-user restore round-trip
-  before trusting the backup for DR.
+- **Real-time** covers future enrolments automatically.
+
+### Backfill (already-enrolled students)
+
+Students enrolled before this shipped have no `realtime_enroll_data` to catch, so
+back them up over the cloud-async channel — a `GET_USER_INFO` result carries the
+same face/photo/fps blobs, and (with a key set) `apply_user_info_page` stores them
+encrypted. Just run a full refresh:
+```
+POST /attendance/provisioning/refresh-user-info?dev_id=<serial>&scope=all
+    -H "X-BioMax-Sync-Token: <secret>"
+```
+The device drains the batches on its poll; check coverage with:
+```
+GET /attendance/provisioning/biometrics/status?dev_id=<serial>   (admin)
+```
+
+### Restore (replaced / reset device)
+
+```
+POST /attendance/provisioning/restore?dev_id=<serial>
+    -H "X-BioMax-Sync-Token: <secret>"
+```
+Queues a `SET_USER_INFO` **carrying the stored template** for every backed-up
+user; the device applies them on its poll, re-creating enrolled users with **no
+manual re-enrollment**. The queued command holds only identity + a flag — the
+template is **decrypted and injected into the wire body at emit time**, so
+cleartext biometrics never sit in the queue.
+
+> Before trusting this for DR, verify a **one-user round-trip**: back up a user,
+> delete them on the device, restore, and confirm the face matches again.
 
 ## Which to use
 

@@ -251,14 +251,16 @@ def _numeric_trans_id(command) -> str:
     return str(command.id.int & 0x7FFFFFFF)
 
 
-def _command_response(command) -> Response:
+def _command_response(command, payload: dict | None = None) -> Response:
     """Serve one queued command to the device on its ``receive_cmd`` fetch.
 
     Matches SmartOffice's exact wire shape: ``response_code: OK``, the command in
     ``cmd_code``, a numeric ``trans_id`` (echoed back in ``send_cmd_result``), and
     the JSON payload — ``build_user_payload``'s ``{"users":[…]}`` — in the body.
+    ``payload`` overrides ``command.payload`` for a restore, whose templates are
+    injected at emit time (never stored in cleartext).
     """
-    body = json.dumps(command.payload or {}).encode("utf-8")
+    body = json.dumps(command.payload if payload is None else payload).encode("utf-8")
     return Response(
         content=body,
         media_type="application/octet-stream",
@@ -293,7 +295,12 @@ async def _emit_next_command(session: AsyncSession, dev_id: str) -> Response:
         "AIData receive_cmd %s -> emit %s trans_id=%s user=%s",
         dev_id, command.command, trans_id, command.vendor_user_id,
     )
-    return _command_response(command)
+    # Restore commands carry only identity in the queue; decrypt + inject the
+    # stored templates into the wire body here (cleartext never touches the DB).
+    payload = await provisioning_service.build_restore_emit_payload(
+        session, dev_id, command
+    )
+    return _command_response(command, payload)
 
 
 async def _handle_cmd_result(
