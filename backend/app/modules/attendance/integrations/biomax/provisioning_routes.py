@@ -22,13 +22,16 @@ from app.modules.attendance.integrations.biomax.iclock import (
     _resolve_branch,
 )
 from app.modules.attendance.models.provisioning_models import STATUS_PENDING
+from app.modules.attendance.integrations.biomax import biometrics
 from app.modules.attendance.repositories import device_command_repo
 from app.modules.attendance.schemas.provisioning_schemas import (
+    BiometricStatusResponse,
     DeviceCommandResponse,
     DeviceUserSnapshotRequest,
     DeviceUserSnapshotResponse,
     ProvisionDevice,
     RefreshUserInfoResponse,
+    RestoreResponse,
     ProvisionDevicesResponse,
     ProvisionDryRunRequest,
     ProvisionPlanResponse,
@@ -187,6 +190,50 @@ async def refresh_user_info(
         dev_id=dev_id, scope=scope,
         targeted_users=len(user_ids), commands_enqueued=enqueued,
     )
+
+
+def _require_biometric_key() -> None:
+    if not biometrics.biometric_backup_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Biometric backup is disabled (set BIOMAX_BIOMETRIC_KEY).",
+        )
+
+
+@router.get("/biometrics/status", response_model=BiometricStatusResponse)
+async def biometric_status(
+    dev_id: str = Query(...),
+    _enabled: None = Depends(_require_enabled),
+    _user: dict = Depends(_ADMIN),
+    session: AsyncSession = Depends(get_db),
+):
+    """How many users have a biometric backup for this device (restore coverage)."""
+    _require_known_device(dev_id)
+    branch_id = _resolve_branch()
+    rows = await device_command_repo.list_backed_up_users(session, branch_id, dev_id)
+    return BiometricStatusResponse(dev_id=dev_id, backed_up=len(rows))
+
+
+@router.post("/restore", response_model=RestoreResponse)
+async def restore(
+    dev_id: str = Query(...),
+    x_biomax_sync_token: str | None = Header(None),
+    _enabled: None = Depends(_require_enabled),
+    session: AsyncSession = Depends(get_db),
+):
+    """Queue a biometric RESTORE for a (replaced/reset) device: for every user we
+    have a backup for, a SET_USER_INFO carrying the stored face/photo/fingerprint
+    is queued; the device applies them on its poll — re-creating enrolled users
+    with no manual re-enrollment. Templates are decrypted + injected at emit time,
+    never stored in the queue in cleartext. Headless (token-authed) so DR can be
+    scripted; needs the biometric key to decrypt."""
+    _verify_sync_token(x_biomax_sync_token)
+    _require_biometric_key()
+    _require_known_device(dev_id)
+    branch_id = _resolve_branch()
+    enqueued = await provisioning_service.enqueue_restore(session, branch_id, dev_id)
+    await session.commit()
+    return RestoreResponse(dev_id=dev_id, commands_enqueued=enqueued)
 
 
 @router.get("/commands", response_model=list[DeviceCommandResponse])

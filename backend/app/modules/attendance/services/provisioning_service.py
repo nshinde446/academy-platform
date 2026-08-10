@@ -387,9 +387,15 @@ def _user_info_to_mirror(u: dict) -> dict | None:
 async def apply_user_info_page(
     session: AsyncSession, branch_id: uuid.UUID, dev_id: str, users: list
 ) -> int:
-    """Upsert one page of GET_USER_INFO users into the mirror (identity + has_face,
-    blobs dropped). Upsert-only — a single page isn't authoritative over the whole
-    table, so it never removes rows. Returns how many rows were upserted."""
+    """Upsert one page of GET_USER_INFO users into the mirror (identity + has_face).
+
+    Doubles as the BACKFILL for the biometric backup: a GET_USER_INFO result also
+    carries the face/photo/fps blobs, so when a key is set we store them encrypted
+    here too — that's how the ~already-enrolled students (whose one-time
+    ``realtime_enroll_data`` we never caught) get backed up: just run a scope=all
+    refresh. Upsert-only; never removes rows. Returns rows upserted into the mirror.
+    """
+    backup_on = biometrics.biometric_backup_enabled()
     n = 0
     for u in users or []:
         if not isinstance(u, dict):
@@ -401,6 +407,10 @@ async def apply_user_info_page(
             session, branch_id=branch_id, dev_id=dev_id, **fields
         )
         n += 1
+        if backup_on:
+            # Same record shape as an enrolment push (userId/name/face/photo/fps),
+            # so reuse the encrypted-capture path. No-op for users with no template.
+            await capture_biometrics(session, branch_id, dev_id, u)
     return n
 
 
@@ -505,6 +515,85 @@ async def capture_biometrics(
         fps_enc=biometrics.encrypt_template(fps),
     )
     return True
+
+
+# ── restore (push backed-up templates back to a device via SET_USER_INFO) ─────
+# The queued command holds ONLY identity + a ``restore_biometrics`` flag — never
+# a plaintext template. The templates are decrypted and injected into the wire
+# body at EMIT time (see build_restore_emit_payload), so cleartext biometrics only
+# ever exist transiently in the HTTP response, never at rest in the queue.
+
+
+def build_restore_command_row(
+    branch_id: uuid.UUID, dev_id: str, vendor_user_id: str, name: str | None
+) -> dict:
+    user = {
+        "userId": vendor_user_id,
+        "name": (name or "").strip()[:DEVICE_NAME_MAX],
+        "privilege": 0,
+        "card": "",
+        "pwd": "",
+        "vaildStart": DEFAULT_VALID_START,
+        "vaildEnd": DEFAULT_VALID_END,
+    }
+    nonce = uuid.uuid4().hex[:12]
+    return {
+        "branch_id": branch_id,
+        "dev_id": dev_id,
+        "command": CMD_SET_USER_INFO,
+        "vendor_user_id": vendor_user_id,
+        # Identity + a flag; the template is fetched + injected at emit time.
+        "payload": {"users": [user], "restore_biometrics": True},
+        "command_status": STATUS_PENDING,
+        "idempotency_key": f"{dev_id}:RESTORE:{nonce}",
+    }
+
+
+async def enqueue_restore(
+    session: AsyncSession, branch_id: uuid.UUID, dev_id: str
+) -> int:
+    """Queue a restore (SET_USER_INFO carrying the stored face/photo/fingerprint)
+    for every user we have a backup for. The device applies them on its poll,
+    re-creating enrolled users on a replaced/reset terminal. Returns count queued."""
+    rows_src = await device_command_repo.list_backed_up_users(session, branch_id, dev_id)
+    rows = [
+        build_restore_command_row(branch_id, dev_id, uid, name)
+        for uid, name in rows_src
+    ]
+    if rows:
+        await device_command_repo.enqueue(session, rows)
+    return len(rows)
+
+
+async def build_restore_emit_payload(
+    session: AsyncSession, dev_id: str, command
+) -> dict:
+    """The wire payload for a restore command: decrypt the user's stored templates
+    and inject them into the ``users`` body. A deep copy is built so the stored
+    command is never mutated and no plaintext is written back. If backup or key is
+    unavailable it degrades to an identity-only restore (creates the user, no face)."""
+    payload = json.loads(json.dumps(command.payload or {}))
+    if not payload.get("restore_biometrics"):
+        return payload
+    payload.pop("restore_biometrics", None)
+    users = payload.get("users") or []
+    if users and biometrics.biometric_backup_enabled():
+        uid = str(users[0].get("userId") or "").strip()
+        bio_row = await device_command_repo.get_biometric(session, dev_id, uid)
+        if bio_row is not None:
+            face = biometrics.decrypt_template(bio_row.face_enc)
+            photo = biometrics.decrypt_template(bio_row.photo_enc)
+            fps = biometrics.decrypt_template(bio_row.fps_enc)
+            if face:
+                users[0]["face"] = face
+            if photo:
+                users[0]["photo"] = photo
+            if fps:
+                try:
+                    users[0]["fps"] = json.loads(fps)
+                except (ValueError, TypeError):
+                    users[0]["fps"] = fps
+    return payload
 
 
 async def user_ids_for_refresh(

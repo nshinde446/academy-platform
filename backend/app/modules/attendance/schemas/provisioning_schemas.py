@@ -112,6 +112,20 @@ class DeviceUserSnapshotResponse(BaseModel):
     total: int
 
 
+class RestoreResponse(BaseModel):
+    """Result of queueing a biometric restore for a (replaced/reset) device."""
+
+    dev_id: str
+    commands_enqueued: int
+
+
+class BiometricStatusResponse(BaseModel):
+    """How many users have a biometric backup for this device — restore coverage."""
+
+    dev_id: str
+    backed_up: int
+
+
 class RefreshUserInfoResponse(BaseModel):
     """Result of queueing a cloud-async user-info refresh: how many device userIds
     were targeted and how many GET_USER_INFO commands were enqueued for the device
