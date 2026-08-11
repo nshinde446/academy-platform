@@ -20,6 +20,7 @@ from app.modules.attendance.models.provisioning_models import (
     STATUS_PENDING,
     STATUS_SENT,
     DeviceCommand,
+    DeviceStatus,
     DeviceUser,
     DeviceUserBiometric,
 )
@@ -348,6 +349,45 @@ async def list_backed_up_users(
         )
     )
     return [(r[0], r[1]) for r in result.all()]
+
+
+async def upsert_device_status(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    dev_id: str,
+    snapshot: dict,
+) -> DeviceStatus:
+    """Store the device's latest self-reported status (counts + firmware) and bump
+    last_seen_at. One row per device."""
+    result = await session.execute(
+        select(DeviceStatus).where(
+            DeviceStatus.dev_id == dev_id, DeviceStatus.is_deleted == False
+        )
+    )
+    row = result.scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    if row is None:
+        row = DeviceStatus(
+            branch_id=branch_id, dev_id=dev_id, snapshot=snapshot, last_seen_at=now
+        )
+        session.add(row)
+    else:
+        row.snapshot = snapshot
+        row.last_seen_at = now
+    await session.flush()
+    return row
+
+
+async def get_device_status(
+    session: AsyncSession, dev_id: str
+) -> DeviceStatus | None:
+    result = await session.execute(
+        select(DeviceStatus).where(
+            DeviceStatus.dev_id == dev_id, DeviceStatus.is_deleted == False
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 async def latest_photo_biometric(

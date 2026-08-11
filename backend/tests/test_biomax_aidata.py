@@ -693,6 +693,45 @@ async def test_receive_cmd_via_push_inert_when_disabled(monkeypatch, db_session,
 
 
 @pytest.mark.usefixtures("seed_data")
+async def test_receive_cmd_captures_device_status(monkeypatch, db_session, seed_data):
+    # The status block a device carries on every receive_cmd poll (userCount /
+    # faceCount / …) is stored so the UI can show a live count + heartbeat. It
+    # must not interfere with the command channel — a queued command still emits.
+    branch_id = seed_data["branch_a"].id
+    await _enqueue_cmd(db_session, branch_id, user_id="3001")
+    status = {
+        "userCount": 1103, "faceCount": 554, "fpCount": 0, "cardCount": 0,
+        "userMaxCount": 3000, "faceMaxCount": 1500, "firmwareVersion": "R6-1.2.3",
+    }
+    resp = await _invoke_aidata_push(
+        monkeypatch, db_session, branch_id, enabled=True,
+        body=status, request_code=aidata.RECEIVE_CMD_REQUEST_CODE,
+    )
+    # Command still served despite the status payload.
+    assert resp.headers["cmd_code"] == "SET_USER_INFO"
+
+    stored = await device_command_repo.get_device_status(db_session, DEV)
+    assert stored is not None
+    assert stored.branch_id == branch_id
+    assert stored.snapshot["userCount"] == 1103
+    assert stored.snapshot["faceCount"] == 554
+    assert stored.last_seen_at is not None
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_receive_cmd_without_status_block_stores_nothing(
+    monkeypatch, db_session, seed_data
+):
+    # A bare receive_cmd (no userCount) must not create a status row.
+    branch_id = seed_data["branch_a"].id
+    await _invoke_aidata_push(
+        monkeypatch, db_session, branch_id, enabled=True,
+        body={}, request_code=aidata.RECEIVE_CMD_REQUEST_CODE,
+    )
+    assert await device_command_repo.get_device_status(db_session, DEV) is None
+
+
+@pytest.mark.usefixtures("seed_data")
 async def test_device_heartbeat_gated_by_flag(monkeypatch):
     import app.modules.attendance.integrations.biomax.iclock as iclock
     monkeypatch.setattr(

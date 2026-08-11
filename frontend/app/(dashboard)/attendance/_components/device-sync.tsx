@@ -20,6 +20,7 @@ import { useRowSelection } from "@/hooks/use-row-selection";
 import {
   useCancelCommand,
   useDeviceCommands,
+  useDeviceStatus,
   useProvisionDevices,
   useProvisionDryRun,
   useProvisionPush,
@@ -168,6 +169,11 @@ export function DeviceSync({ branchId }: DeviceSyncProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Live on-device counts (what the terminal itself reports every poll) */}
+      {enabled && devId && (
+        <DeviceLiveStatus branchId={branchId} devId={devId} enabled={enabled} />
+      )}
 
       {/* Summary tiles */}
       {enabled && data && (
@@ -507,6 +513,66 @@ function QueuePanel({
         </div>
       )}
     </div>
+  );
+}
+
+function relTime(secs: number): string {
+  if (secs < 60) return `${secs}s ago`;
+  if (secs < 3600) return `${Math.round(secs / 60)}m ago`;
+  return `${Math.round(secs / 3600)}h ago`;
+}
+
+function LiveTile({ label, value }: { label: string; value: number | null | undefined }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-xl font-semibold tabular-nums">{value ?? "—"}</span>
+    </div>
+  );
+}
+
+// The terminal's OWN live counts, reported on every poll — a real-time view of
+// what's on the machine (and a heartbeat) without touching it.
+function DeviceLiveStatus({
+  branchId,
+  devId,
+  enabled,
+}: {
+  branchId: string;
+  devId: string;
+  enabled: boolean;
+}) {
+  const q = useDeviceStatus(branchId, devId, enabled);
+  const d = q.data;
+  const seen = d?.last_seen_at ? new Date(d.last_seen_at) : null;
+  const secsAgo = seen ? Math.max(0, Math.round((Date.now() - seen.getTime()) / 1000)) : null;
+  const online = secsAgo != null && secsAgo < 120; // it polls every ~20–30s
+
+  return (
+    <Card size="sm">
+      <CardContent>
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+          <div className="flex items-center gap-2">
+            <span
+              className={`h-2 w-2 rounded-full ${online ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
+            />
+            <span className="text-xs text-muted-foreground">
+              {seen
+                ? online
+                  ? "On device — live"
+                  : `Last seen ${relTime(secsAgo!)}`
+                : "Waiting for the device to report…"}
+            </span>
+          </div>
+          <LiveTile label="Users on device" value={d?.user_count} />
+          <LiveTile label="Faces enrolled" value={d?.face_count} />
+          <LiveTile label="Fingerprints" value={d?.fp_count} />
+          {d?.firmware && (
+            <span className="text-[11px] text-muted-foreground">fw {d.firmware}</span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

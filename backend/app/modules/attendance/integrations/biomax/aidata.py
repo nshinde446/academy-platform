@@ -393,6 +393,19 @@ async def aidata_push(
     # behaves byte-identically to today. Never touches the punch/ingest path.
     if provisioning_on:
         if request_code == RECEIVE_CMD_REQUEST_CODE:
+            # Every poll carries the device's live status block (userCount /
+            # faceCount / …). Store the latest so the UI can show a live count +
+            # heartbeat. In a SAVEPOINT so a status hiccup can't break the command
+            # channel; no PII (counts + firmware only).
+            if isinstance(payload, dict) and payload.get("userCount") is not None:
+                try:
+                    async with session.begin_nested():
+                        await device_command_repo.upsert_device_status(
+                            session, branch_id=_resolve_branch(),
+                            dev_id=dev_id, snapshot=payload,
+                        )
+                except Exception:
+                    logger.exception("AIData device-status upsert failed for %s", dev_id)
             return await _emit_next_command(session, dev_id)
         if request_code == SEND_CMD_RESULT_REQUEST_CODE:
             try:

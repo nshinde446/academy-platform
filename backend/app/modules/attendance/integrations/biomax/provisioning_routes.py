@@ -28,6 +28,7 @@ from app.modules.attendance.repositories import device_command_repo
 from app.modules.attendance.schemas.provisioning_schemas import (
     BiometricStatusResponse,
     DeviceCommandResponse,
+    DeviceStatusResponse,
     DeviceUserSnapshotRequest,
     DeviceUserSnapshotResponse,
     ProvisionDevice,
@@ -199,6 +200,41 @@ def _require_biometric_key() -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Biometric backup is disabled (set BIOMAX_BIOMETRIC_KEY).",
         )
+
+
+@router.get("/device-status", response_model=DeviceStatusResponse)
+async def device_status(
+    dev_id: str = Query(...),
+    _enabled: None = Depends(_require_enabled),
+    _user: dict = Depends(_ADMIN),
+    session: AsyncSession = Depends(get_db),
+):
+    """The device's own live counts (userCount/faceCount/…) + last-seen heartbeat,
+    from the status block it sends on every poll. All-null until its first poll."""
+    _require_known_device(dev_id)
+    row = await device_command_repo.get_device_status(session, dev_id)
+    if row is None:
+        return DeviceStatusResponse(dev_id=dev_id)
+    snap = row.snapshot or {}
+
+    def _int(key: str) -> int | None:
+        v = snap.get(key)
+        try:
+            return int(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    return DeviceStatusResponse(
+        dev_id=dev_id,
+        last_seen_at=row.last_seen_at,
+        user_count=_int("userCount"),
+        face_count=_int("faceCount"),
+        fp_count=_int("fpCount"),
+        card_count=_int("cardCount"),
+        user_limit=_int("userLimit"),
+        face_limit=_int("faceLimit"),
+        firmware=(str(snap.get("firmware")) if snap.get("firmware") else None),
+    )
 
 
 @router.get("/biometrics/{student_id}/photo")

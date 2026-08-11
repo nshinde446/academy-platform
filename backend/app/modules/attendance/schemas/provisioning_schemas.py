@@ -119,6 +119,20 @@ class RestoreResponse(BaseModel):
     commands_enqueued: int
 
 
+class DeviceStatusResponse(BaseModel):
+    """The device's own latest self-reported counts (from its poll) + heartbeat."""
+
+    dev_id: str
+    last_seen_at: datetime | None = None
+    user_count: int | None = None
+    face_count: int | None = None
+    fp_count: int | None = None
+    card_count: int | None = None
+    user_limit: int | None = None
+    face_limit: int | None = None
+    firmware: str | None = None
+
+
 class BiometricStatusResponse(BaseModel):
     """How many users have a biometric backup for this device — restore coverage."""
 

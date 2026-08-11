@@ -173,6 +173,30 @@ class DeviceUser(BaseModel):
     )
 
 
+class DeviceStatus(BaseModel):
+    """Latest status the device reports on every ``receive_cmd`` poll — its own
+    ``userCount`` / ``faceCount`` / ``fpCount`` etc. plus firmware and the time it
+    was seen. One row per device, upserted each poll, so the UI can show a LIVE
+    on-device count and a last-seen heartbeat without touching the terminal. No
+    PII — the status block carries counts and firmware only, never a template."""
+
+    __tablename__ = "device_status"
+    __table_args__ = (
+        UniqueConstraint("dev_id", name="uq_device_status_dev"),
+    )
+
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
+    )
+    dev_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    # The whole status block as reported (userCount, faceCount, fpCount, cardCount,
+    # limits, firmware, deviceId, time, …). Counts only — no biometric blob.
+    snapshot: Mapped[dict] = mapped_column(_JSON, nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
 class DeviceUserBiometric(BaseModel):
     """Encrypted backup of a user's biometric templates, captured in real time from
     the device's ``realtime_enroll_data`` push (one per enrolment). Unlike
