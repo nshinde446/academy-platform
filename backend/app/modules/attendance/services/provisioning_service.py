@@ -10,6 +10,7 @@ Payload + identity contract: docs/biomax-provisioning-implementation.md §0.6.
 
 from __future__ import annotations
 
+import base64
 import json
 import uuid
 
@@ -594,6 +595,32 @@ async def build_restore_emit_payload(
                 except (ValueError, TypeError):
                     users[0]["fps"] = fps
     return payload
+
+
+async def student_face_photo(
+    session: AsyncSession, branch_id: uuid.UUID, student_id: uuid.UUID
+) -> bytes | None:
+    """The student's enrolled face photo as raw JPEG bytes (decrypted from the
+    biometric backup), or None if we have none / no key. Used to show the face on
+    the student profile."""
+    if not biometrics.biometric_backup_enabled():
+        return None
+    student = await session.get(Student, student_id)
+    if student is None or student.branch_id != branch_id:
+        return None
+    rfid = (student.rfid_number or "").strip() or None
+    row = await device_command_repo.latest_photo_biometric(
+        session, branch_id, student_id, rfid
+    )
+    if row is None or not row.photo_enc:
+        return None
+    b64 = biometrics.decrypt_template(row.photo_enc)
+    if not b64:
+        return None
+    try:
+        return base64.b64decode(b64)
+    except (ValueError, TypeError):
+        return None
 
 
 async def user_ids_for_refresh(

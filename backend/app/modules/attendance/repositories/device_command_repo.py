@@ -350,6 +350,32 @@ async def list_backed_up_users(
     return [(r[0], r[1]) for r in result.all()]
 
 
+async def latest_photo_biometric(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    student_id: uuid.UUID,
+    rfid: str | None,
+) -> DeviceUserBiometric | None:
+    """The most recent backed-up row (any device) that has a photo for this
+    student — matched by resolved student_id OR the device userId (rfid), so it
+    still finds a photo captured before the student link was resolved."""
+    clauses = [DeviceUserBiometric.student_id == student_id]
+    if rfid:
+        clauses.append(DeviceUserBiometric.vendor_user_id == rfid)
+    result = await session.execute(
+        select(DeviceUserBiometric)
+        .where(
+            DeviceUserBiometric.branch_id == branch_id,
+            DeviceUserBiometric.is_deleted == False,
+            DeviceUserBiometric.photo_enc.isnot(None),
+            or_(*clauses),
+        )
+        .order_by(DeviceUserBiometric.captured_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def upsert_biometric(
     session: AsyncSession,
     *,

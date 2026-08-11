@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useUserStore } from "@/store/user-store";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { StudentAvatar } from "./_components/student-avatar";
 import {
   Table,
   TableHeader,
@@ -113,7 +114,14 @@ export default function StudentDetailPage({
         >
           ← Back to Students
         </Link>
-        <div className="flex flex-col gap-1">
+        <div className="flex items-start gap-4">
+          {student && (
+            <StudentAvatar
+              studentId={student.id}
+              name={`${student.first_name} ${student.last_name}`}
+            />
+          )}
+          <div className="flex flex-col gap-1">
           <h2 className="text-2xl font-semibold">
             {student
               ? `${student.first_name} ${student.last_name}`
@@ -152,6 +160,7 @@ export default function StudentDetailPage({
               )}
             </p>
           )}
+          </div>
         </div>
       </div>
 
