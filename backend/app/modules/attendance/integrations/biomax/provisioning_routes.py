@@ -12,6 +12,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.settings import get_settings
@@ -40,7 +41,7 @@ from app.modules.attendance.schemas.provisioning_schemas import (
     ReconcileResponse,
 )
 from app.modules.attendance.services import provisioning_service
-from app.modules.auth.permissions.rbac import require_roles
+from app.modules.auth.permissions.rbac import get_current_user, require_roles
 
 router = APIRouter(prefix="/attendance/provisioning", tags=["attendance"])
 
@@ -198,6 +199,26 @@ def _require_biometric_key() -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Biometric backup is disabled (set BIOMAX_BIOMETRIC_KEY).",
         )
+
+
+@router.get("/biometrics/{student_id}/photo")
+async def student_face_photo(
+    student_id: uuid.UUID,
+    _user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """The student's enrolled face photo (JPEG) from the biometric backup, for the
+    student profile avatar. Any signed-in staff may view it (cookie auth, so an
+    ``<img>`` works). 404 when we have no photo for the student."""
+    branch_id = _resolve_branch()
+    jpeg = await provisioning_service.student_face_photo(session, branch_id, student_id)
+    if jpeg is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No face photo.")
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
 
 
 @router.get("/biometrics/status", response_model=BiometricStatusResponse)

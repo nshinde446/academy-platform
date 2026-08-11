@@ -538,6 +538,36 @@ async def test_list_backed_up_users_needs_a_template(db_session, seed_data):
     assert ids == {"7400"}
 
 
+@pytest.mark.usefixtures("seed_data")
+async def test_student_face_photo_decrypts_backup(monkeypatch, db_session, seed_data):
+    """The student's face photo is decrypted from the backup (found via student_id
+    or rfid) and returned as raw JPEG bytes; None when there's no photo."""
+    import base64
+
+    import app.modules.attendance.integrations.biomax.biometrics as bio
+    from cryptography.fernet import Fernet
+
+    key = Fernet.generate_key().decode()
+    monkeypatch.setattr(bio, "get_settings", lambda: type("S", (), {"BIOMAX_BIOMETRIC_KEY": key})())
+    branch = seed_data["branch_a"].id
+    s = await _student(db_session, seed_data, rfid="8800")
+
+    jpeg = b"\xff\xd8\xff\xe0JFIFdata"  # pretend JPEG bytes
+    await device_command_repo.upsert_biometric(
+        db_session, branch_id=branch, dev_id=DEV, vendor_user_id="8800",
+        student_id=s.id, name="Face", face_enc=None,
+        photo_enc=bio.encrypt_template(base64.b64encode(jpeg).decode()), fps_enc=None,
+    )
+    await db_session.commit()
+
+    out = await provisioning_service.student_face_photo(db_session, branch, s.id)
+    assert out == jpeg
+
+    # a student with no backup -> None
+    other = await _student(db_session, seed_data, rfid="8801")
+    assert await provisioning_service.student_face_photo(db_session, branch, other.id) is None
+
+
 def test_verify_sync_token_gate(monkeypatch):
     # Unset token -> feature disabled (503); wrong token -> 401; correct -> passes.
     monkeypatch.setattr(
