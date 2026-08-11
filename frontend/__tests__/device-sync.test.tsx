@@ -11,6 +11,7 @@ import type {
 const devicesMock = vi.fn();
 const reconcileMock = vi.fn();
 const commandsMock = vi.fn();
+const statusMock = vi.fn();
 const dryRunMutate = vi.fn();
 const pushMutate = vi.fn();
 const cancelMutate = vi.fn();
@@ -19,6 +20,7 @@ vi.mock("@/app/(dashboard)/attendance/_hooks/use-provisioning", () => ({
   useProvisionDevices: (...args: unknown[]) => devicesMock(...args),
   useReconcile: (...args: unknown[]) => reconcileMock(...args),
   useDeviceCommands: (...args: unknown[]) => commandsMock(...args),
+  useDeviceStatus: (...args: unknown[]) => statusMock(...args),
   useProvisionDryRun: () => ({ mutateAsync: dryRunMutate, isPending: false }),
   useProvisionPush: () => ({ mutateAsync: pushMutate, isPending: false }),
   useCancelCommand: () => ({ mutateAsync: cancelMutate, isPending: false }),
@@ -97,6 +99,8 @@ describe("DeviceSync", () => {
     devicesMock.mockReset();
     reconcileMock.mockReset();
     commandsMock.mockReset();
+    statusMock.mockReset();
+    statusMock.mockReturnValue({ data: undefined, isLoading: false });
     dryRunMutate.mockReset();
     pushMutate.mockReset();
     cancelMutate.mockReset();
@@ -135,6 +139,31 @@ describe("DeviceSync", () => {
     expect(
       screen.queryByRole("link", { name: "Ghost User" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows the device's own live counts when it has reported them", () => {
+    setDevices({ data: DEVICES });
+    setReconcile({ data: RECONCILE });
+    statusMock.mockReturnValue({
+      data: {
+        dev_id: "AMDB26013800122",
+        last_seen_at: new Date().toISOString(),
+        user_count: 1103,
+        face_count: 554,
+        fp_count: 0,
+        card_count: 0,
+        user_limit: 3000,
+        face_limit: 1500,
+        firmware: null,
+      },
+      isLoading: false,
+    });
+    render(<DeviceSync branchId="br1" />);
+
+    expect(screen.getByText("Users on device")).toBeInTheDocument();
+    expect(screen.getByText("1103")).toBeInTheDocument();
+    expect(screen.getByText("Faces enrolled")).toBeInTheDocument();
+    expect(screen.getByText("554")).toBeInTheDocument();
   });
 
   it("defaults the selector to the first configured device", () => {
