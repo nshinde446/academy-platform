@@ -16,6 +16,18 @@ export interface ProvisionDevicesResponse {
   devices: ProvisionDevice[];
 }
 
+export interface DeviceStatusResponse {
+  dev_id: string;
+  last_seen_at: string | null;
+  user_count: number | null;
+  face_count: number | null;
+  fp_count: number | null;
+  card_count: number | null;
+  user_limit: number | null;
+  face_limit: number | null;
+  firmware: string | null;
+}
+
 export interface ReconcileRow {
   vendor_user_id: string; // device userId == Student.rfid_number
   name: string | null;

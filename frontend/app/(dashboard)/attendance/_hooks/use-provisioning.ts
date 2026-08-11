@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
 import type {
   DeviceCommandRow,
+  DeviceStatusResponse,
   ProvisionDevicesResponse,
   ProvisionPlanResponse,
   ProvisionPushResponse,
@@ -20,7 +21,30 @@ export const provisioningKeys = {
     [...provisioningKeys.all, "reconcile", branchId, devId] as const,
   commands: (branchId: string, devId: string) =>
     [...provisioningKeys.all, "commands", branchId, devId] as const,
+  status: (branchId: string, devId: string) =>
+    [...provisioningKeys.all, "status", branchId, devId] as const,
 };
+
+// The device's own live counts (userCount/faceCount) + last-seen heartbeat, from
+// the status block it sends on every poll. Polls so the count stays current.
+export function useDeviceStatus(
+  branchId: string | undefined,
+  devId: string | undefined,
+  enabled: boolean,
+) {
+  return useQuery<DeviceStatusResponse>({
+    queryKey: provisioningKeys.status(branchId ?? "", devId ?? ""),
+    queryFn: async () => {
+      const res = await apiClient.get<DeviceStatusResponse>(
+        "/api/v1/attendance/provisioning/device-status",
+        { params: { dev_id: devId } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && !!devId && enabled,
+    refetchInterval: QUEUE_LIVE_MS,
+  });
+}
 
 // Configured devices + whether provisioning is enabled at all. Not gated by the
 // enabled flag on the backend, so this call never 503s — it's what lets the UI
