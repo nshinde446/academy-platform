@@ -78,6 +78,10 @@ export default function StudentDetailPage({
   const branchId = user?.branch_roles?.[0]?.branch_id;
 
   const studentQuery = useStudent(branchId, studentId);
+  // The per-student queries are disabled until the session hydrates a branchId; a
+  // disabled query is neither loading nor errored, so treat "no branch yet" as
+  // still-resolving — otherwise the header flashes "—" on a first direct load.
+  const resolving = !branchId || studentQuery.isLoading;
   const historyQuery = useStudentTestHistory(branchId, studentId);
   const masteryQuery = useStudentTopicMastery(branchId, studentId);
   const upcomingQuery = useStudentUpcomingTests(branchId, studentId);
@@ -115,17 +119,19 @@ export default function StudentDetailPage({
           ← Back to Students
         </Link>
         <div className="flex items-start gap-4">
-          {student && (
+          {student ? (
             <StudentAvatar
               studentId={student.id}
               name={`${student.first_name} ${student.last_name}`}
             />
-          )}
+          ) : resolving ? (
+            <div className="h-16 w-16 shrink-0 animate-pulse rounded-full bg-muted ring-1 ring-foreground/10" />
+          ) : null}
           <div className="flex flex-col gap-1">
           <h2 className="text-2xl font-semibold">
             {student
               ? `${student.first_name} ${student.last_name}`
-              : studentQuery.isLoading
+              : resolving
                 ? "Loading…"
                 : "—"}
           </h2>
