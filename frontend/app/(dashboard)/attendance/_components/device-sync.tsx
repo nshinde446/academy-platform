@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Table,
@@ -544,8 +544,17 @@ function DeviceLiveStatus({
 }) {
   const q = useDeviceStatus(branchId, devId, enabled);
   const d = q.data;
+  // Tick a "now" from an effect so the heartbeat stays fresh without calling an
+  // impure Date.now() during render (react-hooks purity rule).
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 10_000);
+    return () => clearInterval(t);
+  }, []);
   const seen = d?.last_seen_at ? new Date(d.last_seen_at) : null;
-  const secsAgo = seen ? Math.max(0, Math.round((Date.now() - seen.getTime()) / 1000)) : null;
+  const secsAgo =
+    seen && now ? Math.max(0, Math.round((now - seen.getTime()) / 1000)) : null;
   const online = secsAgo != null && secsAgo < 120; // it polls every ~20–30s
 
   return (
