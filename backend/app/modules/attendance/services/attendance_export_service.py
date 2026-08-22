@@ -8,9 +8,12 @@ matrix), all batches (summary + sheet per batch) — each in both formats.
 
 from __future__ import annotations
 
+import base64
 import html
 import io
 from datetime import date, datetime, timezone
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
@@ -18,6 +21,19 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from app.modules.attendance.time_utils import get_tz
+
+# The academy crest, shipped as a PNG asset and embedded as a data URI so the
+# headless-Chromium PDF render is self-contained (no file server).
+_LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "msa-logo.png"
+
+
+@lru_cache(maxsize=1)
+def _logo_data_uri() -> str:
+    try:
+        raw = _LOGO_PATH.read_bytes()
+    except OSError:
+        return ""
+    return "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
 
 # Cell fills for the register matrix (light, print-friendly).
 _FILL = {
@@ -106,9 +122,12 @@ def _write_matrix_sheet(ws, *, title_lines: list[str], matrix: dict) -> None:
         cell.alignment = _CENTER
         cell.fill = _HEAD_FILL
     pct_col = 4 + len(dates)
+    # Present (P only) · Late (L) · Absent (A) · Total (working days) · %.
     ws.cell(row=head, column=pct_col, value="Present").font = _BOLD
-    ws.cell(row=head, column=pct_col + 1, value="Absent").font = _BOLD
-    ws.cell(row=head, column=pct_col + 2, value="%").font = _BOLD
+    ws.cell(row=head, column=pct_col + 1, value="Late").font = _BOLD
+    ws.cell(row=head, column=pct_col + 2, value="Absent").font = _BOLD
+    ws.cell(row=head, column=pct_col + 3, value="Total").font = _BOLD
+    ws.cell(row=head, column=pct_col + 4, value="%").font = _BOLD
 
     for r, srow in enumerate(matrix["students"], start=head + 1):
         ws.cell(row=r, column=1, value=r - head)
@@ -119,9 +138,13 @@ def _write_matrix_sheet(ws, *, title_lines: list[str], matrix: dict) -> None:
             cell.alignment = _CENTER
             if code in _FILL:
                 cell.fill = _FILL[code]
-        ws.cell(row=r, column=pct_col, value=srow["present"])
-        ws.cell(row=r, column=pct_col + 1, value=srow["working_days"] - srow["present"])
-        ws.cell(row=r, column=pct_col + 2, value=srow["attendance_pct"])
+        p_count = srow["cells"].count("P")
+        l_count = srow["cells"].count("L")
+        ws.cell(row=r, column=pct_col, value=p_count)
+        ws.cell(row=r, column=pct_col + 1, value=l_count)
+        ws.cell(row=r, column=pct_col + 2, value=srow["working_days"] - srow["present"])
+        ws.cell(row=r, column=pct_col + 3, value=srow["working_days"])
+        ws.cell(row=r, column=pct_col + 4, value=srow["attendance_pct"])
 
     totals_row = head + 1 + len(matrix["students"])
     ws.cell(row=totals_row, column=2, value="Present / day").font = _BOLD
@@ -311,23 +334,26 @@ def _matrix_table_html(matrix: dict) -> str:
     head = "".join(f"<th class='c'>{d.day}/{d.month}</th>" for d in dates)
     parts = [
         f"<table><tr><th>#</th><th>PRN</th><th>Student</th>{head}"
-        f"<th>P</th><th>Ab</th><th>%</th></tr>"
+        f"<th>P</th><th>L</th><th>Ab</th><th>Tot</th><th>%</th></tr>"
     ]
     for i, s in enumerate(matrix["students"], start=1):
         cells = "".join(
             f"<td class='c {c}'>{c}</td>" for c in s["cells"]
         )
+        p_count = s["cells"].count("P")
+        l_count = s["cells"].count("L")
         absent = s["working_days"] - s["present"]
         parts.append(
             f"<tr><td>{i}</td><td>{_esc(s['enrollment_number'] or '')}</td>"
             f"<td>{_esc(s['name'])}</td>{cells}"
-            f"<td class='c'>{s['present']}</td><td class='c'>{absent}</td>"
+            f"<td class='c'>{p_count}</td><td class='c'>{l_count}</td>"
+            f"<td class='c'>{absent}</td><td class='c'>{s['working_days']}</td>"
             f"<td class='c'>{s['attendance_pct']}</td></tr>"
         )
     tot = "".join(f"<td class='c'>{n}</td>" for n in matrix["day_present"])
     parts.append(
         f"<tr class='tot'><td></td><td></td><td>Present / day</td>{tot}"
-        f"<td></td><td></td><td></td></tr>"
+        f"<td></td><td></td><td></td><td></td><td></td></tr>"
     )
     parts.append("</table>")
     return "".join(parts)
@@ -391,19 +417,6 @@ def daily_ledger_html(
 
 # ── Day report (single day, single batch — matches the shared sample PDF) ────
 
-# Academy brand mark (mirror of frontend/public/logo.svg) inlined so the headless
-# Chromium render is self-contained (no file server for the PDF).
-_MSA_LOGO_SVG = (
-    "<svg width='40' height='40' viewBox='0 0 32 32' fill='none' "
-    "xmlns='http://www.w3.org/2000/svg'>"
-    "<rect width='32' height='32' rx='7' fill='#003464'/>"
-    "<g stroke='#ffffff' stroke-width='1.6' fill='none'>"
-    "<ellipse cx='16' cy='16' rx='9' ry='3.6'/>"
-    "<ellipse cx='16' cy='16' rx='9' ry='3.6' transform='rotate(60 16 16)'/>"
-    "<ellipse cx='16' cy='16' rx='9' ry='3.6' transform='rotate(120 16 16)'/>"
-    "</g><circle cx='16' cy='16' r='2.4' fill='#f4a300'/></svg>"
-)
-
 _VENDOR = "EduPulse Technologies"
 
 _DAY_PDF_CSS = """
@@ -411,6 +424,7 @@ _DAY_PDF_CSS = """
 * { box-sizing: border-box; }
 body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; color:#111; font-size:10pt; margin:0; }
 .brandbar { display:flex; align-items:center; gap:12px; border-bottom:2px solid #003464; padding-bottom:10px; }
+.brandbar img { width:52px; height:52px; }
 .brandbar h1 { font-size:20pt; margin:0; color:#003464; font-weight:800; }
 .meta { display:flex; justify-content:space-between; background:#f4f6f9; border:1px solid #dde3ea; border-left:3px solid #003464; padding:7pt 10pt; margin:10px 0; font-size:9.5pt; }
 .tiles { display:flex; gap:8px; margin-bottom:10px; }
@@ -458,8 +472,10 @@ def day_report_html(
     *, brand: str, batch_name: str, day: date, rows: list[dict], tz_name: str,
 ) -> str:
     total, present, absent, pct = _day_counts(rows)
+    logo = _logo_data_uri()
+    logo_html = f"<img src='{logo}' alt=''>" if logo else ""
     body = [
-        f"<div class='brandbar'>{_MSA_LOGO_SVG}<h1>{_esc(brand)}</h1></div>",
+        f"<div class='brandbar'>{logo_html}<h1>{_esc(brand)}</h1></div>",
         f"<div class='meta'><span><b>Batch:</b> {_esc(batch_name)}</span>"
         f"<span><b>Date:</b> {_esc(_fmt_day_long(day))}</span>"
         f"<span><b>Generated:</b> {_VENDOR}</span></div>",

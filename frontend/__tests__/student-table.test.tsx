@@ -68,6 +68,7 @@ describe("StudentTable (MSA_Design layout)", () => {
     );
 
     expect(screen.getByText("Name")).toBeInTheDocument();
+    expect(screen.getByText("PRN")).toBeInTheDocument();
     expect(screen.getByText("Rank")).toBeInTheDocument();
     expect(screen.getByText("Avg score")).toBeInTheDocument();
     expect(screen.getByText("Attendance")).toBeInTheDocument();

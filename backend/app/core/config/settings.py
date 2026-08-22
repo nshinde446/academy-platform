@@ -78,10 +78,11 @@ class Settings(BaseSettings):
     # this. Raise if you legitimately ingest larger files.
     MATERIALS_INGEST_MAX_PAGES: int = 100
 
-    # Institute name printed in the header of generated paper PDFs
-    # (Tier 14). Full per-branch branding (logo/colours) comes later;
-    # for now this single name is enough.
-    ACADEMY_BRAND_NAME: str = "Academy Institute"
+    # Institute name printed in the header of generated paper PDFs and
+    # attendance reports. Single-tenant deployment (Matrix Science Academy), so
+    # this is the brand default; override via env for another institute. Full
+    # per-branch branding (logo/colours) comes later.
+    ACADEMY_BRAND_NAME: str = "Matrix Science Academy"
 
     # ── Biometric device integrations ──────────────────────────────────────
     # See docs/biometric-attendance-design.md (integrations section).
