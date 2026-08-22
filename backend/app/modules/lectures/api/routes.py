@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config.settings import get_settings
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.lectures.schemas.lecture_schemas import (
@@ -32,11 +33,16 @@ from app.modules.lectures.schemas.lecture_schemas import (
     LectureSessionResponse,
     LectureSubstitute,
     OutcomeResponse,
+    ProductivityReportResponse,
     ProductivityResponse,
     RosterResponse,
     TimetableSlotResponse,
 )
-from app.modules.lectures.services import import_service, lecture_service
+from app.modules.lectures.services import (
+    import_service,
+    lecture_service,
+    productivity_export_service,
+)
 
 router = APIRouter(prefix="/lectures", tags=["lectures"])
 
@@ -218,6 +224,71 @@ async def get_productivity_insights(
     from the actuals captured live or via the end-of-day backfill."""
     return await lecture_service.get_productivity_insights(
         session, branch_id, from_date, to_date
+    )
+
+
+@router.get("/productivity/report", response_model=ProductivityReportResponse)
+async def get_productivity_report(
+    branch_id: uuid.UUID = Query(...),
+    from_date: datetime | None = Query(None),
+    to_date: datetime | None = Query(None),
+    batch_ids: list[uuid.UUID] | None = Query(None),
+    subject_ids: list[uuid.UUID] | None = Query(None),
+    teacher_ids: list[uuid.UUID] | None = Query(None),
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "academic_head"])
+    ),
+    session: AsyncSession = Depends(get_db),
+):
+    """Advanced Teacher Productivity report: Scheduled vs Conducted, Completion %,
+    Punctuality %, avg late-delay and topic coverage per teacher, plus subject-
+    wise / batch-wise splits and a week-wise trend. Filterable by batch, subject
+    and teacher (multi-select). An aggregation view over existing data."""
+    return await lecture_service.get_productivity_report(
+        session,
+        branch_id,
+        from_date,
+        to_date,
+        batch_ids=batch_ids,
+        subject_ids=subject_ids,
+        teacher_ids=teacher_ids,
+    )
+
+
+@router.get("/productivity/report/export")
+async def export_productivity_report(
+    branch_id: uuid.UUID = Query(...),
+    from_date: datetime | None = Query(None),
+    to_date: datetime | None = Query(None),
+    batch_ids: list[uuid.UUID] | None = Query(None),
+    subject_ids: list[uuid.UUID] | None = Query(None),
+    teacher_ids: list[uuid.UUID] | None = Query(None),
+    fmt: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "academic_head"])
+    ),
+    session: AsyncSession = Depends(get_db),
+):
+    """Download the Teacher Productivity report as Excel or PDF (same data as
+    the JSON report, same filters)."""
+    report = await lecture_service.get_productivity_report(
+        session,
+        branch_id,
+        from_date,
+        to_date,
+        batch_ids=batch_ids,
+        subject_ids=subject_ids,
+        teacher_ids=teacher_ids,
+    )
+    brand = get_settings().ACADEMY_BRAND_NAME
+    data, mime = await productivity_export_service.productivity_report_bytes(
+        report, fmt=fmt, brand=brand
+    )
+    filename = f"teacher_productivity.{fmt}"
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

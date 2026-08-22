@@ -493,6 +493,76 @@ class ProductivityResponse(BaseModel):
     by_teacher: list[ProductivityTeacherRow]
 
 
+# ── Advanced Teacher Productivity report ─────────────────────────────────────
+
+
+class ProductivityReportTeacherRow(BaseModel):
+    teacher_id: uuid.UUID
+    first_name: str
+    last_name: str
+    scheduled: int
+    conducted: int
+    completion_pct: float | None
+    hours: float
+    minutes: int
+    on_time_count: int
+    late_count: int
+    punctuality_pct: float | None
+    avg_delay_min: float
+    topics_planned: int
+    topics_covered: int
+
+
+class ProductivityReportSubjectRow(BaseModel):
+    subject_id: uuid.UUID
+    subject_name: str
+    scheduled: int
+    conducted: int
+    completion_pct: float | None
+    hours: float
+    minutes: int
+
+
+class ProductivityReportBatchRow(BaseModel):
+    batch_id: uuid.UUID
+    batch_name: str
+    scheduled: int
+    conducted: int
+    completion_pct: float | None
+    hours: float
+    minutes: int
+
+
+class ProductivityReportTrendPoint(BaseModel):
+    iso_year: int
+    iso_week: int
+    label: str
+    scheduled: int
+    conducted: int
+    completion_pct: float | None
+    punctuality_pct: float | None
+    hours: float
+
+
+class ProductivityReportSummary(BaseModel):
+    teachers: int
+    total_scheduled: int
+    total_conducted: int
+    total_hours: float
+    completion_pct: float | None = None
+    punctuality_pct: float | None = None
+
+
+class ProductivityReportResponse(BaseModel):
+    from_date: datetime | None = None
+    to_date: datetime | None = None
+    summary: ProductivityReportSummary
+    by_teacher: list[ProductivityReportTeacherRow]
+    by_subject: list[ProductivityReportSubjectRow]
+    by_batch: list[ProductivityReportBatchRow]
+    trend: list[ProductivityReportTrendPoint]
+
+
 class AttendanceMark(BaseModel):
     student_id: uuid.UUID
     attendance_status: str = "PRESENT"
