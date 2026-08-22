@@ -10,6 +10,7 @@ import {
   useUpdateNotificationSettings,
 } from "./_hooks/use-notification-settings";
 import type { DigestScope } from "./_schemas/settings";
+import { NotificationTemplatesCard } from "./_components/notification-templates-card";
 
 const SCOPES: { value: DigestScope; label: string; hint: string }[] = [
   {
@@ -33,15 +34,30 @@ export default function SettingsPage() {
   const updateMutation = useUpdateNotificationSettings(branchId);
 
   const settings = settingsQuery.data;
+  const whatsappEnabled = settings?.whatsapp_enabled ?? false;
   const enabled = settings?.daily_digest_enabled ?? false;
   const scope: DigestScope = settings?.daily_digest_scope ?? "ABSENT_ONLY";
+
+  const busy = settingsQuery.isLoading || updateMutation.isPending;
+
+  async function handleWhatsAppMaster(next: boolean) {
+    try {
+      await updateMutation.mutateAsync({ whatsapp_enabled: next });
+      toast.success(
+        "Settings saved",
+        next ? "WhatsApp notifications turned on." : "WhatsApp notifications turned off.",
+      );
+    } catch {
+      toast.error("Couldn't save", "Please try again.");
+    }
+  }
 
   async function handleToggle(next: boolean) {
     try {
       await updateMutation.mutateAsync({ daily_digest_enabled: next });
       toast.success(
         "Settings saved",
-        next ? "Daily WhatsApp digest turned on." : "Daily WhatsApp digest turned off.",
+        next ? "Daily digest turned on." : "Daily digest turned off.",
       );
     } catch {
       toast.error("Couldn't save", "Please try again.");
@@ -65,28 +81,49 @@ export default function SettingsPage() {
         description="Branch-level configuration for parent notifications."
       />
 
+      {/* Master WhatsApp switch — the overall on/off for all WhatsApp sends. */}
+      <Card className="max-w-2xl">
+        <CardContent className="flex items-start justify-between gap-4">
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-foreground">
+              WhatsApp notifications
+            </span>
+            <span className="text-sm text-muted-foreground">
+              Master switch for all parent WhatsApp messages (attendance alerts,
+              daily digest, lecture reminders). When off, nothing is sent even if
+              individual rules below are enabled.
+            </span>
+          </div>
+          <Switch
+            checked={whatsappEnabled}
+            onCheckedChange={handleWhatsAppMaster}
+            disabled={busy}
+            aria-label="Enable WhatsApp notifications"
+          />
+        </CardContent>
+      </Card>
+
+      {/* Daily digest rule */}
       <Card className="max-w-2xl">
         <CardContent className="flex flex-col gap-5">
-          {/* Master toggle */}
           <div className="flex items-start justify-between gap-4">
             <div className="flex flex-col gap-1">
               <span className="text-sm font-medium text-foreground">
-                Daily WhatsApp attendance digest
+                Daily attendance digest
               </span>
               <span className="text-sm text-muted-foreground">
-                Send parents a WhatsApp message each evening with their child&apos;s
+                Send parents a message each evening with their child&apos;s
                 attendance for the day.
               </span>
             </div>
             <Switch
               checked={enabled}
               onCheckedChange={handleToggle}
-              disabled={settingsQuery.isLoading || updateMutation.isPending}
-              aria-label="Enable daily WhatsApp attendance digest"
+              disabled={busy}
+              aria-label="Enable daily attendance digest"
             />
           </div>
 
-          {/* Scope — only meaningful when the digest is on */}
           {enabled && (
             <div className="flex flex-col gap-2 border-t pt-4">
               <span className="text-sm font-medium text-foreground">
@@ -131,6 +168,9 @@ export default function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Editable message templates */}
+      <NotificationTemplatesCard branchId={branchId} />
     </div>
   );
 }

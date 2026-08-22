@@ -9,6 +9,7 @@ VALID_EVENT_TYPES = {
     "ATTENDANCE_MARKED",
     "STUDENT_ABSENT",  # emitted per student by the nightly absent sweep -> parent notify
     "DAILY_ATTENDANCE_DIGEST",  # daily per-student status -> parent (all or absent-only)
+    "LECTURE_REMINDER",  # morning "your lectures today" -> parent/student
     "LECTURE_COMPLETED",
     "LECTURE_CANCELLED",
     "TEST_UPLOADED",
@@ -64,12 +65,14 @@ class TemplateResponse(BaseModel):
 class SettingsUpdate(BaseModel):
     daily_digest_enabled: bool | None = None
     daily_digest_scope: str | None = None
+    whatsapp_enabled: bool | None = None
 
 
 class SettingsResponse(BaseModel):
     branch_id: uuid.UUID
     daily_digest_enabled: bool
     daily_digest_scope: str
+    whatsapp_enabled: bool
 
 
 class QueueItemResponse(BaseModel):

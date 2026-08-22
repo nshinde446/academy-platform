@@ -36,14 +36,39 @@ nightly absent sweep ──emit──▶ academic_events (STUDENT_ABSENT)
 `app/core/jobs/celery_app.py` and scheduled every 5 minutes, but the actual send
 is gated (see below), so scheduling it is safe before go-live.
 
-## The safety gate
+## The two safety gates
 
-Everything ships **dormant behind `WHATSAPP_ENABLED` (default `false`)**, the
-same pattern as `BIOMAX_PROVISIONING_ENABLED`. While it's off:
+WhatsApp sends require **both** gates on:
 
-- `send_notification` returns `SKIP` for WHATSAPP rows — they stay `PENDING` and
-  **no Meta request is made and no charge is incurred**.
-- Flip the flag on (with a valid token) and the next drain flushes the backlog.
+1. **Infra gate — `WHATSAPP_ENABLED` env (default `false`).** Credentials-level;
+   set once with a valid token. Same pattern as `BIOMAX_PROVISIONING_ENABLED`.
+2. **Per-branch master toggle — `notification_settings.whatsapp_enabled`
+   (default `false`).** The admin's UI on/off at **Settings → WhatsApp
+   notifications**. Governs the whole rules pipeline for that branch.
+
+While either is off, `send_notification` returns `SKIP` for WHATSAPP rows — they
+stay `PENDING`, **no Meta request is made and no charge is incurred**. Turn both
+on and the next drain flushes the backlog.
+
+## Notification rules & editable templates
+
+- **Rules** are `NotificationTemplate` rows (event_type + optional
+  `condition_json` + `is_active`), delivered when the master toggle is on.
+- **Editable templates:** admins edit the message wording at **Settings →
+  Notification templates** (attendance absent alert, daily digest, lecture
+  reminder, …) via the template CRUD API. Migration 0051 seeds global defaults.
+  For WhatsApp, wording changes require **Meta re-approval** of the named
+  provider template before they take effect on the WhatsApp channel — the editor
+  stores the content now; it sends once approved and both gates are on.
+
+## Morning lecture reminders
+
+`notifications.lecture_reminders` (Celery beat, every 15 min) fires per branch in
+its local `REMINDER_LOCAL_HOUR` (07:00), emitting a `LECTURE_REMINDER` event per
+student who has ≥1 lecture that day (`{student_name, attendance_date, subjects,
+recipient}`). **Gated on the branch master toggle** — no events are produced for
+branches with WhatsApp off, so nothing piles up undeliverable. Idempotent per
+student per day. Delivered by the same `consume_events` → `process_queue` path.
 
 ## Configuration (`.env`)
 
