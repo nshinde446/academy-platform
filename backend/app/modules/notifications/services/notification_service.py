@@ -22,6 +22,7 @@ from app.modules.notifications.schemas.notification_schemas import (
 # Defaults returned when a branch has never saved settings (no row yet).
 _DEFAULT_DIGEST_ENABLED = False
 _DEFAULT_DIGEST_SCOPE = "ABSENT_ONLY"
+_DEFAULT_WHATSAPP_ENABLED = False
 
 # This consumer's name in processed_events — its own high-water mark, so it
 # never re-enqueues an event another consumer (analytics, …) already handled.
@@ -330,9 +331,21 @@ async def process_queue(session: AsyncSession) -> dict:
     failed_count = 0
     skipped_count = 0
 
+    # Per-branch WhatsApp master toggle, cached so a full queue only hits the
+    # settings table once per branch. None branch_id -> treated as off.
+    wa_enabled: dict[uuid.UUID, bool] = {}
+
     for item in pending:
         template = await notification_repository.get_template(session, item.template_id)
-        outcome, error, retryable = await send_notification(item, template)
+        branch_enabled = False
+        if item.branch_id is not None:
+            if item.branch_id not in wa_enabled:
+                s = await notification_repository.get_settings(session, item.branch_id)
+                wa_enabled[item.branch_id] = bool(s and s.whatsapp_enabled)
+            branch_enabled = wa_enabled[item.branch_id]
+        outcome, error, retryable = await send_notification(
+            item, template, branch_whatsapp_enabled=branch_enabled
+        )
         if outcome == "SENT":
             await notification_repository.mark_sent(session, item)
             sent_count += 1
@@ -363,12 +376,17 @@ def _ordered_body_params(body_template: str, payload: dict) -> list[str]:
     return [str(payload.get(name, "")) for name in _PLACEHOLDER_RE.findall(body_template)]
 
 
-async def send_notification(queue_item, template=None) -> tuple[str, str | None, bool]:
+async def send_notification(
+    queue_item, template=None, *, branch_whatsapp_enabled: bool = False
+) -> tuple[str, str | None, bool]:
     """Deliver one queued notification.
 
     Returns ``(outcome, error_message, retryable)`` where outcome is
     ``"SENT"`` | ``"FAILED"`` | ``"SKIP"``. SKIP leaves the row PENDING (e.g. the
     channel is disabled) so it flushes once enabled, without consuming retries.
+
+    ``branch_whatsapp_enabled`` is the branch's UI master toggle; WhatsApp only
+    sends when it AND the infra env flag are on.
 
     EMAIL/SMS/PUSH remain log-only stubs (real senders can slot in the same way
     WhatsApp does); only WHATSAPP is wired to a live provider.
@@ -382,7 +400,7 @@ async def send_notification(queue_item, template=None) -> tuple[str, str | None,
             payload = {}
 
     if queue_item.channel == "WHATSAPP":
-        return await _send_whatsapp(queue_item, template, payload)
+        return await _send_whatsapp(queue_item, template, payload, branch_whatsapp_enabled)
 
     # EMAIL / SMS / PUSH — not yet wired to a provider; log and treat as sent so
     # the queue drains in dev exactly as before.
@@ -396,10 +414,15 @@ async def send_notification(queue_item, template=None) -> tuple[str, str | None,
     return "SENT", None, False
 
 
-async def _send_whatsapp(queue_item, template, payload: dict) -> tuple[str, str | None, bool]:
+async def _send_whatsapp(
+    queue_item, template, payload: dict, branch_enabled: bool = False
+) -> tuple[str, str | None, bool]:
+    # Branch UI master toggle off -> skip (leave PENDING), no charge.
+    if not branch_enabled:
+        return "SKIP", None, False
     settings = get_settings()
     if not settings.WHATSAPP_ENABLED:
-        return "SKIP", None, False  # feature off — leave PENDING, don't charge
+        return "SKIP", None, False  # infra flag off — leave PENDING, don't charge
     if not settings.WHATSAPP_ACCESS_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
         return "FAILED", "WhatsApp enabled but access token / phone number id unset", False
     if template is None:
@@ -457,11 +480,13 @@ async def get_notification_settings(
             "branch_id": branch_id,
             "daily_digest_enabled": _DEFAULT_DIGEST_ENABLED,
             "daily_digest_scope": _DEFAULT_DIGEST_SCOPE,
+            "whatsapp_enabled": _DEFAULT_WHATSAPP_ENABLED,
         }
     return {
         "branch_id": settings.branch_id,
         "daily_digest_enabled": settings.daily_digest_enabled,
         "daily_digest_scope": settings.daily_digest_scope,
+        "whatsapp_enabled": settings.whatsapp_enabled,
     }
 
 
@@ -500,6 +525,7 @@ async def update_notification_settings(
         "branch_id": settings.branch_id,
         "daily_digest_enabled": settings.daily_digest_enabled,
         "daily_digest_scope": settings.daily_digest_scope,
+        "whatsapp_enabled": settings.whatsapp_enabled,
     }
 
 

@@ -88,6 +88,70 @@ def nightly_absent_sweep():
     return asyncio.run(_run_nightly_sweep())
 
 
+# ── Morning lecture reminders ───────────────────────────────────────────────
+# A "your lectures today" parent/student notification, emitted once each morning
+# per branch. Beat fires every 15 min; whichever firing lands in this local hour
+# triggers it, and the emitter is idempotent per student per day so extra firings
+# in the window are no-ops.
+REMINDER_LOCAL_HOUR = 7
+
+
+def is_branch_due_for_reminder(
+    now_utc: datetime, tz_name: str | None
+) -> tuple[bool, date]:
+    """(is this branch in its reminder hour now?, the branch-local date)."""
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=timezone.utc)
+    local = now_utc.astimezone(get_tz(tz_name))
+    return local.hour == REMINDER_LOCAL_HOUR, local.date()
+
+
+async def send_lecture_reminders_for_due_branches(
+    session: AsyncSession, now_utc: datetime
+) -> list[tuple[uuid.UUID, date, int]]:
+    """Emit lecture reminders for every branch in its local reminder hour that has
+    the WhatsApp master toggle on. Returns (branch_id, local_date, count) per branch.
+
+    Gated on the branch master toggle so reminder events aren't produced (and don't
+    pile up as undeliverable queue rows) for branches that haven't enabled WhatsApp.
+    """
+    branches = (await session.execute(
+        select(Branch.id, Branch.timezone).where(Branch.is_deleted == False)
+    )).all()
+
+    out: list[tuple[uuid.UUID, date, int]] = []
+    for branch_id, tz_name in branches:
+        due, local_date = is_branch_due_for_reminder(now_utc, tz_name)
+        if not due:
+            continue
+        settings = await notification_repository.get_settings(session, branch_id)
+        if not (settings and settings.whatsapp_enabled):
+            continue
+        events = await daily_service.run_lecture_reminders(
+            session, branch_id=branch_id, day=local_date, tz_name=tz_name
+        )
+        logger.info(
+            "lecture reminders emitted: branch=%s day=%s count=%d",
+            branch_id, local_date, len(events),
+        )
+        out.append((branch_id, local_date, len(events)))
+    return out
+
+
+async def _run_lecture_reminders(now_utc: datetime | None = None):
+    now = now_utc or datetime.now(timezone.utc)
+    async with async_session_factory() as session:
+        result = await send_lecture_reminders_for_due_branches(session, now)
+        await session.commit()
+    return [(str(b), d.isoformat(), n) for b, d, n in result]
+
+
+@celery_app.task(name="notifications.lecture_reminders")
+def lecture_reminders():
+    """Beat entrypoint — morning 'your lectures today' reminders per branch."""
+    return asyncio.run(_run_lecture_reminders())
+
+
 async def _rebuild_one(student_id: uuid.UUID, branch_id: uuid.UUID, day: date):
     async with async_session_factory() as session:
         await daily_service.rebuild_daily(

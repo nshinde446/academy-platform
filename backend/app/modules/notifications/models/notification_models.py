@@ -68,6 +68,13 @@ class NotificationSettings(BaseModel):
     daily_digest_scope: Mapped[str] = mapped_column(
         String(20), nullable=False, default="ABSENT_ONLY"
     )
+    # Per-branch master switch for all WhatsApp sends — the admin's UI on/off,
+    # separate from the infra WHATSAPP_ENABLED env (credentials). BOTH must be on
+    # to actually send; while this is off, WHATSAPP queue rows are skipped (left
+    # PENDING) so nothing goes out and no Meta charge is incurred.
+    whatsapp_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
 
 
 class NotificationEvent(BaseModel):

@@ -152,10 +152,20 @@ def _wa_template():
     )
 
 
-async def test_send_notification_whatsapp_disabled_skips(monkeypatch):
+async def test_send_notification_whatsapp_branch_toggle_off_skips(monkeypatch):
+    # Branch master toggle off -> SKIP even if env is on.
+    monkeypatch.setattr(notification_service, "get_settings", lambda: _FakeSettings())
+    outcome, error, retryable = await notification_service.send_notification(
+        _wa_queue_item(), _wa_template(), branch_whatsapp_enabled=False
+    )
+    assert outcome == "SKIP"
+
+
+async def test_send_notification_whatsapp_env_disabled_skips(monkeypatch):
+    # Branch on but infra env off -> still SKIP.
     monkeypatch.setattr(notification_service, "get_settings", lambda: _FakeSettings(enabled=False))
     outcome, error, retryable = await notification_service.send_notification(
-        _wa_queue_item(), _wa_template()
+        _wa_queue_item(), _wa_template(), branch_whatsapp_enabled=True
     )
     assert outcome == "SKIP"
 
@@ -172,7 +182,7 @@ async def test_send_notification_whatsapp_enabled_sends(monkeypatch):
     monkeypatch.setattr(wa, "send_template_message", fake_send)
 
     outcome, error, retryable = await notification_service.send_notification(
-        _wa_queue_item(), _wa_template()
+        _wa_queue_item(), _wa_template(), branch_whatsapp_enabled=True
     )
     assert outcome == "SENT"
     assert captured["to"] == "919876543210"                 # normalized
@@ -183,7 +193,7 @@ async def test_send_notification_whatsapp_enabled_sends(monkeypatch):
 async def test_send_notification_whatsapp_bad_number_fails_permanently(monkeypatch):
     monkeypatch.setattr(notification_service, "get_settings", lambda: _FakeSettings())
     outcome, error, retryable = await notification_service.send_notification(
-        _wa_queue_item(recipient="123"), _wa_template()
+        _wa_queue_item(recipient="123"), _wa_template(), branch_whatsapp_enabled=True
     )
     assert outcome == "FAILED"
     assert retryable is False
@@ -194,7 +204,7 @@ async def test_send_notification_whatsapp_missing_template_name_fails(monkeypatc
     tmpl = _wa_template()
     tmpl.provider_template_name = None
     outcome, error, retryable = await notification_service.send_notification(
-        _wa_queue_item(), tmpl
+        _wa_queue_item(), tmpl, branch_whatsapp_enabled=True
     )
     assert outcome == "FAILED"
 

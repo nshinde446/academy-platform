@@ -32,6 +32,7 @@ from app.modules.attendance.time_utils import (
     day_bounds,
     local_date_of,
 )
+from app.modules.academic.models.academic_models import Subject
 from app.modules.audit.services import audit_service
 from app.modules.auth.models.auth_models import Branch
 from app.modules.events.models.event_models import AcademicEvent
@@ -581,6 +582,117 @@ async def notify_selected_students(
             },
         )
         emitted += 1
+    await session.flush()
+    return emitted
+
+
+async def run_lecture_reminders(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    day: date,
+    tz_name: str | None = None,
+) -> list[AcademicEvent]:
+    """Emit one ``LECTURE_REMINDER`` event per student who has ≥1 lecture today —
+    a morning "your lectures today" parent/student notification.
+
+    Groups the day's lectures by batch (with their subject names), then emits per
+    active student in those batches, merging subjects for a student in multiple
+    batches. Idempotent per student per attendance date (keyed on the date in the
+    event metadata), so repeated morning firings never double-notify. Delivery is
+    a no-op charge-wise until WhatsApp is enabled.
+    """
+    tz_name = tz_name or await branch_timezone(session, branch_id)
+    start, end = day_bounds(day, tz_name)
+
+    # The day's lectures → subject names per batch (unique, in first-seen order).
+    lecture_rows = (await session.execute(
+        select(Lecture.batch_id, Subject.name)
+        .join(Subject, Subject.id == Lecture.subject_id)
+        .where(
+            Lecture.branch_id == branch_id,
+            Lecture.scheduled_start >= start,
+            Lecture.scheduled_start < end,
+            Lecture.is_deleted == False,
+        )
+    )).all()
+    subjects_by_batch: dict[uuid.UUID, list[str]] = {}
+    for batch_id, subject_name in lecture_rows:
+        names = subjects_by_batch.setdefault(batch_id, [])
+        if subject_name and subject_name not in names:
+            names.append(subject_name)
+    if not subjects_by_batch:
+        return []  # no lectures today
+
+    batch_ids = list(subjects_by_batch)
+    student_rows = (await session.execute(
+        select(
+            Student.id,
+            Student.first_name,
+            Student.last_name,
+            Student.parent_mobile,
+            StudentBatchMapping.batch_id,
+        )
+        .join(StudentBatchMapping, StudentBatchMapping.student_id == Student.id)
+        .where(
+            StudentBatchMapping.batch_id.in_(batch_ids),
+            StudentBatchMapping.is_deleted == False,
+            Student.branch_id == branch_id,
+            Student.status == "active",
+            Student.is_deleted == False,
+        )
+    )).all()
+    if not student_rows:
+        return []
+
+    # Merge each student's identity + the subjects across the batches they're in.
+    per_student: dict[uuid.UUID, dict] = {}
+    for sid, first_name, last_name, parent_mobile, batch_id in student_rows:
+        s = per_student.setdefault(sid, {
+            "name": f"{first_name} {last_name}".strip(),
+            "recipient": parent_mobile or "",
+            "subjects": [],
+        })
+        for subj in subjects_by_batch.get(batch_id, []):
+            if subj not in s["subjects"]:
+                s["subjects"].append(subj)
+
+    # Idempotency: students already reminded for this attendance date.
+    day_iso = day.isoformat()
+    student_ids = list(per_student)
+    prior = (await session.execute(
+        select(AcademicEvent.student_id, AcademicEvent.metadata_json).where(
+            AcademicEvent.event_type == "LECTURE_REMINDER",
+            AcademicEvent.student_id.in_(student_ids),
+            AcademicEvent.is_deleted == False,
+        )
+    )).all()
+    already = set()
+    for sid, metadata_json in prior:
+        try:
+            meta = json.loads(metadata_json) if metadata_json else {}
+        except (json.JSONDecodeError, TypeError):
+            meta = {}
+        if meta.get("attendance_date") == day_iso:
+            already.add(sid)
+
+    emitted: list[AcademicEvent] = []
+    for sid, s in per_student.items():
+        if sid in already:
+            continue
+        event = await event_service.emit_event(
+            session,
+            event_type="LECTURE_REMINDER",
+            branch_id=branch_id,
+            student_id=sid,
+            metadata={
+                "attendance_date": day_iso,
+                "student_name": s["name"],
+                "subjects": ", ".join(s["subjects"]),
+                "recipient": s["recipient"],
+            },
+        )
+        emitted.append(event)
     await session.flush()
     return emitted
 

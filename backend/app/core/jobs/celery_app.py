@@ -61,6 +61,14 @@ celery_app.conf.update(
             "task": "notifications.process_pipeline",
             "schedule": crontab(minute="*/5"),
         },
+        # Morning "your lectures today" reminders. Beat fires every 15 min; each
+        # branch triggers only in its local reminder hour. Gated on the branch
+        # WhatsApp master toggle, so it's a no-op for branches that haven't
+        # enabled it.
+        "notifications-lecture-reminders": {
+            "task": "notifications.lecture_reminders",
+            "schedule": crontab(minute="*/15"),
+        },
     },
     # Explicit import so the worker registers our tasks without autodiscover.
     imports=(
