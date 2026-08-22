@@ -83,6 +83,7 @@ function cmd(over: Partial<DeviceCommandRow>): DeviceCommandRow {
     dev_id: "AMDB26013800122",
     command: "SET_USER_INFO",
     vendor_user_id: "1001",
+    batch_user_count: null,
     student_id: "s1",
     command_status: "pending",
     attempts: 0,
@@ -283,5 +284,28 @@ describe("DeviceSync", () => {
     expect(cancelButtons).toHaveLength(1);
     fireEvent.click(cancelButtons[0]);
     await waitFor(() => expect(cancelMutate).toHaveBeenCalledWith("c1"));
+  });
+
+  it("labels batch commands legibly instead of a bare dash", () => {
+    setDevices({ data: DEVICES });
+    setReconcile({ data: RECONCILE });
+    setCommands([
+      cmd({
+        id: "b1",
+        command: "GET_USER_INFO",
+        vendor_user_id: null,
+        batch_user_count: 5,
+        student_id: null,
+        command_status: "pending",
+      }),
+    ]);
+
+    render(<DeviceSync branchId="br1" />);
+
+    // Friendly command name, not the raw wire code.
+    expect(screen.getByText("Refresh face status")).toBeInTheDocument();
+    expect(screen.queryByText("GET_USER_INFO")).not.toBeInTheDocument();
+    // Batch target shows the user count rather than "—".
+    expect(screen.getByText("batch · 5 users")).toBeInTheDocument();
   });
 });

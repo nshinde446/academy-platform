@@ -82,6 +82,9 @@ export interface DeviceCommandRow {
   dev_id: string;
   command: string; // e.g. SET_USER_INFO
   vendor_user_id: string | null;
+  // For batch commands (GET_USER_INFO) with no single user: how many userIds it
+  // targets, so the UI shows "batch · N users" instead of "—".
+  batch_user_count: number | null;
   student_id: string | null;
   command_status: CommandStatus;
   attempts: number;

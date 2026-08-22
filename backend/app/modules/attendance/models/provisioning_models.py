@@ -140,6 +140,15 @@ class DeviceCommand(BaseModel):
     # (dev_id, command, vendor_user_id) — the idempotency handle.
     idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
 
+    @property
+    def batch_user_count(self) -> int | None:
+        """How many userIds a batch command targets, for display. Batch commands
+        (e.g. GET_USER_INFO) are not user-scoped — ``vendor_user_id`` is null and
+        the IDs live in ``payload.usersId`` — so the UI can show "batch · N users"
+        instead of a bare "—". None for ordinary user-scoped commands."""
+        ids = (self.payload or {}).get("usersId")
+        return len(ids) if isinstance(ids, list) else None
+
 
 class DeviceUser(BaseModel):
     """Biometrics-free mirror of one user on the device.

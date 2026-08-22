@@ -56,6 +56,9 @@ class DeviceCommandResponse(BaseModel):
     dev_id: str
     command: str
     vendor_user_id: str | None = None
+    # For batch commands (GET_USER_INFO), how many userIds it targets — lets the
+    # UI show "batch · N users" instead of a bare "—" when vendor_user_id is null.
+    batch_user_count: int | None = None
     student_id: uuid.UUID | None = None
     command_status: str
     attempts: int
