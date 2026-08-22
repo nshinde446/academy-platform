@@ -8,9 +8,12 @@ matrix), all batches (summary + sheet per batch) — each in both formats.
 
 from __future__ import annotations
 
+import base64
 import html
 import io
 from datetime import date, datetime, timezone
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
@@ -18,6 +21,19 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from app.modules.attendance.time_utils import get_tz
+
+# The academy crest, shipped as a PNG asset and embedded as a data URI so the
+# headless-Chromium PDF render is self-contained (no file server).
+_LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "msa-logo.png"
+
+
+@lru_cache(maxsize=1)
+def _logo_data_uri() -> str:
+    try:
+        raw = _LOGO_PATH.read_bytes()
+    except OSError:
+        return ""
+    return "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
 
 # Cell fills for the register matrix (light, print-friendly).
 _FILL = {
@@ -401,19 +417,6 @@ def daily_ledger_html(
 
 # ── Day report (single day, single batch — matches the shared sample PDF) ────
 
-# Academy brand mark (mirror of frontend/public/logo.svg) inlined so the headless
-# Chromium render is self-contained (no file server for the PDF).
-_MSA_LOGO_SVG = (
-    "<svg width='40' height='40' viewBox='0 0 32 32' fill='none' "
-    "xmlns='http://www.w3.org/2000/svg'>"
-    "<rect width='32' height='32' rx='7' fill='#003464'/>"
-    "<g stroke='#ffffff' stroke-width='1.6' fill='none'>"
-    "<ellipse cx='16' cy='16' rx='9' ry='3.6'/>"
-    "<ellipse cx='16' cy='16' rx='9' ry='3.6' transform='rotate(60 16 16)'/>"
-    "<ellipse cx='16' cy='16' rx='9' ry='3.6' transform='rotate(120 16 16)'/>"
-    "</g><circle cx='16' cy='16' r='2.4' fill='#f4a300'/></svg>"
-)
-
 _VENDOR = "EduPulse Technologies"
 
 _DAY_PDF_CSS = """
@@ -421,6 +424,7 @@ _DAY_PDF_CSS = """
 * { box-sizing: border-box; }
 body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; color:#111; font-size:10pt; margin:0; }
 .brandbar { display:flex; align-items:center; gap:12px; border-bottom:2px solid #003464; padding-bottom:10px; }
+.brandbar img { width:52px; height:52px; }
 .brandbar h1 { font-size:20pt; margin:0; color:#003464; font-weight:800; }
 .meta { display:flex; justify-content:space-between; background:#f4f6f9; border:1px solid #dde3ea; border-left:3px solid #003464; padding:7pt 10pt; margin:10px 0; font-size:9.5pt; }
 .tiles { display:flex; gap:8px; margin-bottom:10px; }
@@ -468,8 +472,10 @@ def day_report_html(
     *, brand: str, batch_name: str, day: date, rows: list[dict], tz_name: str,
 ) -> str:
     total, present, absent, pct = _day_counts(rows)
+    logo = _logo_data_uri()
+    logo_html = f"<img src='{logo}' alt=''>" if logo else ""
     body = [
-        f"<div class='brandbar'>{_MSA_LOGO_SVG}<h1>{_esc(brand)}</h1></div>",
+        f"<div class='brandbar'>{logo_html}<h1>{_esc(brand)}</h1></div>",
         f"<div class='meta'><span><b>Batch:</b> {_esc(batch_name)}</span>"
         f"<span><b>Date:</b> {_esc(_fmt_day_long(day))}</span>"
         f"<span><b>Generated:</b> {_VENDOR}</span></div>",
