@@ -408,6 +408,27 @@ const STATUS_TONE: Record<CommandStatus, string> = {
   cancelled: "bg-muted text-muted-foreground",
 };
 
+// Friendly names for the raw device command codes — the wire codes (e.g.
+// GET_USER_INFO) are opaque to staff. Unknown codes fall back to the raw value.
+const COMMAND_LABEL: Record<string, string> = {
+  GET_USER_INFO: "Refresh face status",
+  SET_USER_INFO: "Register / update user",
+};
+
+function commandLabel(command: string): string {
+  return COMMAND_LABEL[command] ?? command;
+}
+
+// What to show in the "User ID" column. User-scoped commands show the id; batch
+// commands (no vendor_user_id) show how many users they cover instead of "—".
+function commandTarget(row: DeviceCommandRow): string {
+  if (row.vendor_user_id) return row.vendor_user_id;
+  if (row.batch_user_count != null) {
+    return `batch · ${row.batch_user_count} user${row.batch_user_count === 1 ? "" : "s"}`;
+  }
+  return "—";
+}
+
 function QueuePanel({
   branchId,
   devId,
@@ -476,9 +497,19 @@ function QueuePanel({
               {rows.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell className="tabular-nums text-sm">
-                    {c.vendor_user_id ?? "—"}
+                    {c.vendor_user_id ? (
+                      c.vendor_user_id
+                    ) : c.batch_user_count != null ? (
+                      <span className="text-muted-foreground">
+                        {commandTarget(c)}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </TableCell>
-                  <TableCell className="text-sm">{c.command}</TableCell>
+                  <TableCell className="text-sm">
+                    {commandLabel(c.command)}
+                  </TableCell>
                   <TableCell>
                     <span
                       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_TONE[c.command_status]}`}

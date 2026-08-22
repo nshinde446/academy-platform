@@ -114,6 +114,8 @@ async def test_enqueue_creates_pending_commands(db_session, seed_data):
     assert cmd.student_id == s.id
     assert cmd.branch_id == seed_data["branch_a"].id
     assert cmd.payload["users"][0]["userId"] == "5001"
+    # User-scoped command carries no batch count (that's a batch-command concept).
+    assert cmd.batch_user_count is None
 
 
 @pytest.mark.usefixtures("seed_data")
@@ -422,6 +424,10 @@ async def test_enqueue_user_info_refresh_batches_and_reruns(db_session, seed_dat
     gui = [c for c in pending if c.command == "GET_USER_INFO"]
     assert len(gui) == 3
     assert gui[0].payload["usersId"] == ids[:5]
+    # Batch commands are not user-scoped; the display count comes from the payload.
+    assert gui[0].vendor_user_id is None
+    assert gui[0].batch_user_count == 5  # first full batch
+    assert gui[-1].batch_user_count == 2  # 12 ids, last batch has the remainder
 
     # Re-run: prior pending cancelled, fresh set enqueued (still 3, not 6).
     n2 = await provisioning_service.enqueue_user_info_refresh(
