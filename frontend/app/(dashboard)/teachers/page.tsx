@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useUserStore } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -148,6 +150,13 @@ export default function TeachersPage() {
         description="Manage faculty for your branch."
         actions={
           <>
+            <Button
+              variant="secondary"
+              size="sm"
+              render={<Link href="/teachers/productivity" />}
+            >
+              Productivity report
+            </Button>
             {branchId && <ImportTeachersDialog branchId={branchId} />}
             <CreateTeacherDialog
               onSubmit={handleCreate}

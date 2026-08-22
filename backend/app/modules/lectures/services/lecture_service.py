@@ -2061,6 +2061,213 @@ async def get_productivity_insights(
     }
 
 
+# ── Advanced Teacher Productivity report (scheduled-vs-actual, batch/subject,
+#    week-wise trend) ─────────────────────────────────────────────────────────
+# A director-facing report built entirely on data already captured by the
+# schedule + actuals pipeline. Keyed on the ASSIGNED teacher so Scheduled and
+# Conducted share a key and Completion % is coherent; punctuality / delay come
+# from the actuals of whoever delivered.
+
+# Everything except a moved (rescheduled) slot counts as a planned occurrence.
+_RESCHEDULED = "rescheduled"
+
+
+def _report_blank() -> dict:
+    return {
+        "scheduled": 0,
+        "conducted": 0,
+        "minutes": 0,
+        "on_time": 0,
+        "late": 0,
+        "delay_sum": 0.0,
+        "topics_planned": set(),
+        "topics_covered": set(),
+    }
+
+
+def _report_accumulate(acc: dict, r) -> None:
+    if r.lecture_status != _RESCHEDULED:
+        acc["scheduled"] += 1
+        if r.topic_id is not None:
+            acc["topics_planned"].add(r.topic_id)
+    if r.lecture_status == "completed":
+        acc["conducted"] += 1
+        if r.actual_duration_min:
+            acc["minutes"] += r.actual_duration_min
+        if r.topic_id is not None:
+            acc["topics_covered"].add(r.topic_id)
+        if r.late_flag is True:
+            acc["late"] += 1
+            if r.actual_start is not None and r.scheduled_start is not None:
+                acc["delay_sum"] += max(
+                    0.0, (r.actual_start - r.scheduled_start).total_seconds() / 60.0
+                )
+        elif r.late_flag is False:
+            acc["on_time"] += 1
+
+
+def _report_finalize(acc: dict) -> dict:
+    timed = acc["on_time"] + acc["late"]
+    return {
+        "scheduled": acc["scheduled"],
+        "conducted": acc["conducted"],
+        "completion_pct": (
+            _safe_pct(acc["conducted"], acc["scheduled"]) if acc["scheduled"] else None
+        ),
+        "hours": round(acc["minutes"] / 60, 1),
+        "minutes": acc["minutes"],
+        "on_time_count": acc["on_time"],
+        "late_count": acc["late"],
+        "punctuality_pct": _safe_pct(acc["on_time"], timed) if timed else None,
+        "avg_delay_min": round(acc["delay_sum"] / acc["late"], 1) if acc["late"] else 0.0,
+        "topics_planned": len(acc["topics_planned"]),
+        "topics_covered": len(acc["topics_covered"]),
+    }
+
+
+async def get_productivity_report(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    *,
+    batch_ids: list[uuid.UUID] | None = None,
+    subject_ids: list[uuid.UUID] | None = None,
+    teacher_ids: list[uuid.UUID] | None = None,
+) -> dict:
+    """Advanced productivity report: Scheduled vs Conducted, Completion %,
+    Punctuality %, Avg late-delay, topic coverage — per teacher, plus subject-
+    wise / batch-wise splits and a week-wise trend. All from data already
+    captured; this is an aggregation view, not new capture."""
+    from app.modules.batch.models.batch_models import Batch
+
+    rows = await lecture_repository.report_lectures(
+        session,
+        branch_id,
+        from_dt,
+        to_dt,
+        batch_ids=batch_ids,
+        subject_ids=subject_ids,
+        teacher_ids=teacher_ids,
+    )
+
+    by_teacher_acc: dict[uuid.UUID, dict] = {}
+    by_subject_acc: dict[uuid.UUID, dict] = {}
+    by_batch_acc: dict[uuid.UUID, dict] = {}
+    by_week_acc: dict[tuple[int, int], dict] = {}
+
+    for r in rows:
+        _report_accumulate(by_teacher_acc.setdefault(r.teacher_id, _report_blank()), r)
+        if r.subject_id is not None:
+            _report_accumulate(
+                by_subject_acc.setdefault(r.subject_id, _report_blank()), r
+            )
+        if r.batch_id is not None:
+            _report_accumulate(by_batch_acc.setdefault(r.batch_id, _report_blank()), r)
+        iso_year, iso_week, _ = r.scheduled_start.isocalendar()
+        _report_accumulate(
+            by_week_acc.setdefault((iso_year, iso_week), _report_blank()), r
+        )
+
+    # Resolve names for the dimensions that appear.
+    teachers_by_id: dict[uuid.UUID, Teacher] = {}
+    if by_teacher_acc:
+        res = await session.execute(
+            select(Teacher).where(
+                Teacher.id.in_(by_teacher_acc.keys()),
+                Teacher.is_deleted == False,  # noqa: E712
+            )
+        )
+        teachers_by_id = {t.id: t for t in res.scalars().all()}
+    subjects_by_id: dict[uuid.UUID, Subject] = {}
+    if by_subject_acc:
+        res = await session.execute(
+            select(Subject).where(Subject.id.in_(by_subject_acc.keys()))
+        )
+        subjects_by_id = {s.id: s for s in res.scalars().all()}
+    batches_by_id: dict[uuid.UUID, Batch] = {}
+    if by_batch_acc:
+        res = await session.execute(
+            select(Batch).where(Batch.id.in_(by_batch_acc.keys()))
+        )
+        batches_by_id = {b.id: b for b in res.scalars().all()}
+
+    by_teacher: list[dict] = []
+    for tid, acc in by_teacher_acc.items():
+        t = teachers_by_id.get(tid)
+        if t is None:
+            continue  # teacher deleted; drop from the report
+        by_teacher.append(
+            {
+                "teacher_id": tid,
+                "first_name": t.first_name,
+                "last_name": t.last_name,
+                **_report_finalize(acc),
+            }
+        )
+    # Busiest first (planned load), then most delivered.
+    by_teacher.sort(key=lambda r: (r["scheduled"], r["conducted"]), reverse=True)
+
+    by_subject = [
+        {
+            "subject_id": sid,
+            "subject_name": (subjects_by_id[sid].name if sid in subjects_by_id else "—"),
+            **_report_finalize(acc),
+        }
+        for sid, acc in by_subject_acc.items()
+        if sid in subjects_by_id
+    ]
+    by_subject.sort(key=lambda r: r["scheduled"], reverse=True)
+
+    by_batch = [
+        {
+            "batch_id": bid,
+            "batch_name": (batches_by_id[bid].name if bid in batches_by_id else "—"),
+            **_report_finalize(acc),
+        }
+        for bid, acc in by_batch_acc.items()
+        if bid in batches_by_id
+    ]
+    by_batch.sort(key=lambda r: r["scheduled"], reverse=True)
+
+    trend = [
+        {
+            "iso_year": yr,
+            "iso_week": wk,
+            "label": f"{yr}-W{wk:02d}",
+            **_report_finalize(acc),
+        }
+        for (yr, wk), acc in sorted(by_week_acc.items())
+    ]
+
+    total_scheduled = sum(a["scheduled"] for a in by_teacher_acc.values())
+    total_conducted = sum(a["conducted"] for a in by_teacher_acc.values())
+    total_minutes = sum(a["minutes"] for a in by_teacher_acc.values())
+    total_on_time = sum(a["on_time"] for a in by_teacher_acc.values())
+    total_timed = total_on_time + sum(a["late"] for a in by_teacher_acc.values())
+    summary = {
+        "teachers": len(by_teacher),
+        "total_scheduled": total_scheduled,
+        "total_conducted": total_conducted,
+        "total_hours": round(total_minutes / 60, 1),
+        "completion_pct": (
+            _safe_pct(total_conducted, total_scheduled) if total_scheduled else None
+        ),
+        "punctuality_pct": (
+            _safe_pct(total_on_time, total_timed) if total_timed else None
+        ),
+    }
+    return {
+        "from_date": from_dt,
+        "to_date": to_dt,
+        "summary": summary,
+        "by_teacher": by_teacher,
+        "by_subject": by_subject,
+        "by_batch": by_batch,
+        "trend": trend,
+    }
+
+
 _NO_SHOW_REASON_LABEL = {
     "TEACHER_NO_SHOW": "teacher",
     "STUDENT_NO_SHOW": "students",

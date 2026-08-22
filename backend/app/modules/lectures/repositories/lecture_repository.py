@@ -925,6 +925,59 @@ async def teacher_reliability_in_range(
     ]
 
 
+async def report_lectures(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    *,
+    batch_ids: list[uuid.UUID] | None = None,
+    subject_ids: list[uuid.UUID] | None = None,
+    teacher_ids: list[uuid.UUID] | None = None,
+) -> list:
+    """Lightweight per-lecture rows for the advanced productivity report.
+
+    Returns one row per (non-deleted) lecture in the window, with just the
+    columns the report rolls up. Aggregation (per teacher / subject / batch /
+    week, plus avg late-delay and topic coverage) happens in the service, in
+    Python — this keeps the query dialect-safe (SQLite in tests, Postgres in
+    prod) instead of scattering ``date_trunc`` / ``julianday`` variants across
+    five group-bys. Report windows are bounded (a term at most), so the row
+    count is small.
+
+    ``teacher_ids`` filters on the ASSIGNED teacher (the planned owner), which
+    is also the key the report groups on so Scheduled and Conducted share a key.
+    """
+    filters = [
+        Lecture.branch_id == branch_id,
+        Lecture.is_deleted == False,  # noqa: E712
+    ]
+    if from_dt is not None:
+        filters.append(Lecture.scheduled_start >= from_dt)
+    if to_dt is not None:
+        filters.append(Lecture.scheduled_start <= to_dt)
+    if batch_ids:
+        filters.append(Lecture.batch_id.in_(batch_ids))
+    if subject_ids:
+        filters.append(Lecture.subject_id.in_(subject_ids))
+    if teacher_ids:
+        filters.append(Lecture.teacher_id.in_(teacher_ids))
+
+    stmt = select(
+        Lecture.teacher_id,
+        Lecture.actual_teacher_id,
+        Lecture.subject_id,
+        Lecture.batch_id,
+        Lecture.topic_id,
+        Lecture.scheduled_start,
+        Lecture.actual_start,
+        Lecture.actual_duration_min,
+        Lecture.late_flag,
+        Lecture.lecture_status,
+    ).where(and_(*filters))
+    return list((await session.execute(stmt)).all())
+
+
 async def list_session_plans_for_sessions(
     session: AsyncSession, session_ids: list[uuid.UUID]
 ) -> list[LectureSessionPlan]:
