@@ -88,10 +88,15 @@ describe("BatchMatrix", () => {
     const table = screen.getByRole("table");
     expect(within(table).getByText("PRN")).toBeInTheDocument();
     expect(within(table).getByText("EN-1")).toBeInTheDocument();
+    // Count columns: Present / Late / Absent / Total.
+    expect(within(table).getByText("Present")).toBeInTheDocument();
+    expect(within(table).getByText("Late")).toBeInTheDocument();
     expect(within(table).getByText("Absent")).toBeInTheDocument();
-    // 2 working days − 1 present = 1 absent for the row.
+    expect(within(table).getByText("Total")).toBeInTheDocument();
+    // Row: cells ["P","A"] → Present 1, Late 0, Absent 1, Total 2.
     const cells = within(table).getAllByText("1");
     expect(cells.length).toBeGreaterThan(0);
+    expect(within(table).getByText("2")).toBeInTheDocument();
   });
 
   it("queries with the selected batch id", () => {

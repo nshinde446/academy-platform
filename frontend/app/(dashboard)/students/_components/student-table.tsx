@@ -119,6 +119,7 @@ export function StudentTable({
             )}
             <TableHead className="w-9"></TableHead>
             <SortHead label="Name" sortKey="name" />
+            <TableHead>PRN</TableHead>
             <TableHead className="hidden sm:table-cell">Class</TableHead>
             <TableHead className="hidden md:table-cell">Target</TableHead>
             <TableHead className="hidden md:table-cell">Stream</TableHead>
@@ -175,11 +176,9 @@ export function StudentTable({
                   >
                     {r.first_name} {r.last_name}
                   </Link>
-                  {r.enrollment_number ? (
-                    <span className="ml-2 text-xs text-muted-foreground tabular-nums">
-                      {r.enrollment_number}
-                    </span>
-                  ) : null}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground tabular-nums">
+                  {r.enrollment_number || "—"}
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">
                   <select

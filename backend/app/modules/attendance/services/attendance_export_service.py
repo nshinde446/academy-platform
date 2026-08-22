@@ -106,9 +106,12 @@ def _write_matrix_sheet(ws, *, title_lines: list[str], matrix: dict) -> None:
         cell.alignment = _CENTER
         cell.fill = _HEAD_FILL
     pct_col = 4 + len(dates)
+    # Present (P only) · Late (L) · Absent (A) · Total (working days) · %.
     ws.cell(row=head, column=pct_col, value="Present").font = _BOLD
-    ws.cell(row=head, column=pct_col + 1, value="Absent").font = _BOLD
-    ws.cell(row=head, column=pct_col + 2, value="%").font = _BOLD
+    ws.cell(row=head, column=pct_col + 1, value="Late").font = _BOLD
+    ws.cell(row=head, column=pct_col + 2, value="Absent").font = _BOLD
+    ws.cell(row=head, column=pct_col + 3, value="Total").font = _BOLD
+    ws.cell(row=head, column=pct_col + 4, value="%").font = _BOLD
 
     for r, srow in enumerate(matrix["students"], start=head + 1):
         ws.cell(row=r, column=1, value=r - head)
@@ -119,9 +122,13 @@ def _write_matrix_sheet(ws, *, title_lines: list[str], matrix: dict) -> None:
             cell.alignment = _CENTER
             if code in _FILL:
                 cell.fill = _FILL[code]
-        ws.cell(row=r, column=pct_col, value=srow["present"])
-        ws.cell(row=r, column=pct_col + 1, value=srow["working_days"] - srow["present"])
-        ws.cell(row=r, column=pct_col + 2, value=srow["attendance_pct"])
+        p_count = srow["cells"].count("P")
+        l_count = srow["cells"].count("L")
+        ws.cell(row=r, column=pct_col, value=p_count)
+        ws.cell(row=r, column=pct_col + 1, value=l_count)
+        ws.cell(row=r, column=pct_col + 2, value=srow["working_days"] - srow["present"])
+        ws.cell(row=r, column=pct_col + 3, value=srow["working_days"])
+        ws.cell(row=r, column=pct_col + 4, value=srow["attendance_pct"])
 
     totals_row = head + 1 + len(matrix["students"])
     ws.cell(row=totals_row, column=2, value="Present / day").font = _BOLD
@@ -311,23 +318,26 @@ def _matrix_table_html(matrix: dict) -> str:
     head = "".join(f"<th class='c'>{d.day}/{d.month}</th>" for d in dates)
     parts = [
         f"<table><tr><th>#</th><th>PRN</th><th>Student</th>{head}"
-        f"<th>P</th><th>Ab</th><th>%</th></tr>"
+        f"<th>P</th><th>L</th><th>Ab</th><th>Tot</th><th>%</th></tr>"
     ]
     for i, s in enumerate(matrix["students"], start=1):
         cells = "".join(
             f"<td class='c {c}'>{c}</td>" for c in s["cells"]
         )
+        p_count = s["cells"].count("P")
+        l_count = s["cells"].count("L")
         absent = s["working_days"] - s["present"]
         parts.append(
             f"<tr><td>{i}</td><td>{_esc(s['enrollment_number'] or '')}</td>"
             f"<td>{_esc(s['name'])}</td>{cells}"
-            f"<td class='c'>{s['present']}</td><td class='c'>{absent}</td>"
+            f"<td class='c'>{p_count}</td><td class='c'>{l_count}</td>"
+            f"<td class='c'>{absent}</td><td class='c'>{s['working_days']}</td>"
             f"<td class='c'>{s['attendance_pct']}</td></tr>"
         )
     tot = "".join(f"<td class='c'>{n}</td>" for n in matrix["day_present"])
     parts.append(
         f"<tr class='tot'><td></td><td></td><td>Present / day</td>{tot}"
-        f"<td></td><td></td><td></td></tr>"
+        f"<td></td><td></td><td></td><td></td><td></td></tr>"
     )
     parts.append("</table>")
     return "".join(parts)

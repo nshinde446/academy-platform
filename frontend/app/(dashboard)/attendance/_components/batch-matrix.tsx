@@ -181,7 +181,10 @@ export function BatchMatrix({ branchId, batches }: BatchMatrixProps) {
                     </th>
                   );
                 })}
+                <th className="px-3 py-2 text-right font-medium">Present</th>
+                <th className="px-3 py-2 text-right font-medium">Late</th>
                 <th className="px-3 py-2 text-right font-medium">Absent</th>
+                <th className="px-3 py-2 text-right font-medium">Total</th>
                 <th className="px-3 py-2 text-right font-medium">%</th>
               </tr>
             </thead>
@@ -204,8 +207,17 @@ export function BatchMatrix({ branchId, batches }: BatchMatrixProps) {
                       </span>
                     </td>
                   ))}
+                  <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                    {s.cells.filter((c) => c === "P").length}
+                  </td>
+                  <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+                    {s.cells.filter((c) => c === "L").length}
+                  </td>
                   <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-destructive">
                     {s.working_days - s.present}
+                  </td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
+                    {s.working_days}
                   </td>
                   <td
                     className={`px-3 py-1.5 text-right font-semibold tabular-nums ${pctTone(s.attendance_pct)}`}
@@ -226,6 +238,9 @@ export function BatchMatrix({ branchId, batches }: BatchMatrixProps) {
                     {n}
                   </td>
                 ))}
+                <td className="px-3 py-2" />
+                <td className="px-3 py-2" />
+                <td className="px-3 py-2" />
                 <td className="px-3 py-2" />
                 <td className="px-3 py-2" />
               </tr>
