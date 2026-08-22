@@ -87,6 +87,8 @@ export default function AttendancePage() {
     () => roles.some((r) => ADMIN_ROLES.has(r)),
     [roles],
   );
+  // Manual day-marking is super-admin-only (matches the backend route guard).
+  const isSuperAdmin = useMemo(() => roles.includes("super_admin"), [roles]);
 
   const lecturesQuery = useLectures(branchId);
   const batchesQuery = useBatchesForLectures(branchId);
@@ -284,7 +286,7 @@ export default function AttendancePage() {
         />
         <div className="min-w-0">
           {view === "day" ? (
-            <DayRegister branchId={branchId} batches={batches} />
+            <DayRegister branchId={branchId} batches={batches} isSuperAdmin={isSuperAdmin} />
           ) : view === "month" ? (
             <BatchMatrix branchId={branchId} batches={batches} />
           ) : view === "defaulters" ? (

@@ -160,7 +160,10 @@ export function BatchMatrix({ branchId, batches }: BatchMatrixProps) {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b bg-muted/30">
-                <th className="sticky left-0 z-10 bg-muted/30 px-3 py-2 text-left font-medium">
+                <th className="sticky left-0 z-10 w-24 bg-muted/30 px-3 py-2 text-left font-medium">
+                  PRN
+                </th>
+                <th className="sticky left-24 z-10 bg-muted/30 px-3 py-2 text-left font-medium">
                   Student
                 </th>
                 {dates.map((d) => {
@@ -178,23 +181,18 @@ export function BatchMatrix({ branchId, batches }: BatchMatrixProps) {
                     </th>
                   );
                 })}
+                <th className="px-3 py-2 text-right font-medium">Absent</th>
                 <th className="px-3 py-2 text-right font-medium">%</th>
               </tr>
             </thead>
             <tbody>
               {matrix.students.map((s) => (
                 <tr key={s.student_id} className="border-b last:border-0">
-                  <td className="sticky left-0 z-10 bg-background px-3 py-1.5">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="whitespace-nowrap font-medium">
-                        {s.name}
-                      </span>
-                      {s.enrollment_number && (
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {s.enrollment_number}
-                        </span>
-                      )}
-                    </div>
+                  <td className="sticky left-0 z-10 w-24 bg-background px-3 py-1.5 text-xs text-muted-foreground tabular-nums">
+                    {s.enrollment_number || "—"}
+                  </td>
+                  <td className="sticky left-24 z-10 bg-background px-3 py-1.5">
+                    <span className="whitespace-nowrap font-medium">{s.name}</span>
                   </td>
                   {s.cells.map((code, i) => (
                     <td key={dates[i]} className="px-0.5 py-1.5 text-center">
@@ -206,6 +204,9 @@ export function BatchMatrix({ branchId, batches }: BatchMatrixProps) {
                       </span>
                     </td>
                   ))}
+                  <td className="px-3 py-1.5 text-right font-semibold tabular-nums text-destructive">
+                    {s.working_days - s.present}
+                  </td>
                   <td
                     className={`px-3 py-1.5 text-right font-semibold tabular-nums ${pctTone(s.attendance_pct)}`}
                   >
@@ -216,7 +217,8 @@ export function BatchMatrix({ branchId, batches }: BatchMatrixProps) {
             </tbody>
             <tfoot>
               <tr className="border-t bg-muted/30 text-xs text-muted-foreground">
-                <td className="sticky left-0 z-10 bg-muted/30 px-3 py-2 font-medium">
+                <td className="sticky left-0 z-10 w-24 bg-muted/30 px-3 py-2 font-medium" />
+                <td className="sticky left-24 z-10 bg-muted/30 px-3 py-2 font-medium">
                   Present / {matrix.student_count}
                 </td>
                 {matrix.day_present.map((n, i) => (
@@ -224,6 +226,7 @@ export function BatchMatrix({ branchId, batches }: BatchMatrixProps) {
                     {n}
                   </td>
                 ))}
+                <td className="px-3 py-2" />
                 <td className="px-3 py-2" />
               </tr>
             </tfoot>

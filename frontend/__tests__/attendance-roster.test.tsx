@@ -34,7 +34,7 @@ describe("AttendanceRoster", () => {
     onMark.mockReset();
   });
 
-  it("renders every student with name + enrollment", () => {
+  it("renders every student with name + PRN", () => {
     render(
       <AttendanceRoster
         roster={ROSTER}
@@ -44,7 +44,8 @@ describe("AttendanceRoster", () => {
     );
     expect(screen.getByText("Aarav Patil")).toBeInTheDocument();
     expect(screen.getByText("Diya Shah")).toBeInTheDocument();
-    expect(screen.getByText("EN-1")).toBeInTheDocument();
+    // The enrollment number is labeled "PRN" on the roster sub-line.
+    expect(screen.getByText(/PRN\s*EN-1/)).toBeInTheDocument();
   });
 
   it("shows 'Not marked' for students without a record", () => {
