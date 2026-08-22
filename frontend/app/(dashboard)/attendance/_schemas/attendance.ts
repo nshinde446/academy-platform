@@ -54,13 +54,15 @@ export type Signoff = "COMPLETE" | "MISSING" | "NA";
 export interface ClassroomRegisterRow {
   student_id: string;
   name: string;
-  enrollment_number: string | null;
+  enrollment_number: string | null; // shown as "PRN" in the UI
+  rfid_number: string | null;
   parent_mobile: string | null;
   mark: "P" | "A";
   day_status: DayStatus;
   first_in: string | null;
   last_out: string | null;
   signoff: Signoff;
+  source: AttendanceSource | null;
 }
 
 // One day in a student's timeline (Reference A export — IN/OUT/status by day).

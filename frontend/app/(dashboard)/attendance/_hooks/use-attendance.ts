@@ -9,6 +9,7 @@ import type {
   BranchSummaryRow,
   ClassroomRegisterRow,
   DailyAttendance,
+  DayStatus,
   DefaulterRow,
 } from "../_schemas/attendance";
 
@@ -145,7 +146,12 @@ export function useBranchSummary(
 }
 
 // Download an attendance report (Excel / PDF) as a blob and save it.
-export type ReportScope = "student" | "batch" | "all-batches" | "daily-ledger";
+export type ReportScope =
+  | "student"
+  | "batch"
+  | "all-batches"
+  | "daily-ledger"
+  | "day";
 
 export function useDownloadAttendanceReport(branchId: string | undefined) {
   return useMutation({
@@ -154,14 +160,36 @@ export function useDownloadAttendanceReport(branchId: string | undefined) {
       id,
       start,
       end,
+      day,
       fmt,
     }: {
       scope: ReportScope;
       id?: string;
       start: string;
       end: string;
+      // The single-day report ("day" scope) uses batch_id (`id`) + `day`
+      // instead of the start/end range the other scopes take.
+      day?: string;
       fmt: "xlsx" | "pdf";
     }) => {
+      if (scope === "day") {
+        const res = await apiClient.get("/api/v1/attendance/reports/day", {
+          params: { branch_id: branchId, batch_id: id, day, fmt },
+          responseType: "blob",
+        });
+        const cd = res.headers["content-disposition"] as string | undefined;
+        const match = cd?.match(/filename="?([^"]+)"?/);
+        const filename = match?.[1] ?? `attendance-day.${fmt}`;
+        const url = URL.createObjectURL(res.data as Blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        return;
+      }
       const path =
         scope === "student"
           ? `/api/v1/attendance/reports/student/${id}`
@@ -254,6 +282,52 @@ export function useMarkAttendance(
           queryKey: studentKeys.withStats(branchId),
         });
       }
+    },
+  });
+}
+
+// Super-admin manual day mark for a student who forgot to scan. Writes a
+// MANUAL day row (never overwritten by a later punch sync); refetches the
+// register so the "Manually Marked" tag appears immediately.
+export function useManualMarkDay(
+  branchId: string | undefined,
+  batchId: string | undefined,
+  day: string | undefined,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { student_id: string; status?: DayStatus }) => {
+      const res = await apiClient.post(
+        "/api/v1/attendance/daily/mark",
+        { student_id: data.student_id, day, status: data.status ?? "PRESENT" },
+        { params: { branch_id: branchId } },
+      );
+      return res.data as DailyAttendance;
+    },
+    onSuccess: () => {
+      if (branchId && batchId && day) {
+        queryClient.invalidateQueries({
+          queryKey: attendanceKeys.register(branchId, batchId, day),
+        });
+      }
+    },
+  });
+}
+
+// Queue a parent WhatsApp notification for the selected students on a day.
+export function useSendDayNotification(branchId: string | undefined) {
+  return useMutation({
+    mutationFn: async (data: {
+      batch_id: string;
+      day: string;
+      student_ids: string[];
+    }) => {
+      const res = await apiClient.post<{ queued: number }>(
+        "/api/v1/attendance/daily/notify",
+        data,
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
     },
   });
 }

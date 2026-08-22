@@ -90,7 +90,7 @@ export function AttendanceRoster({
                     </span>
                     {s.enrollment_number && (
                       <span className="text-xs text-muted-foreground tabular-nums">
-                        {s.enrollment_number}
+                        PRN {s.enrollment_number}
                       </span>
                     )}
                   </div>

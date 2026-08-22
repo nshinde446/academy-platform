@@ -78,6 +78,22 @@ describe("BatchMatrix", () => {
     expect(within(table).getByText("Present / 1")).toBeInTheDocument();
   });
 
+  it("shows a PRN column and an Absent count (working_days - present)", () => {
+    setResult({ data: MATRIX });
+    render(<BatchMatrix branchId="br1" batches={BATCHES} />);
+    fireEvent.change(screen.getByLabelText("Select batch"), {
+      target: { value: "b1" },
+    });
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("PRN")).toBeInTheDocument();
+    expect(within(table).getByText("EN-1")).toBeInTheDocument();
+    expect(within(table).getByText("Absent")).toBeInTheDocument();
+    // 2 working days − 1 present = 1 absent for the row.
+    const cells = within(table).getAllByText("1");
+    expect(cells.length).toBeGreaterThan(0);
+  });
+
   it("queries with the selected batch id", () => {
     setResult({ data: MATRIX });
     render(<BatchMatrix branchId="br1" batches={BATCHES} />);

@@ -16,6 +16,8 @@ from app.modules.attendance.schemas.attendance_schemas import (
     BranchSummaryRow,
     ClassroomRegisterRow,
     DailyAttendanceResponse,
+    DayManualMarkRequest,
+    DayNotifyRequest,
     DefaulterRow,
     ExceptionCreate,
     ExceptionResolve,
@@ -297,6 +299,62 @@ async def download_daily_ledger_report(
         session, branch_id=branch_id, start=start, end=end, fmt=fmt,
     )
     return _download(filename, data, mime)
+
+
+@router.get("/reports/day")
+async def download_day_report(
+    branch_id: uuid.UUID = Query(...),
+    batch_id: uuid.UUID = Query(...),
+    day: date = Query(..., description="local date"),
+    fmt: str = Query("pdf", pattern="^(xlsx|pdf)$"),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Single-day batch attendance snapshot (PRN · RFID · In · Out · Status)."""
+    filename, data, mime = await attendance_report_service.day_report(
+        session, batch_id=batch_id, branch_id=branch_id, day=day, fmt=fmt,
+    )
+    return _download(filename, data, mime)
+
+
+@router.post("/daily/mark", response_model=DailyAttendanceResponse)
+async def manual_mark_day(
+    body: DayManualMarkRequest,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Super-admin manual day mark for a student who forgot to scan. Writes a
+    MANUAL day row (never overwritten by a later punch sync)."""
+    return await daily_service.manual_mark_day(
+        session,
+        student_id=body.student_id,
+        branch_id=branch_id,
+        day=body.day,
+        status=body.status,
+        user_id=current_user["user_id"],
+        ip_address=request.client.host if request.client else None,
+    )
+
+
+@router.post("/daily/notify")
+async def notify_day_students(
+    body: DayNotifyRequest,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Queue a parent WhatsApp notification for the selected students on a day
+    (dormant charge-wise until WhatsApp is enabled)."""
+    count = await daily_service.notify_selected_students(
+        session,
+        branch_id=branch_id,
+        batch_id=body.batch_id,
+        day=body.day,
+        student_ids=body.student_ids,
+    )
+    return {"queued": count}
 
 
 @router.post("/exceptions", response_model=ExceptionResponse)

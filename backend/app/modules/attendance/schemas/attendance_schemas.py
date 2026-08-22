@@ -100,13 +100,30 @@ class ClassroomRegisterRow(BaseModel):
     """One student's P/A line in a classroom day register (Reference B)."""
     student_id: uuid.UUID
     name: str
-    enrollment_number: str | None = None
+    enrollment_number: str | None = None  # surfaced as "PRN" in the UI/reports
+    rfid_number: str | None = None
     parent_mobile: str | None = None
     mark: str  # "P" | "A"
     day_status: str
     first_in: datetime | None = None
     last_out: datetime | None = None
     signoff: str
+    # BIOMETRIC | SYSTEM | MANUAL — lets the UI tag a hand-marked row.
+    source: str | None = None
+
+
+class DayManualMarkRequest(BaseModel):
+    """Super-admin manual day mark for a student who forgot to scan."""
+    student_id: uuid.UUID
+    day: date
+    status: str = "PRESENT"  # PRESENT | LATE | ABSENT
+
+
+class DayNotifyRequest(BaseModel):
+    """On-demand parent notification for selected students on a day."""
+    batch_id: uuid.UUID
+    day: date
+    student_ids: list[uuid.UUID]
 
 
 class AttendanceSummaryResponse(BaseModel):

@@ -126,6 +126,37 @@ async def daily_ledger_report(
     return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME
 
 
+async def day_report(
+    session: AsyncSession, *, batch_id: uuid.UUID, branch_id: uuid.UUID,
+    day: date, fmt: str,
+) -> tuple[str, bytes, str]:
+    """Single-day batch snapshot matching the shared sample: Sr.No · PRN ·
+    Student · RFID · In · Out · Status, with summary tiles and totals."""
+    _check_fmt(fmt)
+    batch = (await session.execute(
+        select(Batch).where(Batch.id == batch_id, Batch.branch_id == branch_id)
+    )).scalar_one_or_none()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    tz = await daily_service.branch_timezone(session, branch_id)
+    rows = await daily_service.classroom_register(
+        session, branch_id=branch_id, batch_id=batch_id, day=day,
+    )
+    brand = get_settings().ACADEMY_BRAND_NAME
+    base = f"attendance-{_slug(batch.name)}-{day.isoformat()}"
+
+    if fmt == "xlsx":
+        data = ex.day_report_xlsx(
+            brand=brand, batch_name=batch.name, day=day, rows=rows, tz_name=tz,
+        )
+        return f"{base}.xlsx", data, XLSX_MIME
+    html = ex.day_report_html(
+        brand=brand, batch_name=batch.name, day=day, rows=rows, tz_name=tz,
+    )
+    return f"{base}.pdf", await ex.render_html_to_pdf(html), PDF_MIME
+
+
 async def all_batches_report(
     session: AsyncSession, *, branch_id: uuid.UUID, start: date, end: date, fmt: str,
 ) -> tuple[str, bytes, str]:

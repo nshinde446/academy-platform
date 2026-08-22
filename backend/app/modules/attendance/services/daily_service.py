@@ -32,6 +32,7 @@ from app.modules.attendance.time_utils import (
     day_bounds,
     local_date_of,
 )
+from app.modules.audit.services import audit_service
 from app.modules.auth.models.auth_models import Branch
 from app.modules.events.models.event_models import AcademicEvent
 from app.modules.events.services import event_service
@@ -460,6 +461,130 @@ async def run_daily_digest(
     return emitted
 
 
+# ── Manual mark + on-demand notify ─────────────────────────────────────────
+
+_MANUAL_STATUSES = {"PRESENT", "LATE", "ABSENT"}
+
+
+async def manual_mark_day(
+    session: AsyncSession,
+    *,
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    day: date,
+    status: str,
+    user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> DailyAttendance:
+    """Super-admin manual day mark for a student who forgot to scan.
+
+    Upserts the student's ``DailyAttendance`` row with ``source="MANUAL"``, which
+    ``rebuild_daily`` never overwrites (decision 7) — so a later punch sync can't
+    silently undo a hand mark. Audited. ``status`` is PRESENT/LATE/ABSENT.
+    """
+    from fastapi import HTTPException, status as http_status
+
+    if status not in _MANUAL_STATUSES:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=f"status must be one of {sorted(_MANUAL_STATUSES)}",
+        )
+
+    row = await _get_row(session, student_id, day)
+    old_status = row.day_status if row else None
+    if row is None:
+        row = DailyAttendance(
+            student_id=student_id,
+            branch_id=branch_id,
+            attendance_date=day,
+        )
+        session.add(row)
+
+    row.day_status = status
+    row.source = "MANUAL"
+    row.signoff = "NA"
+    row.is_deleted = False
+    # A manual mark carries no biometric punch times; leave in/out empty so the
+    # report shows "—" and the "Manually Marked" tag distinguishes it.
+    row.first_in = None
+    row.last_out = None
+    await session.flush()
+
+    await audit_service.log_action(
+        session,
+        user_id=user_id,
+        action="UPDATE",
+        table_name="daily_attendance",
+        record_id=row.id,
+        old_values={"day_status": old_status, "source": "prior"},
+        new_values={"day_status": status, "source": "MANUAL", "attendance_date": day.isoformat()},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return row
+
+
+async def notify_selected_students(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    day: date,
+    student_ids: list[uuid.UUID],
+    tz_name: str | None = None,
+) -> int:
+    """Emit a ``DAILY_ATTENDANCE_DIGEST`` event per selected student for a day, so
+    the notification engine delivers a parent WhatsApp message on demand. Returns
+    the number of events emitted. Reuses the same metadata shape as the nightly
+    digest; delivery is a no-op charge-wise while WhatsApp is disabled."""
+    if not student_ids:
+        return 0
+
+    rows = (await session.execute(
+        select(
+            Student.id,
+            Student.first_name,
+            Student.last_name,
+            Student.parent_mobile,
+        ).where(
+            Student.id.in_(student_ids),
+            Student.branch_id == branch_id,
+            Student.is_deleted == False,
+        )
+    )).all()
+
+    status_by_student = {
+        sid: day_status
+        for sid, day_status in (await session.execute(
+            select(DailyAttendance.student_id, DailyAttendance.day_status).where(
+                DailyAttendance.student_id.in_(student_ids),
+                DailyAttendance.attendance_date == day,
+                DailyAttendance.is_deleted == False,
+            )
+        )).all()
+    }
+
+    emitted = 0
+    for sid, first_name, last_name, parent_mobile in rows:
+        day_status = status_by_student.get(sid, "ABSENT")
+        await event_service.emit_event(
+            session,
+            event_type="DAILY_ATTENDANCE_DIGEST",
+            branch_id=branch_id,
+            student_id=sid,
+            batch_id=batch_id,
+            metadata={
+                "attendance_date": day.isoformat(),
+                "student_name": f"{first_name} {last_name}".strip(),
+                "status": _STATUS_LABEL.get(day_status, day_status),
+                "recipient": parent_mobile or "",
+            },
+        )
+        emitted += 1
+    await session.flush()
+    return emitted
+
+
 # ── Reports (Layer 1) ──────────────────────────────────────────────────────
 
 # A "working day" present-credit counts both on-time and late as attended.
@@ -580,12 +705,14 @@ async def classroom_register(
             "student_id": s.id,
             "name": f"{s.first_name} {s.last_name}".strip(),
             "enrollment_number": s.enrollment_number,
+            "rfid_number": s.rfid_number,
             "parent_mobile": s.parent_mobile,
             "mark": "P" if present else "A",
             "day_status": row.day_status if row else "ABSENT",
             "first_in": row.first_in if row else None,
             "last_out": row.last_out if row else None,
             "signoff": row.signoff if row else "NA",
+            "source": row.source if row else None,
         })
     return register
 
