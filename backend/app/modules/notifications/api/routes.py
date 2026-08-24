@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import require_roles
 from app.modules.notifications.schemas.notification_schemas import (
+    DeliveryLogRow,
     QueueItemResponse,
     SettingsResponse,
     SettingsUpdate,
@@ -115,5 +116,22 @@ async def list_queue(
 ):
     return await notification_service.list_queue(
         session, delivery_status=delivery_status, branch_id=branch_id,
+        offset=offset, limit=limit,
+    )
+
+
+@router.get("/delivery-log", response_model=list[DeliveryLogRow])
+async def delivery_log(
+    branch_id: uuid.UUID | None = Query(None),
+    delivery_status: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """WhatsApp absence-notification delivery log (§5): which parents received a
+    message, so the team can confirm coverage and re-send to anyone missed."""
+    return await notification_service.delivery_log(
+        session, branch_id=branch_id, delivery_status=delivery_status,
         offset=offset, limit=limit,
     )

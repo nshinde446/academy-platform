@@ -470,6 +470,51 @@ async def list_queue(
     return [_format_queue_item(i) for i in items]
 
 
+def _delivery_log_row(q) -> dict:
+    """Map a queued message to a delivery-log row (§5). Student fields come from
+    the queued payload — there's no student FK on the queue."""
+    payload = {}
+    if q.payload_json:
+        try:
+            loaded = json.loads(q.payload_json)
+            payload = loaded if isinstance(loaded, dict) else {}
+        except (json.JSONDecodeError, TypeError):
+            payload = {}
+    return {
+        "id": q.id,
+        "student_name": payload.get("student_name"),
+        "prn": payload.get("prn") or payload.get("enrollment_number"),
+        "parent_contact": q.recipient,
+        "date": payload.get("attendance_date") or payload.get("date"),
+        "delivery_status": q.delivery_status,
+        "sent_by": q.sent_by,
+        "sent_at": q.sent_at,
+        "error_message": q.error_message,
+        "created_at": q.created_at,
+    }
+
+
+async def delivery_log(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID | None = None,
+    delivery_status: str | None = None,
+    offset: int = 0,
+    limit: int = 100,
+) -> list[dict]:
+    """WhatsApp absence-notification delivery log — who actually received a
+    message, so the team can confirm coverage and re-send to anyone missed."""
+    items = await notification_repository.list_queue(
+        session,
+        delivery_status=delivery_status,
+        branch_id=branch_id,
+        channel="whatsapp",
+        offset=offset,
+        limit=limit,
+    )
+    return [_delivery_log_row(i) for i in items]
+
+
 async def get_notification_settings(
     session: AsyncSession, branch_id: uuid.UUID
 ) -> dict:

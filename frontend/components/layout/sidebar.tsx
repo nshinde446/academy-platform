@@ -92,6 +92,10 @@ const ADMIN_SECTION: NavSection = {
   label: "Administration",
   items: [
     { label: "Users", href: "/users" },
+    { label: "Access Control", href: "/access-control" },
+    { label: "Accounts", href: "/accounts" },
+    { label: "Audit Log", href: "/audit-log" },
+    { label: "WhatsApp Log", href: "/whatsapp-log" },
     { label: "Settings", href: "/settings" },
   ],
 };

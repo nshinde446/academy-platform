@@ -17,7 +17,7 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 
 @router.get("/logs", response_model=AuditLogListResponse)
 async def list_audit_logs(
-    _current_user: dict = Depends(require_roles(["super_admin"])),
+    _current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
     session: AsyncSession = Depends(get_db),
     table_name: str | None = Query(None),
     record_id: uuid.UUID | None = Query(None),

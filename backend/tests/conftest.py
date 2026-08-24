@@ -20,6 +20,10 @@ from app.modules.auth.models.auth_models import (
     UserBranchRole,
     UserRole,
 )
+from app.modules.auth.models.access_models import (  # noqa: F401
+    AccountsAttendanceGrant,
+    BatchCoordinator,
+)
 from app.modules.academic.models.academic_models import (  # noqa: F401
     AcademicYear, Chapter, Course, Institute, Subject, Subtopic, Topic,
 )

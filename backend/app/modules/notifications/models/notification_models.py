@@ -47,6 +47,9 @@ class NotificationQueue(BaseModel):
         DateTime(timezone=True), nullable=True
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # "manual" (a coordinator sent it) or "auto" (cutoff-time job) — for the
+    # WhatsApp delivery log. NULL for older rows.
+    sent_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
     branch_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=True
     )
