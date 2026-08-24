@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueries } from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
-import { useBranchId } from "@/store/user-store";
+import { useBranchId, useRoles } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/page-header";
@@ -57,6 +57,7 @@ import type {
   SubjectSummary,
   TopicSummary,
 } from "./_schemas/lecture";
+import { CoordinatorLecturesView } from "./_components/coordinator-lectures-view";
 import { LectureTable } from "./_components/lecture-table";
 import { groupStatus } from "./_components/lecture-table-msa";
 import { GenerateDppModal } from "./_components/generate-dpp-modal";
@@ -179,6 +180,13 @@ function isThisWeek(iso: string): boolean {
 }
 
 export default function LecturesPage() {
+  const { hasRole, isManager } = useRoles();
+  // A Floor Coordinator gets a lean, batch-scoped view instead of the
+  // institute-wide roster dashboard — so LecturesPageBody (and its many
+  // institute-only queries) never mounts for them.
+  if (hasRole("floor_coordinator") && !isManager) {
+    return <CoordinatorLecturesView />;
+  }
   // useSearchParams forces the page to opt out of static prerendering, so
   // we wrap the body in <Suspense> per the Next 16 build requirement.
   return (
