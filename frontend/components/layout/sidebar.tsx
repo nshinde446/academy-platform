@@ -98,8 +98,8 @@ const COORDINATOR_SECTIONS: NavSection[] = [
       { label: "Home", href: "/home" },
       { label: "Students", href: "/students" },
       { label: "Teachers", href: "/teachers" },
-      // Attendance for their assigned batches (register + month grid). Lectures
-      // scheduling is scoped in a later increment.
+      // Scoped to their assigned batches (a lean schedule/list view).
+      { label: "Lectures", href: "/lectures" },
       { label: "Attendance", href: "/attendance" },
     ],
   },
