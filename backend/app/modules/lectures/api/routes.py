@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config.settings import get_settings
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
+from app.modules.auth.permissions.scope import BatchScope, require_batch_scope
 from app.modules.lectures.schemas.lecture_schemas import (
     AdherenceResponse,
     AttendanceMark,
@@ -51,9 +52,13 @@ router = APIRouter(prefix="/lectures", tags=["lectures"])
 async def schedule_lecture(
     body: LectureCreate,
     request: Request,
-    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    current_user: dict = Depends(get_current_user),
+    # Sole gate: role + batch scope. A Floor Coordinator may only schedule for
+    # their assigned batches (enforced when RBAC enforcement is on).
+    scope: BatchScope = Depends(require_batch_scope("lectures")),
     session: AsyncSession = Depends(get_db),
 ):
+    scope.require(body.batch_id)
     return await lecture_service.schedule_lecture(
         session, body, current_user["user_id"],
         request.client.host if request.client else None,

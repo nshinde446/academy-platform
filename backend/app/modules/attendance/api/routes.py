@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
+from app.modules.auth.permissions.scope import BatchScope, require_batch_scope
 from app.modules.attendance.services import attendance_report_service
 from app.modules.attendance.schemas.attendance_schemas import (
     AttendanceMarkRequest,
@@ -152,10 +153,11 @@ async def get_classroom_register(
     branch_id: uuid.UUID = Query(...),
     batch_id: uuid.UUID = Query(...),
     day: date = Query(..., description="local date"),
-    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    scope: BatchScope = Depends(require_batch_scope("attendance")),
     session: AsyncSession = Depends(get_db),
 ):
     """Reference B — P/A roster for a batch on one day."""
+    scope.require(batch_id)
     return await daily_service.classroom_register(
         session, branch_id=branch_id, batch_id=batch_id, day=day
     )
@@ -185,10 +187,11 @@ async def get_batch_matrix(
     batch_id: uuid.UUID = Query(...),
     start: date = Query(...),
     end: date = Query(...),
-    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    scope: BatchScope = Depends(require_batch_scope("attendance")),
     session: AsyncSession = Depends(get_db),
 ):
     """Batch register matrix — students × working-day columns (P/L/A cells)."""
+    scope.require(batch_id)
     return await daily_service.batch_matrix(
         session, branch_id=branch_id, batch_id=batch_id, start=start, end=end
     )
@@ -322,10 +325,12 @@ async def manual_mark_day(
     body: DayManualMarkRequest,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(["super_admin"])),
+    # The 'Manually Marked' override is Manager-only (super_admin + branch_admin)
+    # per the RBAC spec — Floor Coordinators and Accounts cannot manual-mark.
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
     session: AsyncSession = Depends(get_db),
 ):
-    """Super-admin manual day mark for a student who forgot to scan. Writes a
+    """Manager manual day mark for a student who forgot to scan. Writes a
     MANUAL day row (never overwritten by a later punch sync)."""
     return await daily_service.manual_mark_day(
         session,

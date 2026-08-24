@@ -64,3 +64,22 @@ export function useBranchId(): {
     isResolving: status === "loading",
   };
 }
+
+// Manager = the full-access roles (super_admin / branch_admin). Used to gate
+// Manager-only UI controls (Delete, manual attendance mark) so non-Managers
+// don't hit dead-end 403s. The server remains the source of truth.
+const MANAGER_ROLES = ["super_admin", "branch_admin"];
+
+export function useRoles(): {
+  roles: string[];
+  hasRole: (role: string) => boolean;
+  isManager: boolean;
+} {
+  const user = useUserStore((s) => s.user);
+  const roles = user?.roles ?? [];
+  return {
+    roles,
+    hasRole: (role: string) => roles.includes(role),
+    isManager: roles.some((r) => MANAGER_ROLES.includes(r)),
+  };
+}

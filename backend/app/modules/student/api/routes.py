@@ -50,7 +50,11 @@ router = APIRouter(prefix="/students", tags=["students"])
 async def create_student(
     body: StudentCreate,
     request: Request,
-    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    # Adding is open to Floor Coordinators too (RBAC spec: any role may Add;
+    # only Delete is Manager-only).
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "floor_coordinator"])
+    ),
     session: AsyncSession = Depends(get_db),
 ):
     return await student_service.create_student(
