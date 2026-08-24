@@ -377,3 +377,43 @@ async def test_coordinator_student_attendance_scoped(
     assert inn.status_code == 200, inn.text
     out = await client.get(f"/api/v1/attendance/daily/summary/{s_out.id}", params=params)
     assert out.status_code == 403
+
+
+async def test_coordinator_roster_scoped(client, seed_data, db_session, monkeypatch):
+    _enable_enforcement(monkeypatch, True)
+    coord = await _mk_user(db_session, email="coordb3@test.com", role_name="floor_coordinator")
+    db_session.add(BatchCoordinator(user_id=coord.id, batch_id=BATCH_A, branch_id=BRANCH_A))
+    await db_session.commit()
+
+    now = datetime.now(timezone.utc)
+    # Anchor both to fixed hours on the same UTC day so neither crosses midnight
+    # (which would drop it from that day's roster window).
+    base = now.replace(hour=9, minute=0, second=0, microsecond=0)
+
+    def _payload(batch_id, hour):
+        start = base + timedelta(hours=hour)
+        return {
+            "teacher_id": TEACHER_ID, "batch_id": str(batch_id),
+            "classroom_id": CLASSROOM_ID, "subject_id": SUBJECT_ID,
+            "scheduled_start": start.isoformat(),
+            "scheduled_end": (start + timedelta(hours=1)).isoformat(),
+            "delivery_mode": "offline",
+        }
+
+    await _login_admin(client)
+    ra = await client.post("/api/v1/lectures", json=_payload(BATCH_A, 0))
+    rb = await client.post("/api/v1/lectures", json=_payload(BATCH_B, 2))
+    assert ra.status_code == 200 and rb.status_code == 200
+    date_str = base.date().isoformat()
+    params = {"branch_id": str(BRANCH_A), "date": date_str}
+
+    # Manager's roster counts both batches' lectures.
+    mgr = await client.get("/api/v1/lectures/roster", params=params)
+    assert mgr.status_code == 200, mgr.text
+    assert mgr.json()["snapshot"]["planned"] == 2
+
+    # Coordinator's roster is scoped to their batch — only its lecture.
+    await _login(client, "coordb3@test.com")
+    co = await client.get("/api/v1/lectures/roster", params=params)
+    assert co.status_code == 200, co.text
+    assert co.json()["snapshot"]["planned"] == 1
