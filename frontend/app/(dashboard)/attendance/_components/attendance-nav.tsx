@@ -35,8 +35,7 @@ const ITEMS: {
   {
     view: "overview",
     name: "Today at a glance",
-    desc: "Whole-institute pulse — every batch's present % right now.",
-    managerOnly: true,
+    desc: "Every batch's present % right now (a coordinator sees their batches).",
     icon: (
       <svg {...ICON_PROPS}>
         <rect x="3" y="3" width="7" height="9" rx="1" />

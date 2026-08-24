@@ -10,7 +10,11 @@ from app.modules.auth.permissions.rbac import (
     require_manager_or_audit,
     require_roles,
 )
-from app.modules.auth.permissions.scope import BatchScope, require_batch_scope
+from app.modules.auth.permissions.scope import (
+    BatchScope,
+    require_batch_scope,
+    require_student_in_scope,
+)
 from app.modules.attendance.services import attendance_report_service
 from app.modules.attendance.schemas.attendance_schemas import (
     AttendanceMarkRequest,
@@ -143,10 +147,12 @@ async def get_student_day_timeline(
     branch_id: uuid.UUID = Query(...),
     start: date = Query(..., description="inclusive local start date"),
     end: date = Query(..., description="inclusive local end date"),
-    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    scope: BatchScope = Depends(require_batch_scope("attendance")),
     session: AsyncSession = Depends(get_db),
 ):
-    """Reference A — a student's IN/OUT/status timeline across days."""
+    """Reference A — a student's IN/OUT/status timeline across days. A coordinator
+    may only view students in their assigned batches."""
+    await require_student_in_scope(session, scope, student_id)
     return await daily_service.student_timeline(
         session, student_id=student_id, branch_id=branch_id, start=start, end=end
     )
@@ -173,10 +179,12 @@ async def get_student_attendance_summary(
     branch_id: uuid.UUID = Query(...),
     start: date = Query(...),
     end: date = Query(...),
-    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    scope: BatchScope = Depends(require_batch_scope("attendance")),
     session: AsyncSession = Depends(get_db),
 ):
-    """Attendance % over a range (working_days = days with >=1 lecture)."""
+    """Attendance % over a range (working_days = days with >=1 lecture). A
+    coordinator may only view students in their assigned batches."""
+    await require_student_in_scope(session, scope, student_id)
     return await daily_service.monthly_summary(
         session, student_id=student_id, branch_id=branch_id, start=start, end=end
     )

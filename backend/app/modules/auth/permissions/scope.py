@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.settings import get_settings
@@ -113,6 +114,47 @@ async def resolve_batch_scope(
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role"
     )
+
+
+async def require_lecture_in_scope(
+    session: AsyncSession, scope: "BatchScope", lecture_id: uuid.UUID
+) -> None:
+    """Assert the caller may act on this lecture — i.e. its batch is in scope.
+    A Manager / unrestricted caller passes without a lookup."""
+    if scope.all:
+        return
+    from app.modules.lectures.models.lecture_models import Lecture
+
+    res = await session.execute(
+        select(Lecture.batch_id).where(
+            Lecture.id == lecture_id,
+            Lecture.is_deleted == False,  # noqa: E712
+        )
+    )
+    scope.require(res.scalar_one_or_none())
+
+
+async def require_student_in_scope(
+    session: AsyncSession, scope: "BatchScope", student_id: uuid.UUID
+) -> None:
+    """Assert the caller may see this student — i.e. the student belongs to at
+    least one batch in scope. Manager / unrestricted passes without a lookup."""
+    if scope.all:
+        return
+    from app.modules.student.models.student_models import StudentBatchMapping
+
+    res = await session.execute(
+        select(StudentBatchMapping.batch_id).where(
+            StudentBatchMapping.student_id == student_id,
+            StudentBatchMapping.is_deleted == False,  # noqa: E712
+        )
+    )
+    student_batches = {r[0] for r in res.all()}
+    if not (student_batches & scope.batch_ids):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not permitted for this student",
+        )
 
 
 def require_batch_scope(feature: Feature):
