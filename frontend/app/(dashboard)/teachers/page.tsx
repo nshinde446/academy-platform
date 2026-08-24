@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useUserStore } from "@/store/user-store";
+import { useUserStore, useRoles } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,8 @@ function filterTeachers(
 export default function TeachersPage() {
   const user = useUserStore((s) => s.user);
   const branchId = user?.branch_roles?.[0]?.branch_id;
+  // Delete is Manager-only (RBAC); hide the controls for others.
+  const { isManager } = useRoles();
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
@@ -191,7 +193,7 @@ export default function TeachersPage() {
         <TeacherEmptyState hasSearch={!!debouncedSearch} />
       ) : (
         <>
-          {selectedIds.size > 0 && (
+          {selectedIds.size > 0 && isManager && (
             <TeacherBulkActionBar
               count={selectedIds.size}
               pending={bulkDeleteMutation.isPending}
@@ -203,7 +205,7 @@ export default function TeachersPage() {
             rows={filtered}
             teachersById={teachersById}
             onEdit={handleEdit}
-            onDelete={handleDeleteClick}
+            onDelete={isManager ? handleDeleteClick : undefined}
             selectedIds={selectedIds}
             onToggleSelect={toggleSelect}
             onToggleSelectAll={toggleSelectAll}

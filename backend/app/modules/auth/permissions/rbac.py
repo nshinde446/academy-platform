@@ -1,12 +1,14 @@
 import uuid
 from typing import Annotated
 
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
 from app.modules.auth.repositories import user_repository
 from app.modules.auth.services.token_service import verify_access_token
+
+_MANAGER_ROLES = ("super_admin", "branch_admin")
 
 
 async def get_current_user(
@@ -55,6 +57,45 @@ def require_roles(allowed_roles: list[str]):
                 detail="Insufficient role",
             )
         return current_user
+
+    return dependency
+
+
+def require_manager_or_audit(action: str, module: str):
+    """Manager-only gate that AUDITS denied attempts.
+
+    Allows super_admin / branch_admin (Manager) exactly as before — no access
+    change. When anyone else attempts the privileged action (e.g. a Floor
+    Coordinator hitting Delete or manual-mark) it writes an ``Access Denied``
+    audit row before returning 403, so the Manager's audit report shows the
+    attempt. Not flag-gated: logging a denial is always safe."""
+
+    async def dependency(
+        request: Request,
+        current_user: dict = Depends(get_current_user),
+        session: AsyncSession = Depends(get_db),
+    ) -> dict:
+        roles = current_user.get("roles", [])
+        if any(r in _MANAGER_ROLES for r in roles):
+            return current_user
+
+        from app.modules.audit.services import audit_service
+
+        branch_raw = current_user.get("branch_id")
+        await audit_service.log_action(
+            session,
+            user_id=current_user["user_id"],
+            action="Access Denied",
+            table_name=module,
+            record_id=current_user["user_id"],  # the actor; no target on a denial
+            new_values={"attempted": action, "roles": roles},
+            ip_address=request.client.host if request.client else None,
+            branch_id=uuid.UUID(branch_raw) if branch_raw else None,
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role"
+        )
 
     return dependency
 

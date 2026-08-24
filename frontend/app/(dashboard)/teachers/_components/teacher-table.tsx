@@ -23,7 +23,8 @@ interface TeacherTableProps {
   // dialogs need.
   teachersById: Record<string, TeacherResponse>;
   onEdit: (teacher: TeacherResponse) => void;
-  onDelete: (teacher: TeacherResponse) => void;
+  // Optional — omitted for non-Managers (Delete is Manager-only).
+  onDelete?: (teacher: TeacherResponse) => void;
   // Row selection for bulk delete — optional; when omitted the checkbox
   // column is hidden (keeps the table usable without a selection model).
   selectedIds?: Set<string>;
@@ -143,16 +144,18 @@ export function TeacherTable({
                     >
                       Edit
                     </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      disabled={!full}
-                      onClick={() => full && onDelete(full)}
-                      aria-label={`Delete ${r.first_name} ${r.last_name}`}
-                    >
-                      Delete
-                    </Button>
+                    {onDelete && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={!full}
+                        onClick={() => full && onDelete(full)}
+                        aria-label={`Delete ${r.first_name} ${r.last_name}`}
+                      >
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

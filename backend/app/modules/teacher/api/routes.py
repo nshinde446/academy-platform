@@ -4,7 +4,11 @@ from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
-from app.modules.auth.permissions.rbac import get_current_user, require_roles
+from app.modules.auth.permissions.rbac import (
+    get_current_user,
+    require_manager_or_audit,
+    require_roles,
+)
 from app.modules.teacher.schemas.teacher_schemas import (
     BulkDeleteSummary,
     BulkTeacherDelete,
@@ -93,7 +97,7 @@ async def bulk_delete_teachers(
     body: BulkTeacherDelete,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    current_user: dict = Depends(require_manager_or_audit("Delete", "teachers")),
     session: AsyncSession = Depends(get_db),
 ):
     """Soft-delete a selected set of teachers from the roster. Literal path —
@@ -187,7 +191,7 @@ async def delete_teacher(
     teacher_id: uuid.UUID,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    current_user: dict = Depends(require_manager_or_audit("Delete", "teachers")),
     session: AsyncSession = Depends(get_db),
 ):
     await teacher_service.delete_teacher(
