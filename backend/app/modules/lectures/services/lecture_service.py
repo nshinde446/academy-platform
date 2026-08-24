@@ -2444,11 +2444,17 @@ async def get_roster(
     db: AsyncSession,
     branch_id: uuid.UUID,
     day: datetime,
+    batch_ids: frozenset[uuid.UUID] | None = None,
 ) -> dict:
     """Today's Roster: per-teacher timeline of every lecture + off-plan
     session on a given date, plus snapshot KPIs and a Live Now strip.
 
     `day` is a UTC datetime; the window is its [00:00, 23:59:59].
+
+    ``batch_ids`` scopes the roster (a Floor Coordinator sees only their assigned
+    batches): the day's lectures are filtered to those batches, off-plan sessions
+    (institute-wide) are dropped, and the idle list narrows to the teachers who
+    appear. ``None`` = unrestricted (Manager / academic head).
     """
     day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
     day_end = day.replace(hour=23, minute=59, second=59, microsecond=999999)
@@ -2468,6 +2474,12 @@ async def get_roster(
         db, branch_id, day_start, day_end
     )
 
+    # Scope to the caller's batches (Floor Coordinator). Filtering the source
+    # lists here scopes every downstream derivation (teachers, KPIs, idle list).
+    if batch_ids is not None:
+        lectures = [l for l in lectures if l.batch_id in batch_ids]
+        sessions = []  # off-plan sessions are institute-wide — not shown when scoped
+
     # Lookup tables (batched fetches).
     teacher_ids = {l.teacher_id for l in lectures} | {s.teacher_id for s in sessions}
     teacher_ids |= {l.actual_teacher_id for l in lectures if l.actual_teacher_id}
@@ -2482,12 +2494,17 @@ async def get_roster(
         teachers_by_id = {t.id: t for t in result.scalars().all()}
 
     # Also fetch ALL branch teachers for the idle list (those with nothing today).
-    result = await db.execute(
-        select(Teacher).where(
-            Teacher.branch_id == branch_id, Teacher.is_deleted == False
+    # When scoped, the idle list narrows to the teachers who appear in this
+    # coordinator's batches rather than the whole institute.
+    if batch_ids is not None:
+        all_branch_teachers = list(teachers_by_id.values())
+    else:
+        result = await db.execute(
+            select(Teacher).where(
+                Teacher.branch_id == branch_id, Teacher.is_deleted == False
+            )
         )
-    )
-    all_branch_teachers = list(result.scalars().all())
+        all_branch_teachers = list(result.scalars().all())
 
     # Batches, subjects, topics, classrooms — names only.
     from app.modules.batch.models.batch_models import Batch

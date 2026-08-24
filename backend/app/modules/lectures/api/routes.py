@@ -163,7 +163,9 @@ async def list_lecture_sessions(
 async def get_roster(
     branch_id: uuid.UUID = Query(...),
     date: str = Query(..., description="YYYY-MM-DD UTC date"),
-    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    # Manager + academic head unrestricted (as before); a Floor Coordinator sees
+    # their assigned batches' roster (so the Today/Home landing works for them).
+    scope: BatchScope = Depends(require_batch_scope("lectures")),
     session: AsyncSession = Depends(get_db),
 ):
     """Today's Roster: per-teacher timeline of every lecture and off-plan
@@ -179,7 +181,8 @@ async def get_roster(
             status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="date must be YYYY-MM-DD",
         )
-    return await lecture_service.get_roster(session, branch_id, day)
+    batch_ids = None if scope.all else scope.batch_ids
+    return await lecture_service.get_roster(session, branch_id, day, batch_ids)
 
 
 @router.get("/insights/outcomes", response_model=OutcomeResponse)

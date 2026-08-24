@@ -95,12 +95,13 @@ const COORDINATOR_SECTIONS: NavSection[] = [
   {
     label: "",
     items: [
-      { label: "Home", href: "/home" },
+      // No Home — the institute dashboard redirects them here anyway; Attendance
+      // is a coordinator's landing.
+      { label: "Attendance", href: "/attendance" },
       { label: "Students", href: "/students" },
       { label: "Teachers", href: "/teachers" },
       // Scoped to their assigned batches (a lean schedule/list view).
       { label: "Lectures", href: "/lectures" },
-      { label: "Attendance", href: "/attendance" },
     ],
   },
 ];

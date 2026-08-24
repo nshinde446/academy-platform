@@ -2,7 +2,8 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { useUserStore } from "@/store/user-store";
+import { redirect } from "next/navigation";
+import { useRoles, useUserStore } from "@/store/user-store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,18 @@ function isoNDaysAgo(n: number): string {
 }
 
 export default function HomePage() {
+  const { hasRole, isManager } = useRoles();
+  // The home dashboard is an institute-wide view (roster, adherence, outcomes,
+  // question bank) — a Floor Coordinator's home is their scoped Attendance
+  // console. Redirect so HomeDashboard (and its institute-only queries) never
+  // mounts for them.
+  if (hasRole("floor_coordinator") && !isManager) {
+    redirect("/attendance");
+  }
+  return <HomeDashboard />;
+}
+
+function HomeDashboard() {
   const user = useUserStore((s) => s.user);
   const branchId = user?.branch_roles?.[0]?.branch_id;
 
