@@ -89,3 +89,22 @@ class QueueItemResponse(BaseModel):
     error_message: str | None = None
     branch_id: uuid.UUID | None = None
     created_at: datetime
+
+
+class DeliveryLogRow(BaseModel):
+    """One row of the WhatsApp absence-notification delivery log (§5).
+
+    Student name/PRN, parent contact, date and sent status are surfaced for the
+    team to confirm coverage and re-send to anyone missed. Student fields come
+    from the queued payload (there's no student FK on the queue)."""
+
+    id: uuid.UUID
+    student_name: str | None = None
+    prn: str | None = None
+    parent_contact: str
+    date: str | None = None
+    delivery_status: str  # SENT / FAILED / PENDING
+    sent_by: str | None = None  # manual / auto
+    sent_at: datetime | None = None
+    error_message: str | None = None
+    created_at: datetime

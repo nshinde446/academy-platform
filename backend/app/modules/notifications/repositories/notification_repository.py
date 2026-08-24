@@ -128,6 +128,7 @@ async def list_queue(
     session: AsyncSession,
     delivery_status: str | None = None,
     branch_id: uuid.UUID | None = None,
+    channel: str | None = None,
     offset: int = 0,
     limit: int = 50,
 ) -> list[NotificationQueue]:
@@ -138,6 +139,8 @@ async def list_queue(
         stmt = stmt.where(NotificationQueue.delivery_status == delivery_status)
     if branch_id is not None:
         stmt = stmt.where(NotificationQueue.branch_id == branch_id)
+    if channel is not None:
+        stmt = stmt.where(NotificationQueue.channel == channel)
     stmt = stmt.order_by(NotificationQueue.created_at.desc()).offset(offset).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())
