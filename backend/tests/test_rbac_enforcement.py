@@ -294,3 +294,86 @@ async def test_branch_summary_flag_off_denies_coordinator(client, seed_data, db_
         },
     )
     assert resp.status_code == 403
+
+
+# ── Phase B: lecture-write + per-student attendance scoping ───────────────────
+
+
+async def test_coordinator_cancels_only_assigned_batch_lecture(
+    client, seed_data, db_session, monkeypatch
+):
+    _enable_enforcement(monkeypatch, True)
+    coord = await _mk_user(db_session, email="coordb1@test.com", role_name="floor_coordinator")
+    db_session.add(BatchCoordinator(user_id=coord.id, batch_id=BATCH_A, branch_id=BRANCH_A))
+    await db_session.commit()
+
+    now = datetime.now(timezone.utc)
+
+    def _payload(batch_id, hour):
+        # Stagger the two so they don't clash on the shared classroom/time.
+        return {
+            "teacher_id": TEACHER_ID, "batch_id": str(batch_id),
+            "classroom_id": CLASSROOM_ID, "subject_id": SUBJECT_ID,
+            "scheduled_start": (now + timedelta(hours=hour)).isoformat(),
+            "scheduled_end": (now + timedelta(hours=hour + 1)).isoformat(),
+            "delivery_mode": "offline",
+        }
+
+    # Admin creates a lecture in each batch.
+    await _login_admin(client)
+    ra = await client.post("/api/v1/lectures", json=_payload(BATCH_A, 2))
+    rb = await client.post("/api/v1/lectures", json=_payload(BATCH_B, 5))
+    assert ra.status_code == 200, ra.text
+    assert rb.status_code == 200, rb.text
+    lec_a = ra.json()["id"]
+    lec_b = rb.json()["id"]
+
+    # Coordinator can cancel their batch's lecture, not the other's.
+    await _login(client, "coordb1@test.com")
+    ok = await client.patch(
+        f"/api/v1/lectures/{lec_a}/cancel", params={"branch_id": str(BRANCH_A)}
+    )
+    assert ok.status_code == 200, ok.text
+    denied = await client.patch(
+        f"/api/v1/lectures/{lec_b}/cancel", params={"branch_id": str(BRANCH_A)}
+    )
+    assert denied.status_code == 403
+
+
+async def test_coordinator_student_attendance_scoped(
+    client, seed_data, db_session, monkeypatch
+):
+    from app.modules.student.models.student_models import Student, StudentBatchMapping
+
+    _enable_enforcement(monkeypatch, True)
+    coord = await _mk_user(db_session, email="coordb2@test.com", role_name="floor_coordinator")
+    db_session.add(BatchCoordinator(user_id=coord.id, batch_id=BATCH_A, branch_id=BRANCH_A))
+
+    def _student(rfid, batch_id):
+        s = Student(
+            id=uuid.uuid4(), branch_id=BRANCH_A,
+            academic_year_id=seed_data["academic_year"].id,
+            first_name="S", last_name=rfid, enrollment_number=f"EN-{rfid}",
+            rfid_number=rfid, status="active", is_deleted=False,
+        )
+        db_session.add(s)
+        return s
+
+    s_in = _student("scoped-in", BATCH_A)
+    s_out = _student("scoped-out", BATCH_B)
+    await db_session.flush()
+    db_session.add(StudentBatchMapping(student_id=s_in.id, batch_id=BATCH_A, branch_id=BRANCH_A, status="active", is_deleted=False))
+    db_session.add(StudentBatchMapping(student_id=s_out.id, batch_id=BATCH_B, branch_id=BRANCH_A, status="active", is_deleted=False))
+    await db_session.commit()
+
+    today = date.today()
+    params = {
+        "branch_id": str(BRANCH_A),
+        "start": (today - timedelta(days=7)).isoformat(),
+        "end": today.isoformat(),
+    }
+    await _login(client, "coordb2@test.com")
+    inn = await client.get(f"/api/v1/attendance/daily/summary/{s_in.id}", params=params)
+    assert inn.status_code == 200, inn.text
+    out = await client.get(f"/api/v1/attendance/daily/summary/{s_out.id}", params=params)
+    assert out.status_code == 403

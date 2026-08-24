@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config.settings import get_settings
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
-from app.modules.auth.permissions.scope import BatchScope, require_batch_scope
+from app.modules.auth.permissions.scope import (
+    BatchScope,
+    require_batch_scope,
+    require_lecture_in_scope,
+)
 from app.modules.lectures.schemas.lecture_schemas import (
     AdherenceResponse,
     AttendanceMark,
@@ -641,9 +645,11 @@ async def cancel_lecture(
     lecture_id: uuid.UUID,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    current_user: dict = Depends(get_current_user),
+    scope: BatchScope = Depends(require_batch_scope("lectures")),
     session: AsyncSession = Depends(get_db),
 ):
+    await require_lecture_in_scope(session, scope, lecture_id)
     return await lecture_service.cancel_lecture(
         session, lecture_id, branch_id, current_user["user_id"],
         request.client.host if request.client else None,
@@ -656,9 +662,11 @@ async def mark_substitute(
     body: LectureSubstitute,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    current_user: dict = Depends(get_current_user),
+    scope: BatchScope = Depends(require_batch_scope("lectures")),
     session: AsyncSession = Depends(get_db),
 ):
+    await require_lecture_in_scope(session, scope, lecture_id)
     return await lecture_service.mark_substitute(
         session, lecture_id, body, branch_id, current_user["user_id"],
         request.client.host if request.client else None,
@@ -710,9 +718,11 @@ async def reschedule_lecture(
     body: LectureReschedule,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head"])),
+    current_user: dict = Depends(get_current_user),
+    scope: BatchScope = Depends(require_batch_scope("lectures")),
     session: AsyncSession = Depends(get_db),
 ):
+    await require_lecture_in_scope(session, scope, lecture_id)
     return await lecture_service.reschedule_lecture(
         session, lecture_id, body, branch_id, current_user["user_id"],
         request.client.host if request.client else None,

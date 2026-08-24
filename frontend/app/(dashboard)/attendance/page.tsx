@@ -122,10 +122,11 @@ export default function AttendancePage() {
   const defaultersCount = defaultersQuery.data?.length ?? 0;
 
   const [view, setView] = useState<AttendanceView>("overview");
-  // A coordinator only has the day + month views; fall back to Day register if
-  // the current selection isn't one of them (e.g. the default "overview").
+  // A coordinator has overview (scoped to their batches) + day + month; fall
+  // back to Day register if the current selection isn't one of them.
+  const COORDINATOR_VIEWS: AttendanceView[] = ["overview", "day", "month"];
   const effectiveView: AttendanceView =
-    isCoordinator && view !== "day" && view !== "month" ? "day" : view;
+    isCoordinator && !COORDINATOR_VIEWS.includes(view) ? "day" : view;
   const [filterBatchId, setFilterBatchId] = useState("");
   const [selectedLectureId, setSelectedLectureId] = useState("");
   const [pendingStudentId, setPendingStudentId] = useState<string | null>(null);
