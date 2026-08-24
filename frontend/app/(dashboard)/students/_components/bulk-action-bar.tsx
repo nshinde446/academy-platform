@@ -19,7 +19,8 @@ interface BulkActionBarProps {
   onSetStream: (value: string) => void;
   onAssignBatch: (batchId: string) => void;
   onExport: () => void;
-  onDelete: () => void;
+  // Optional — omitted for non-Managers (Delete is Manager-only).
+  onDelete?: () => void;
   onClear: () => void;
 }
 
@@ -107,14 +108,16 @@ export function BulkActionBar({
       <Button variant="outline" size="sm" onClick={onExport} disabled={pending}>
         Export selected
       </Button>
-      <Button
-        variant="destructive"
-        size="sm"
-        onClick={onDelete}
-        disabled={pending}
-      >
-        Delete
-      </Button>
+      {onDelete && (
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={onDelete}
+          disabled={pending}
+        >
+          Delete
+        </Button>
+      )}
       <Button variant="ghost" size="sm" onClick={onClear} disabled={pending}>
         Clear
       </Button>

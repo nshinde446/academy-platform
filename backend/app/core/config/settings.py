@@ -115,6 +115,12 @@ class Settings(BaseSettings):
     # the provisioning API returns 503 and the queue is never emitted to the
     # device, so shipping the plumbing cannot affect live attendance. See
     # docs/biomax-provisioning-implementation.md.
+    # RBAC enforcement kill-switch (Phase 2). OFF = every new role/batch-scope
+    # guard no-ops and access behaves exactly as before, so the code ships inert.
+    # Flip ON per deploy once Floor Coordinator batch lists + Accounts grants are
+    # set; flip OFF for instant rollback. Managers are never restricted either way.
+    RBAC_ENFORCEMENT_ENABLED: bool = False
+
     BIOMAX_PROVISIONING_ENABLED: bool = False
     # Shared secret the on-site device-user sync agent presents
     # (``X-BioMax-Sync-Token`` header) when it POSTs the device's real user table

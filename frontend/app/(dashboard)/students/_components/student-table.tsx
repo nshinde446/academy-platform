@@ -31,7 +31,8 @@ interface StudentTableProps {
   // Handlers act on the (paginated) roster row; the page fetches the full
   // record on Edit, since the stats payload omits some fields.
   onEdit: (student: StudentWithStats) => void;
-  onDelete: (student: StudentWithStats) => void;
+  // Optional — omitted for non-Managers (Delete is Manager-only).
+  onDelete?: (student: StudentWithStats) => void;
   // Inline cell edits (stream / class / fees) — each persisted via PATCH by the
   // page. One generic handler so adding more inline fields stays cheap.
   onFieldChange: (student: StudentWithStats, patch: Partial<StudentUpdate>) => void;
@@ -273,15 +274,17 @@ export function StudentTable({
                     >
                       Edit
                     </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => onDelete(r)}
-                      aria-label={`Delete ${r.first_name} ${r.last_name}`}
-                    >
-                      Delete
-                    </Button>
+                    {onDelete && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => onDelete(r)}
+                        aria-label={`Delete ${r.first_name} ${r.last_name}`}
+                      >
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

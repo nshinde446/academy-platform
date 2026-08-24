@@ -25,7 +25,10 @@ router = APIRouter(prefix="/teachers", tags=["teachers"])
 async def create_teacher(
     body: TeacherCreate,
     request: Request,
-    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    # Floor Coordinators may add teachers too (only Delete is Manager-only).
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "floor_coordinator"])
+    ),
     session: AsyncSession = Depends(get_db),
 ):
     return await teacher_service.create_teacher(

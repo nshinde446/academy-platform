@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUserStore } from "@/store/user-store";
+import { useUserStore, useRoles } from "@/store/user-store";
 import { useDebounce } from "@/hooks/use-debounce";
 import apiClient from "@/services/api-client";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,9 @@ const PAGE_SIZE = 50;
 export default function StudentsPage() {
   const user = useUserStore((s) => s.user);
   const branchId = user?.branch_roles?.[0]?.branch_id;
+  // Delete is Manager-only (RBAC). Hide the destructive controls for others so
+  // they don't hit dead-end 403s; the server enforces regardless.
+  const { isManager } = useRoles();
 
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 300);
@@ -218,7 +221,7 @@ export default function StudentsPage() {
         description="Manage student records for your branch."
         actions={
           <>
-            {branchId && (
+            {branchId && isManager && (
               <DeleteAllStudentsDialog branchId={branchId} count={total} />
             )}
             {branchId && (
@@ -288,14 +291,14 @@ export default function StudentsPage() {
               onSetStream={(v) => handleBulkPatch({ stream: v as StudentUpdate["stream"] })}
               onAssignBatch={handleBulkAssignBatch}
               onExport={handleExportSelected}
-              onDelete={() => setBulkDeleteOpen(true)}
+              onDelete={isManager ? () => setBulkDeleteOpen(true) : undefined}
               onClear={clearSelection}
             />
           )}
           <StudentTable
             rows={rows}
             onEdit={handleEdit}
-            onDelete={handleDeleteClick}
+            onDelete={isManager ? handleDeleteClick : undefined}
             onFieldChange={handleFieldChange}
             sortBy={sortBy}
             order={order}

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
-from app.modules.auth.permissions.rbac import require_roles
+from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.auth.repositories import access_repository
 from app.modules.auth.schemas.access_schemas import (
     AccountsGrantCreateRequest,
@@ -34,6 +34,22 @@ def _actor_branch_id(current_user: dict) -> uuid.UUID | None:
 
 def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
+
+
+@router.get("/my-batches", response_model=CoordinatorBatchesResponse)
+async def my_batches(
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """The caller's own assigned batches — so a Floor Coordinator's UI can scope
+    its batch pickers to exactly what the server will allow. Empty for roles
+    that aren't batch-scoped (Managers act on all batches)."""
+    user_id = current_user["user_id"]
+    batches = await access_service.get_coordinator_batches(session, user_id)
+    return CoordinatorBatchesResponse(
+        user_id=user_id,
+        batches=[BatchRef(id=b.id, name=b.name) for b in batches],
+    )
 
 
 @router.get(
