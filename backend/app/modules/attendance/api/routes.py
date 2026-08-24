@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
-from app.modules.auth.permissions.rbac import get_current_user, require_roles
+from app.modules.auth.permissions.rbac import (
+    get_current_user,
+    require_manager_or_audit,
+    require_roles,
+)
 from app.modules.auth.permissions.scope import BatchScope, require_batch_scope
 from app.modules.attendance.services import attendance_report_service
 from app.modules.attendance.schemas.attendance_schemas import (
@@ -202,13 +206,18 @@ async def get_branch_summary(
     branch_id: uuid.UUID = Query(...),
     start: date = Query(...),
     end: date = Query(...),
-    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    scope: BatchScope = Depends(require_batch_scope("attendance")),
     session: AsyncSession = Depends(get_db),
 ):
-    """One summary row per active batch — the institute overview."""
-    return await daily_service.branch_summary(
+    """One summary row per active batch — the institute overview. Scoped: a Floor
+    Coordinator / Accounts user sees only their batches (all when unrestricted)."""
+    rows = await daily_service.branch_summary(
         session, branch_id=branch_id, start=start, end=end
     )
+    if scope.all:
+        return rows
+    # branch_summary returns dicts; filter by the scoped batch ids.
+    return [r for r in rows if scope.allows(r["batch_id"])]
 
 
 @router.get("/daily/defaulters", response_model=list[DefaulterRow])
@@ -325,9 +334,11 @@ async def manual_mark_day(
     body: DayManualMarkRequest,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    # The 'Manually Marked' override is Manager-only (super_admin + branch_admin)
-    # per the RBAC spec — Floor Coordinators and Accounts cannot manual-mark.
-    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    # The 'Manually Marked' override is Manager-only per the RBAC spec — Floor
+    # Coordinators and Accounts cannot manual-mark; denied attempts are audited.
+    current_user: dict = Depends(
+        require_manager_or_audit("Manual Attendance", "attendance")
+    ),
     session: AsyncSession = Depends(get_db),
 ):
     """Manager manual day mark for a student who forgot to scan. Writes a

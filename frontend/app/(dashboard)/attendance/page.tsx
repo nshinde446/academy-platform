@@ -11,6 +11,7 @@ import {
   useLectures,
 } from "../lectures/_hooks/use-lectures";
 import { useStudentsWithStats } from "../students/_hooks/use-students";
+import { useMyBatches } from "@/hooks/use-my-batches";
 import type { LectureResponse } from "../lectures/_schemas/lecture";
 import {
   useDefaulters,
@@ -89,13 +90,28 @@ export default function AttendancePage() {
   );
   // Manual day-marking is super-admin-only (matches the backend route guard).
   const isSuperAdmin = useMemo(() => roles.includes("super_admin"), [roles]);
+  // A Floor Coordinator sees only their assigned batches' registers + month
+  // grid — the institute-wide views + manual mark are hidden.
+  const isCoordinator = useMemo(
+    () => roles.includes("floor_coordinator") && !isAdmin,
+    [roles, isAdmin],
+  );
 
   const lecturesQuery = useLectures(branchId);
   const batchesQuery = useBatchesForLectures(branchId);
+  const myBatchesQuery = useMyBatches(isCoordinator);
   const studentsQuery = useStudentsWithStats(branchId);
 
   const lectures = useMemo(() => lecturesQuery.data ?? [], [lecturesQuery.data]);
-  const batches = useMemo(() => batchesQuery.data ?? [], [batchesQuery.data]);
+  // Coordinators pick only from their assigned batches, so they never select a
+  // batch the server will 403 on.
+  const batches = useMemo(
+    () =>
+      isCoordinator
+        ? (myBatchesQuery.data ?? [])
+        : (batchesQuery.data ?? []),
+    [isCoordinator, myBatchesQuery.data, batchesQuery.data],
+  );
   const students = useMemo(() => studentsQuery.data ?? [], [studentsQuery.data]);
 
   // Institute-wide signals shared by the pulse strip (a tile) and the nav rail
@@ -106,6 +122,10 @@ export default function AttendancePage() {
   const defaultersCount = defaultersQuery.data?.length ?? 0;
 
   const [view, setView] = useState<AttendanceView>("overview");
+  // A coordinator only has the day + month views; fall back to Day register if
+  // the current selection isn't one of them (e.g. the default "overview").
+  const effectiveView: AttendanceView =
+    isCoordinator && view !== "day" && view !== "month" ? "day" : view;
   const [filterBatchId, setFilterBatchId] = useState("");
   const [selectedLectureId, setSelectedLectureId] = useState("");
   const [pendingStudentId, setPendingStudentId] = useState<string | null>(null);
@@ -268,32 +288,35 @@ export default function AttendancePage() {
         </p>
       ) : (
         <>
-      {/* Institute pulse — always visible, summary before navigation */}
-      <InstitutePulse
-        branchId={branchId}
-        today={today}
-        defaultersCount={defaultersCount}
-        defaultersLoading={defaultersQuery.isLoading}
-      />
+      {/* Institute pulse — Manager overview; hidden from a scoped coordinator */}
+      {!isCoordinator && (
+        <InstitutePulse
+          branchId={branchId}
+          today={today}
+          defaultersCount={defaultersCount}
+          defaultersLoading={defaultersQuery.isLoading}
+        />
+      )}
 
       {/* Console: descriptive view rail + the active view */}
       <div className="grid items-start gap-4 lg:grid-cols-[264px_1fr]">
         <AttendanceNav
-          view={view}
+          view={effectiveView}
           onChange={setView}
           defaultersCount={defaultersCount}
           isAdmin={isAdmin}
+          isCoordinator={isCoordinator}
         />
         <div className="min-w-0">
-          {view === "day" ? (
+          {effectiveView === "day" ? (
             <DayRegister branchId={branchId} batches={batches} isSuperAdmin={isSuperAdmin} />
-          ) : view === "month" ? (
+          ) : effectiveView === "month" ? (
             <BatchMatrix branchId={branchId} batches={batches} />
-          ) : view === "defaulters" ? (
+          ) : effectiveView === "defaulters" ? (
             <DefaulterBoard branchId={branchId} />
-          ) : view === "overview" ? (
+          ) : effectiveView === "overview" ? (
             <InstituteOverview branchId={branchId} />
-          ) : view === "device" ? (
+          ) : effectiveView === "device" ? (
             <DeviceSync branchId={branchId} />
           ) : (
           <div className="flex flex-col gap-6">

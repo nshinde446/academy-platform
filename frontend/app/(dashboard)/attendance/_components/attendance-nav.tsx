@@ -28,11 +28,15 @@ const ITEMS: {
   desc: string;
   icon: ReactNode;
   adminOnly?: boolean;
+  // Institute-wide or Manager-only views hidden from a Floor Coordinator, whose
+  // scope is their own batches' registers + month grid.
+  managerOnly?: boolean;
 }[] = [
   {
     view: "overview",
     name: "Today at a glance",
     desc: "Whole-institute pulse — every batch's present % right now.",
+    managerOnly: true,
     icon: (
       <svg {...ICON_PROPS}>
         <rect x="3" y="3" width="7" height="9" rx="1" />
@@ -46,6 +50,7 @@ const ITEMS: {
     view: "defaulters",
     name: "Defaulters",
     desc: "Eligibility watchlist, worst first — act before the cutoff.",
+    managerOnly: true,
     icon: (
       <svg {...ICON_PROPS}>
         <path d="M12 9v4M12 17h.01" />
@@ -79,6 +84,8 @@ const ITEMS: {
     view: "lecture",
     name: "Mark a lecture",
     desc: "Take a single lecture's roster by hand or from punches.",
+    // Coordinators view attendance but don't manually mark (RBAC spec).
+    managerOnly: true,
     icon: (
       <svg {...ICON_PROPS}>
         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
@@ -109,13 +116,18 @@ export function AttendanceNav({
   onChange,
   defaultersCount,
   isAdmin = false,
+  isCoordinator = false,
 }: {
   view: AttendanceView;
   onChange: (v: AttendanceView) => void;
   defaultersCount: number;
   isAdmin?: boolean;
+  isCoordinator?: boolean;
 }) {
-  const items = ITEMS.filter((it) => isAdmin || !it.adminOnly);
+  const items = ITEMS.filter(
+    (it) =>
+      (isAdmin || !it.adminOnly) && !(isCoordinator && it.managerOnly),
+  );
   return (
     <div
       role="tablist"

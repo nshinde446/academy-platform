@@ -87,6 +87,34 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 
 const ADMIN_ROLES = ["super_admin", "branch_admin"];
 
+// Restricted navs for the RBAC roles. A Floor Coordinator works attendance +
+// scheduling for their batches (and can add students/teachers); Accounts is
+// fees-first (attendance appears but the server gates it to granted batches).
+// Existing roles (Manager, teacher, academic_head, …) are unaffected.
+const COORDINATOR_SECTIONS: NavSection[] = [
+  {
+    label: "",
+    items: [
+      { label: "Home", href: "/home" },
+      { label: "Students", href: "/students" },
+      { label: "Teachers", href: "/teachers" },
+      // Attendance for their assigned batches (register + month grid). Lectures
+      // scheduling is scoped in a later increment.
+      { label: "Attendance", href: "/attendance" },
+    ],
+  },
+];
+const ACCOUNTS_SECTIONS: NavSection[] = [
+  {
+    label: "",
+    items: [
+      { label: "Home", href: "/home" },
+      { label: "Accounts", href: "/accounts" },
+      { label: "Attendance", href: "/attendance" },
+    ],
+  },
+];
+
 // Only branch/super admins manage staff accounts.
 const ADMIN_SECTION: NavSection = {
   label: "Administration",
@@ -106,8 +134,17 @@ export function Sidebar() {
   const logout = useAuthStore((s) => s.logout);
   const [changePwOpen, setChangePwOpen] = useState(false);
 
-  const isAdmin = (user?.roles ?? []).some((r) => ADMIN_ROLES.includes(r));
-  const sections = isAdmin ? [...SECTIONS, ADMIN_SECTION] : SECTIONS;
+  const roles = user?.roles ?? [];
+  const isAdmin = roles.some((r) => ADMIN_ROLES.includes(r));
+  // Managers get everything; the two restricted roles get a curated nav; all
+  // other existing roles keep the default sections unchanged.
+  const sections = isAdmin
+    ? [...SECTIONS, ADMIN_SECTION]
+    : roles.includes("floor_coordinator")
+      ? COORDINATOR_SECTIONS
+      : roles.includes("accounts")
+        ? ACCOUNTS_SECTIONS
+        : SECTIONS;
 
   const initials =
     user?.first_name && user?.last_name

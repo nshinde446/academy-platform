@@ -223,3 +223,74 @@ async def test_coordinator_can_add_student(client, seed_data, db_session, monkey
     # Add is open to coordinators (only Delete is Manager-only). Accept created
     # or a validation error, but never a 403.
     assert resp.status_code != 403, resp.text
+
+
+# ── follow-ups: audit-on-denial + branch-summary scoping ─────────────────────
+
+
+async def test_denied_delete_is_audited(client, seed_data, db_session, monkeypatch):
+    _enable_enforcement(monkeypatch, True)
+    await _mk_user(db_session, email="coord6@test.com", role_name="floor_coordinator")
+    await db_session.commit()
+
+    # Coordinator attempts a permanent delete → 403.
+    await _login(client, "coord6@test.com")
+    denied = await client.delete(
+        f"/api/v1/students/{uuid.uuid4()}", params={"branch_id": str(BRANCH_A)}
+    )
+    assert denied.status_code == 403
+
+    # The attempt is recorded for the Manager's audit report.
+    await _login_admin(client)
+    logs = await client.get("/api/v1/audit/logs", params={"action": "Access Denied"})
+    assert logs.status_code == 200, logs.text
+    items = logs.json()["items"]
+    assert any(
+        it["action"] == "Access Denied" and it["table_name"] == "students"
+        for it in items
+    )
+
+
+async def test_branch_summary_scoped_to_assigned(client, seed_data, db_session, monkeypatch):
+    _enable_enforcement(monkeypatch, True)
+    coord = await _mk_user(db_session, email="coord7@test.com", role_name="floor_coordinator")
+    db_session.add(BatchCoordinator(user_id=coord.id, batch_id=BATCH_A, branch_id=BRANCH_A))
+    await db_session.commit()
+
+    today = date.today()
+    params = {
+        "branch_id": str(BRANCH_A),
+        "start": (today - timedelta(days=7)).isoformat(),
+        "end": today.isoformat(),
+    }
+
+    # Manager sees every active batch (both A and B).
+    await _login_admin(client)
+    mgr = await client.get("/api/v1/attendance/daily/branch-summary", params=params)
+    assert mgr.status_code == 200
+    mgr_batches = {r["batch_id"] for r in mgr.json()}
+    assert str(BATCH_A) in mgr_batches and str(BATCH_B) in mgr_batches
+
+    # Coordinator sees only their assigned batch.
+    await _login(client, "coord7@test.com")
+    coord_resp = await client.get("/api/v1/attendance/daily/branch-summary", params=params)
+    assert coord_resp.status_code == 200
+    coord_batches = {r["batch_id"] for r in coord_resp.json()}
+    assert coord_batches == {str(BATCH_A)}
+
+
+async def test_branch_summary_flag_off_denies_coordinator(client, seed_data, db_session, monkeypatch):
+    _enable_enforcement(monkeypatch, False)
+    await _mk_user(db_session, email="coord8@test.com", role_name="floor_coordinator")
+    await db_session.commit()
+    await _login(client, "coord8@test.com")
+    today = date.today()
+    resp = await client.get(
+        "/api/v1/attendance/daily/branch-summary",
+        params={
+            "branch_id": str(BRANCH_A),
+            "start": (today - timedelta(days=7)).isoformat(),
+            "end": today.isoformat(),
+        },
+    )
+    assert resp.status_code == 403

@@ -17,7 +17,11 @@ from fastapi import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
-from app.modules.auth.permissions.rbac import get_current_user, require_roles
+from app.modules.auth.permissions.rbac import (
+    get_current_user,
+    require_manager_or_audit,
+    require_roles,
+)
 from app.modules.student.models.student_models import StudentImportJob
 from app.modules.student.schemas.student_schemas import (
     BulkActionSummary,
@@ -508,7 +512,8 @@ async def delete_student(
     student_id: uuid.UUID,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    # Manager-only; a denied attempt (e.g. by a Floor Coordinator) is audited.
+    current_user: dict = Depends(require_manager_or_audit("Delete", "students")),
     session: AsyncSession = Depends(get_db),
 ):
     await student_service.delete_student(
