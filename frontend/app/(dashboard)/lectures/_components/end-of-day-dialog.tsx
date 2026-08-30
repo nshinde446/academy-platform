@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { DateTimeField, addMinutesToLocal } from "@/components/ui/datetime-field";
 import {
   Dialog,
   DialogPopup,
@@ -170,22 +170,41 @@ export function EndOfDayDialog({
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="eod_start">Actual Start *</Label>
-                <Input
+                <DateTimeField
                   id="eod_start"
-                  type="datetime-local"
+                  ariaLabel="Actual start"
                   value={actualStart}
-                  onChange={(e) => setActualStart(e.target.value)}
+                  onChange={setActualStart}
+                  step={5}
                   required
                 />
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="eod_end">Actual End</Label>
-                <Input
+                <DateTimeField
                   id="eod_end"
-                  type="datetime-local"
+                  ariaLabel="Actual end"
                   value={actualEnd}
-                  onChange={(e) => setActualEnd(e.target.value)}
+                  onChange={setActualEnd}
+                  step={5}
                 />
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">Duration:</span>
+                  {[45, 60, 90, 120].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() =>
+                        actualStart &&
+                        setActualEnd(addMinutesToLocal(actualStart, m))
+                      }
+                      disabled={!actualStart}
+                      className="rounded-md border border-input px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                    >
+                      {m < 60 ? `${m}m` : m % 60 === 0 ? `${m / 60}h` : `${Math.floor(m / 60)}h ${m % 60}m`}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}

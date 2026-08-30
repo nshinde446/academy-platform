@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   QueryClient,
@@ -197,18 +197,16 @@ describe("CreateLectureDialog", () => {
     });
     await user.selectOptions(screen.getByLabelText(/^teacher \*/i), "t1");
 
-    // Set datetime inputs deterministically — JSDOM doesn't render the
-    // value attribute the same way browsers do.
-    const startInput = screen.getByLabelText(
-      /scheduled start/i
-    ) as HTMLInputElement;
-    const endInput = screen.getByLabelText(
-      /scheduled end/i
-    ) as HTMLInputElement;
-    await user.clear(startInput);
-    await user.type(startInput, "2026-05-20T10:00");
-    await user.clear(endInput);
-    await user.type(endInput, "2026-05-20T11:00");
+    // Start is a split date + typeable time select now (no minute spinner).
+    fireEvent.change(screen.getByLabelText("Scheduled start date"), {
+      target: { value: "2026-05-20" },
+    });
+    await user.selectOptions(
+      screen.getByLabelText("Scheduled start time"),
+      "10:00"
+    );
+    // End set in one tap via a duration preset (start + 1h).
+    await user.click(screen.getByRole("button", { name: "1h" }));
 
     await user.click(screen.getByRole("button", { name: /^schedule$/i }));
 
