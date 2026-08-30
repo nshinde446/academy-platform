@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DateTimeField, addMinutesToLocal } from "@/components/ui/datetime-field";
 import {
   Dialog,
   DialogTrigger,
@@ -33,6 +34,17 @@ interface CreateLectureDialogProps {
 
 const SELECT_CLASS =
   "flex h-9 w-full rounded-lg border border-input bg-background px-3 text-sm";
+
+// One-tap end-time presets — pick a start, then set the end by duration instead
+// of dialling it in. Minutes.
+const DURATION_PRESETS = [30, 45, 60, 90, 120] as const;
+
+function durationLabel(m: number): string {
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem === 0 ? `${h}h` : `${h}h ${rem}m`;
+}
 
 function isoLocalToIso(local: string): string {
   // datetime-local lacks timezone — assume the user's local zone.
@@ -310,23 +322,39 @@ export function CreateLectureDialog({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="lecture_start">Scheduled Start *</Label>
-              <Input
+              <DateTimeField
                 id="lecture_start"
-                type="datetime-local"
+                ariaLabel="Scheduled start"
                 value={start}
-                onChange={(e) => setStart(e.target.value)}
+                onChange={setStart}
+                step={15}
                 required
               />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="lecture_end">Scheduled End *</Label>
-              <Input
+              <DateTimeField
                 id="lecture_end"
-                type="datetime-local"
+                ariaLabel="Scheduled end"
                 value={end}
-                onChange={(e) => setEnd(e.target.value)}
+                onChange={setEnd}
+                step={15}
                 required
               />
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">Duration:</span>
+                {DURATION_PRESETS.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => start && setEnd(addMinutesToLocal(start, m))}
+                    disabled={!start}
+                    className="rounded-md border border-input px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                  >
+                    {durationLabel(m)}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
