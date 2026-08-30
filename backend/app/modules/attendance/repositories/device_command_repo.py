@@ -351,6 +351,29 @@ async def list_backed_up_users(
     return [(r[0], r[1]) for r in result.all()]
 
 
+async def backed_up_users_for_students(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    dev_id: str,
+    student_ids: list[uuid.UUID],
+) -> list[tuple[str, str | None]]:
+    """(vendor_user_id, name) for the given students that have a FACE backed up on
+    ``dev_id`` — the enrollable subset for a cross-device restore (face required,
+    since the point is to enrol a face on the target terminal)."""
+    if not student_ids:
+        return []
+    result = await session.execute(
+        select(DeviceUserBiometric.vendor_user_id, DeviceUserBiometric.name).where(
+            DeviceUserBiometric.branch_id == branch_id,
+            DeviceUserBiometric.dev_id == dev_id,
+            DeviceUserBiometric.student_id.in_(student_ids),
+            DeviceUserBiometric.is_deleted == False,  # noqa: E712
+            DeviceUserBiometric.face_enc.isnot(None),
+        )
+    )
+    return [(r[0], r[1]) for r in result.all()]
+
+
 async def upsert_device_status(
     session: AsyncSession,
     *,

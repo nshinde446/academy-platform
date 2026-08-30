@@ -27,6 +27,7 @@ from app.modules.attendance.integrations.biomax import biometrics
 from app.modules.attendance.repositories import device_command_repo
 from app.modules.attendance.schemas.provisioning_schemas import (
     BiometricStatusResponse,
+    CrossDeviceRestoreRequest,
     DeviceCommandResponse,
     DeviceStatusResponse,
     DeviceUserSnapshotRequest,
@@ -289,6 +290,35 @@ async def restore(
     _require_known_device(dev_id)
     branch_id = _resolve_branch()
     enqueued = await provisioning_service.enqueue_restore(session, branch_id, dev_id)
+    await session.commit()
+    return RestoreResponse(dev_id=dev_id, commands_enqueued=enqueued)
+
+
+@router.post("/restore-cross-device", response_model=RestoreResponse)
+async def restore_cross_device(
+    body: CrossDeviceRestoreRequest,
+    dev_id: str = Query(..., description="target device to enrol onto"),
+    source_dev_id: str = Query(..., description="device whose backups to read"),
+    x_biomax_sync_token: str | None = Header(None),
+    _enabled: None = Depends(_require_enabled),
+    session: AsyncSession = Depends(get_db),
+):
+    """Enrol an EXPLICIT student set onto ``dev_id`` using the faces backed up from
+    ``source_dev_id`` — e.g. put two batches onto a second-floor terminal from the
+    first terminal's backups. Only students with a face backup on the source are
+    queued; the template is decrypted + injected at emit time. Token + key authed."""
+    _verify_sync_token(x_biomax_sync_token)
+    _require_biometric_key()
+    _require_known_device(dev_id)
+    _require_known_device(source_dev_id)
+    branch_id = _resolve_branch()
+    enqueued = await provisioning_service.enqueue_cross_device_restore(
+        session,
+        branch_id,
+        source_dev_id=source_dev_id,
+        target_dev_id=dev_id,
+        student_ids=body.student_ids,
+    )
     await session.commit()
     return RestoreResponse(dev_id=dev_id, commands_enqueued=enqueued)
 

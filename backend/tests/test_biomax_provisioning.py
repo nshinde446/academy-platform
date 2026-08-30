@@ -529,6 +529,67 @@ async def test_restore_emit_injects_templates_without_storing_cleartext(monkeypa
     assert "face" not in cmd.payload["users"][0]     # stored command untouched
 
 
+SRC = "AMDB25083200131"  # the first-floor terminal whose faces we reuse
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_cross_device_restore_enrolls_scoped_students_from_source_backup(
+    monkeypatch, db_session, seed_data
+):
+    """Enrol a named student set onto the target terminal (DEV) using the faces
+    backed up from a DIFFERENT terminal (SRC). Only students with a face on the
+    source are queued; the template is injected at emit time, read from SRC."""
+    import app.modules.attendance.integrations.biomax.biometrics as bio
+    from cryptography.fernet import Fernet
+
+    key = Fernet.generate_key().decode()  # ONE key — a fresh one per call breaks decrypt
+    monkeypatch.setattr(bio, "get_settings", lambda: type("S", (), {"BIOMAX_BIOMETRIC_KEY": key})())
+    branch = seed_data["branch_a"].id
+    student = seed_data["student"]
+
+    # This student has a face backed up on the SOURCE device (not the target).
+    await device_command_repo.upsert_biometric(
+        db_session, branch_id=branch, dev_id=SRC, vendor_user_id="8100",
+        student_id=student.id, name="Scoped Face",
+        face_enc=bio.encrypt_template("RkFDRQ=="), photo_enc=None, fps_enc=None)
+    # A student with only a backup on the TARGET must NOT be pulled in by the source scope.
+    await device_command_repo.upsert_biometric(
+        db_session, branch_id=branch, dev_id=DEV, vendor_user_id="8101",
+        student_id=None, name="Target Only", face_enc=b"x", photo_enc=None, fps_enc=None)
+    await db_session.commit()
+
+    n = await provisioning_service.enqueue_cross_device_restore(
+        db_session, branch, source_dev_id=SRC, target_dev_id=DEV,
+        student_ids=[student.id])
+    await db_session.commit()
+    assert n == 1  # only the scoped, source-backed student
+
+    cmd = next(c for c in await device_command_repo.list_commands(
+        db_session, branch, DEV, STATUS_PENDING) if c.command == "SET_USER_INFO")
+    assert cmd.dev_id == DEV                                    # queued to the TARGET
+    assert cmd.payload.get("restore_biometrics") is True
+    assert cmd.payload.get("restore_source_dev_id") == SRC      # reads the source backup
+    assert "face" not in cmd.payload["users"][0]               # no plaintext at rest
+
+    emit = await provisioning_service.build_restore_emit_payload(db_session, DEV, cmd)
+    assert "restore_biometrics" not in emit                     # flag stripped for the wire
+    assert "restore_source_dev_id" not in emit                  # routing hint stripped too
+    assert emit["users"][0]["face"] == "RkFDRQ=="              # template injected from SRC
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_cross_device_restore_skips_students_without_source_face(db_session, seed_data):
+    """A student named for restore but with no face on the source is silently
+    skipped — nothing to enrol, no half-baked command."""
+    branch = seed_data["branch_a"].id
+    student = seed_data["student"]
+    n = await provisioning_service.enqueue_cross_device_restore(
+        db_session, branch, source_dev_id=SRC, target_dev_id=DEV,
+        student_ids=[student.id])
+    await db_session.commit()
+    assert n == 0
+
+
 @pytest.mark.usefixtures("seed_data")
 async def test_list_backed_up_users_needs_a_template(db_session, seed_data):
     branch = seed_data["branch_a"].id
