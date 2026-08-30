@@ -122,6 +122,13 @@ class RestoreResponse(BaseModel):
     commands_enqueued: int
 
 
+class CrossDeviceRestoreRequest(BaseModel):
+    """Enrol an explicit student set onto a target device using another device's
+    backed-up faces (e.g. put two batches onto a second-floor terminal)."""
+
+    student_ids: list[uuid.UUID]
+
+
 class DeviceStatusResponse(BaseModel):
     """The device's own latest self-reported counts (from its poll) + heartbeat."""
 

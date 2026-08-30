@@ -526,7 +526,12 @@ async def capture_biometrics(
 
 
 def build_restore_command_row(
-    branch_id: uuid.UUID, dev_id: str, vendor_user_id: str, name: str | None
+    branch_id: uuid.UUID,
+    dev_id: str,
+    vendor_user_id: str,
+    name: str | None,
+    *,
+    source_dev_id: str | None = None,
 ) -> dict:
     user = {
         "userId": vendor_user_id,
@@ -538,13 +543,19 @@ def build_restore_command_row(
         "vaildEnd": DEFAULT_VALID_END,
     }
     nonce = uuid.uuid4().hex[:12]
+    payload = {"users": [user], "restore_biometrics": True}
+    # Cross-device restore: read the template from a DIFFERENT device's backup at
+    # emit time (e.g. enrol batch students onto a second-floor terminal from the
+    # first terminal's backups). Absent = same-device restore (read own backup).
+    if source_dev_id and source_dev_id != dev_id:
+        payload["restore_source_dev_id"] = source_dev_id
     return {
         "branch_id": branch_id,
         "dev_id": dev_id,
         "command": CMD_SET_USER_INFO,
         "vendor_user_id": vendor_user_id,
         # Identity + a flag; the template is fetched + injected at emit time.
-        "payload": {"users": [user], "restore_biometrics": True},
+        "payload": payload,
         "command_status": STATUS_PENDING,
         "idempotency_key": f"{dev_id}:RESTORE:{nonce}",
     }
@@ -566,6 +577,34 @@ async def enqueue_restore(
     return len(rows)
 
 
+async def enqueue_cross_device_restore(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    *,
+    source_dev_id: str,
+    target_dev_id: str,
+    student_ids: list[uuid.UUID],
+) -> int:
+    """Enrol an explicit set of students onto ``target_dev_id`` using the face/
+    photo/fingerprint backed up from ``source_dev_id`` (a different terminal).
+
+    Only students that actually have a face backup on the source are queued; the
+    template is decrypted + injected at emit time, read from the SOURCE device's
+    backup. Returns the number of restore commands enqueued."""
+    rows_src = await device_command_repo.backed_up_users_for_students(
+        session, branch_id, source_dev_id, student_ids
+    )
+    rows = [
+        build_restore_command_row(
+            branch_id, target_dev_id, uid, name, source_dev_id=source_dev_id
+        )
+        for uid, name in rows_src
+    ]
+    if rows:
+        await device_command_repo.enqueue(session, rows)
+    return len(rows)
+
+
 async def build_restore_emit_payload(
     session: AsyncSession, dev_id: str, command
 ) -> dict:
@@ -577,10 +616,13 @@ async def build_restore_emit_payload(
     if not payload.get("restore_biometrics"):
         return payload
     payload.pop("restore_biometrics", None)
+    # Read the template from the SOURCE device's backup — same device by default,
+    # or another terminal for a cross-device restore.
+    source_dev_id = payload.pop("restore_source_dev_id", None) or dev_id
     users = payload.get("users") or []
     if users and biometrics.biometric_backup_enabled():
         uid = str(users[0].get("userId") or "").strip()
-        bio_row = await device_command_repo.get_biometric(session, dev_id, uid)
+        bio_row = await device_command_repo.get_biometric(session, source_dev_id, uid)
         if bio_row is not None:
             face = biometrics.decrypt_template(bio_row.face_enc)
             photo = biometrics.decrypt_template(bio_row.photo_enc)
