@@ -17,6 +17,7 @@ interface User {
   roles: string[];
   permissions: string[];
   branch_roles: BranchRole[];
+  is_developer?: boolean;
 }
 
 // Whether the current user (and therefore the active branch) is known yet.

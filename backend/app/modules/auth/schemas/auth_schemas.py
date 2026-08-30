@@ -87,3 +87,6 @@ class UserMeResponse(BaseModel):
     roles: list[str]
     permissions: list[str]
     branch_roles: list[BranchRoleInfo]
+    # True only for emails in settings.DEVELOPER_EMAILS — gates the /dev
+    # monitoring dashboard (by email, independent of role).
+    is_developer: bool = False

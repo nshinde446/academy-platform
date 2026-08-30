@@ -20,6 +20,7 @@ from app.modules.academic.api.syllabus_routes import router as syllabus_router
 from app.modules.auth.api.routes import router as auth_router
 from app.modules.auth.api.access_routes import router as access_router
 from app.modules.audit.api.routes import router as audit_router
+from app.modules.monitoring.api.routes import router as monitoring_router
 from app.modules.batch.api.routes import router as batch_router
 from app.modules.classroom.api.routes import router as classroom_router
 from app.modules.attendance.api.routes import router as attendance_router
@@ -87,6 +88,7 @@ app.add_exception_handler(Exception, general_exception_handler)
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(access_router, prefix=settings.API_V1_PREFIX)
 app.include_router(audit_router, prefix=settings.API_V1_PREFIX)
+app.include_router(monitoring_router, prefix=settings.API_V1_PREFIX)
 app.include_router(academic_router, prefix=settings.API_V1_PREFIX)
 app.include_router(syllabus_router, prefix=settings.API_V1_PREFIX)
 app.include_router(student_router, prefix=settings.API_V1_PREFIX)

@@ -119,6 +119,14 @@ async def get_me(session: AsyncSession, user_id: uuid.UUID) -> UserMeResponse:
         for br in branch_roles_raw
     ]
 
+    from app.core.config.settings import get_settings
+
+    dev_emails = {
+        e.strip().lower()
+        for e in get_settings().DEVELOPER_EMAILS.split(",")
+        if e.strip()
+    }
+
     return UserMeResponse(
         id=user.id,
         email=user.email,
@@ -128,4 +136,5 @@ async def get_me(session: AsyncSession, user_id: uuid.UUID) -> UserMeResponse:
         roles=roles,
         permissions=permissions,
         branch_roles=branch_roles,
+        is_developer=(user.email or "").lower() in dev_emails,
     )
