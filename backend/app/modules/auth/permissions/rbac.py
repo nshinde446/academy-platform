@@ -100,6 +100,29 @@ def require_manager_or_audit(action: str, module: str):
     return dependency
 
 
+async def require_developer(
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Developer-only gate for the monitoring dashboard — by EMAIL allowlist, not
+    role. No branch_admin / academic_head / any role qualifies; only the emails
+    in settings.DEVELOPER_EMAILS. Keeps ops/monitoring strictly to the developer."""
+    from app.core.config.settings import get_settings
+
+    allow = {
+        e.strip().lower()
+        for e in get_settings().DEVELOPER_EMAILS.split(",")
+        if e.strip()
+    }
+    user = await user_repository.get_by_id(session, current_user["user_id"])
+    if user is None or (user.email or "").lower() not in allow:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Developer access only",
+        )
+    return current_user
+
+
 def require_permissions(required_permissions: list[str]):
     async def dependency(
         current_user: dict = Depends(get_current_user),

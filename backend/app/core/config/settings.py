@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     # per-branch branding (logo/colours) comes later.
     ACADEMY_BRAND_NAME: str = "Matrix Science Academy"
 
+    # Comma-separated emails allowed into the developer-only monitoring dashboard
+    # (/dev). Gated by email, not role — so no branch_admin or other role can see
+    # it, only the listed developer(s).
+    DEVELOPER_EMAILS: str = "nshinde446@gmail.com"
+
     # ── Biometric device integrations ──────────────────────────────────────
     # See docs/biometric-attendance-design.md (integrations section).
     #

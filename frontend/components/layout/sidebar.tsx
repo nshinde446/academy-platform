@@ -129,6 +129,12 @@ const ADMIN_SECTION: NavSection = {
   ],
 };
 
+// Developer-only — gated by is_developer (email allowlist), independent of role.
+const DEV_SECTION: NavSection = {
+  label: "Developer",
+  items: [{ label: "Monitoring", href: "/dev" }],
+};
+
 export function Sidebar() {
   const pathname = usePathname() ?? "";
   const user = useUserStore((s) => s.user);
@@ -139,13 +145,18 @@ export function Sidebar() {
   const isAdmin = roles.some((r) => ADMIN_ROLES.includes(r));
   // Managers get everything; the two restricted roles get a curated nav; all
   // other existing roles keep the default sections unchanged.
-  const sections = isAdmin
+  const baseSections = isAdmin
     ? [...SECTIONS, ADMIN_SECTION]
     : roles.includes("floor_coordinator")
       ? COORDINATOR_SECTIONS
       : roles.includes("accounts")
         ? ACCOUNTS_SECTIONS
         : SECTIONS;
+  // Append the developer section only for the developer (email-gated on the
+  // server; this just shows/hides the nav entry).
+  const sections = user?.is_developer
+    ? [...baseSections, DEV_SECTION]
+    : baseSections;
 
   const initials =
     user?.first_name && user?.last_name

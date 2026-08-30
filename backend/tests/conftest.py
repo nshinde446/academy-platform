@@ -24,6 +24,7 @@ from app.modules.auth.models.access_models import (  # noqa: F401
     AccountsAttendanceGrant,
     BatchCoordinator,
 )
+from app.modules.monitoring.models.monitoring_models import BackupRun  # noqa: F401
 from app.modules.academic.models.academic_models import (  # noqa: F401
     AcademicYear, Chapter, Course, Institute, Subject, Subtopic, Topic,
 )
