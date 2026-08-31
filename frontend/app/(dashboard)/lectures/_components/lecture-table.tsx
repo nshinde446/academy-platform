@@ -186,18 +186,6 @@ function lookup<T extends { id: string }>(list: T[], id: string | null): T | und
   return list.find((x) => x.id === id);
 }
 
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 /** True when the ISO timestamp falls on a calendar day after today (local) —
  * used to hide "end of day" actuals on lectures that haven't happened yet. */
 function isFutureDay(iso: string): boolean {
@@ -218,22 +206,6 @@ function formatTime(iso: string | null): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-/** A scheduled/actual window rendered as "start – end" where the date sits on
- * the start and only the time shows for the end (same-day is the norm). */
-function Window({ start, end }: { start: string | null; end: string | null }) {
-  if (!start) return <span className="text-muted-foreground">—</span>;
-  return (
-    <div className="flex flex-col leading-tight">
-      <span className="whitespace-nowrap text-sm">{formatDateTime(start)}</span>
-      {end && (
-        <span className="whitespace-nowrap text-xs text-muted-foreground">
-          → {formatTime(end)}
-        </span>
-      )}
-    </div>
-  );
 }
 
 function teacherName(t: TeacherSummary | undefined): string {
@@ -353,7 +325,7 @@ export function LectureTable({
 
   return (
     <div className="rounded-xl border ring-1 ring-foreground/10 overflow-hidden">
-      <Table>
+      <Table stickyHeader containerClassName="max-h-[calc(100vh-19rem)]">
         <TableHeader>
           <TableRow>
             {selectable && (
@@ -380,8 +352,7 @@ export function LectureTable({
             />
             <TableHead className="hidden lg:table-cell">Topic</TableHead>
             <TableHead className="hidden xl:table-cell">Room</TableHead>
-            <SortHead label="Scheduled" sortKey="scheduled" />
-            <TableHead className="hidden lg:table-cell">Actual</TableHead>
+            <SortHead label="Time" sortKey="scheduled" />
             <SortHead
               label="Duration"
               sortKey="duration"
@@ -436,14 +407,14 @@ export function LectureTable({
               | { key: string; label: string; onClick: () => void; variant: "default" | "outline" }
               | null = null;
             if (st === "completed" && onGenerateDpp) {
-              primary = { key: "dpp", label: "✦ Generate DPP", onClick: () => onGenerateDpp(l), variant: "outline" };
+              primary = { key: "dpp", label: "✦ DPP", onClick: () => onGenerateDpp(l), variant: "outline" };
             } else if (canComplete) {
               primary = { key: "complete", label: "Complete", onClick: () => onComplete(l), variant: "default" };
             } else if ((st === "cancelled" || st === "no_show") && onRecordMakeup) {
-              primary = { key: "makeup", label: "Record makeup", onClick: () => onRecordMakeup(l), variant: "outline" };
+              primary = { key: "makeup", label: "Makeup", onClick: () => onRecordMakeup(l), variant: "outline" };
             } else if (isScheduledLike) {
               primary = isFuture
-                ? { key: "plan", label: "Plan topic", onClick: () => onActuals(l), variant: "outline" }
+                ? { key: "plan", label: "Plan", onClick: () => onActuals(l), variant: "outline" }
                 : { key: "start", label: "Start", onClick: () => onStart(l), variant: "default" };
             }
 
@@ -492,23 +463,23 @@ export function LectureTable({
                 <TableCell>
                   {(() => {
                     const w = compactWhen(l.scheduled_start);
-                    const end = compactWhen(l.scheduled_end);
+                    const schedEnd = formatTime(l.scheduled_end);
+                    const hasActual = !!l.actual_start;
                     return (
                       <div className="flex flex-col leading-tight">
                         <span className="whitespace-nowrap text-sm tabular-nums">
                           {w.day} · {w.time}
+                          {schedEnd !== "—" ? ` → ${schedEnd}` : ""}
                         </span>
-                        {end.time && (
-                          <span className="text-[10px] text-muted-foreground tabular-nums">
-                            → {end.time}
+                        {hasActual && (
+                          <span className="whitespace-nowrap text-[10px] tabular-nums text-emerald-600 dark:text-emerald-400">
+                            act {formatTime(l.actual_start)}
+                            {l.actual_end ? ` → ${formatTime(l.actual_end)}` : ""}
                           </span>
                         )}
                       </div>
                     );
                   })()}
-                </TableCell>
-                <TableCell className="hidden lg:table-cell">
-                  <Window start={l.actual_start} end={l.actual_end} />
                 </TableCell>
                 <TableCell className="hidden xl:table-cell text-right tabular-nums text-muted-foreground">
                   {duration ?? "—"}

@@ -88,8 +88,7 @@ describe("LectureTable", () => {
     expect(screen.getByText("Teacher")).toBeInTheDocument();
     expect(screen.getByText("Subject")).toBeInTheDocument();
     expect(screen.getByText("Topic")).toBeInTheDocument();
-    expect(screen.getByText("Scheduled")).toBeInTheDocument();
-    expect(screen.getByText("Actual")).toBeInTheDocument();
+    expect(screen.getByText("Time")).toBeInTheDocument();
     expect(screen.getByText("Duration")).toBeInTheDocument();
     expect(screen.getByText("Status")).toBeInTheDocument();
     expect(screen.getByText("Actions")).toBeInTheDocument();
@@ -156,7 +155,7 @@ describe("LectureTable", () => {
     const user = userEvent.setup();
     renderTable([makeLecture({ lecture_status: "completed" })]);
     expect(
-      screen.getByRole("button", { name: /generate dpp/i })
+      screen.getByRole("button", { name: /dpp/i })
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /delete lecture/i })
@@ -173,7 +172,7 @@ describe("LectureTable", () => {
       makeLecture({ lecture_status: "no_show", no_show_reason: "EXTERNAL" }),
     ]);
     expect(
-      screen.getByRole("button", { name: /record makeup/i })
+      screen.getByRole("button", { name: /makeup/i })
     ).toBeInTheDocument();
   });
 
@@ -256,7 +255,7 @@ describe("LectureTable", () => {
       }),
     ]);
     expect(
-      screen.getByRole("button", { name: "Plan topic" })
+      screen.getByRole("button", { name: "Plan" })
     ).toBeInTheDocument();
     await openMenu(user);
     // The actuals/plan action is the primary, so not duplicated in the menu.
