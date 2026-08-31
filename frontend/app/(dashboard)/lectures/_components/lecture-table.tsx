@@ -90,19 +90,6 @@ function SubjectTag({ subject }: { subject: SubjectSummary | undefined }) {
   );
 }
 
-// Compact "Jun 26 · 09:00" for the schedule cell (the design's "When").
-function compactWhen(iso: string): { day: string; time: string } {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return { day: iso, time: "" };
-  return {
-    day: d.toLocaleDateString(undefined, { month: "short", day: "2-digit" }),
-    time: d.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
-  };
-}
-
 // Status pill derivation. Inspired by Google Classroom's mutually-exclusive
 // state model — one pill per row, color tied to MEANING (teacher
 // reliability problem vs. intentional decision vs. clean outcome), not raw
@@ -198,13 +185,26 @@ function isFutureDay(iso: string): boolean {
   return day.getTime() > today.getTime();
 }
 
+// Readable 12-hour time, e.g. "5:45 PM" — friendlier than 24h for staff.
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleTimeString(undefined, {
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
+    hour12: true,
+  });
+}
+
+// "27 Aug 2026" — a clean, unambiguous date for the report-facing table.
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
   });
 }
 
@@ -462,19 +462,26 @@ export function LectureTable({
                 </TableCell>
                 <TableCell>
                   {(() => {
-                    const w = compactWhen(l.scheduled_start);
-                    const schedEnd = formatTime(l.scheduled_end);
+                    const schedEnd = l.scheduled_end
+                      ? ` – ${formatTime(l.scheduled_end)}`
+                      : "";
                     const hasActual = !!l.actual_start;
+                    const actualEnd = l.actual_end
+                      ? ` – ${formatTime(l.actual_end)}`
+                      : "";
                     return (
-                      <div className="flex flex-col leading-tight">
-                        <span className="whitespace-nowrap text-sm tabular-nums">
-                          {w.day} · {w.time}
-                          {schedEnd !== "—" ? ` → ${schedEnd}` : ""}
+                      <div className="flex flex-col gap-0.5 leading-tight">
+                        <span className="whitespace-nowrap text-xs text-muted-foreground">
+                          {formatDate(l.scheduled_start)}
+                        </span>
+                        <span className="whitespace-nowrap text-sm font-medium tabular-nums">
+                          {formatTime(l.scheduled_start)}
+                          {schedEnd}
                         </span>
                         {hasActual && (
-                          <span className="whitespace-nowrap text-[10px] tabular-nums text-emerald-600 dark:text-emerald-400">
-                            act {formatTime(l.actual_start)}
-                            {l.actual_end ? ` → ${formatTime(l.actual_end)}` : ""}
+                          <span className="whitespace-nowrap text-xs tabular-nums text-emerald-600 dark:text-emerald-400">
+                            Actual {formatTime(l.actual_start)}
+                            {actualEnd}
                           </span>
                         )}
                       </div>
