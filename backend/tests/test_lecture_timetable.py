@@ -123,6 +123,48 @@ async def test_generate_creates_lectures_on_matching_weekdays(
 
 
 @pytest.mark.asyncio
+async def test_generate_stores_slot_time_in_branch_timezone(
+    client: AsyncClient, seed_data, db_session
+):
+    """A 09:00 local slot (branch tz Asia/Kolkata = UTC+5:30) must be stored as
+    03:30 UTC — not 09:00 UTC. The old code stamped the wall-clock as UTC, which
+    shifted every generated lecture forward by the offset (09:00 -> 2:30 PM)."""
+    from datetime import timezone
+
+    from sqlalchemy import select
+
+    from app.modules.lectures.models.lecture_models import Lecture
+
+    await _login_admin(client)
+    await _put_timetable(client, [_slot(0, "09:00", "10:00")])
+    resp = await client.post(
+        "/api/v1/lectures/timetable/generate",
+        params={
+            "branch_id": BRANCH_A_ID,
+            "batch_id": BATCH_A_ID,
+            "from_date": "2026-06-01",  # a single Monday
+            "to_date": "2026-06-01",
+        },
+    )
+    assert resp.json()["generated"] == 1
+
+    row = (await db_session.execute(
+        select(Lecture).where(Lecture.batch_id == uuid.UUID(BATCH_A_ID))
+    )).scalars().first()
+    assert row is not None
+
+    def _utc(dt):
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
+    start = _utc(row.scheduled_start)
+    end = _utc(row.scheduled_end)
+    assert (start.hour, start.minute) == (3, 30)  # 09:00 IST − 5:30
+    assert (end.hour, end.minute) == (4, 30)  # 10:00 IST − 5:30
+
+
+@pytest.mark.asyncio
 async def test_generate_is_idempotent_on_rerun(client: AsyncClient, seed_data):
     await _login_admin(client)
     await _put_timetable(client, [_slot(0, "09:00", "10:00")])

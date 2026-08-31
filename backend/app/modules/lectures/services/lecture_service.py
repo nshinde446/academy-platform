@@ -1,11 +1,14 @@
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config.settings import get_settings
 from app.modules.audit.services import audit_service
+from app.modules.auth.models.auth_models import Branch
 from app.modules.batch.repositories import batch_repository
 from app.modules.events.services import event_service
 from app.modules.lectures.repositories import lecture_repository
@@ -26,6 +29,18 @@ from app.modules.lectures.schemas.lecture_schemas import (
 # A lecture is "late" when it actually started more than this many minutes
 # after its scheduled start (PDF §3 late-start rule).
 LATE_THRESHOLD_MIN = 10
+
+
+async def _branch_zoneinfo(session: AsyncSession, branch_id: uuid.UUID) -> ZoneInfo:
+    """The branch's IANA timezone as a ZoneInfo (default if unset). Timetable
+    slot times are wall-clock in this zone; we convert them to UTC for storage."""
+    tz_name = (await session.execute(
+        select(Branch.timezone).where(Branch.id == branch_id)
+    )).scalar_one_or_none() or get_settings().DEFAULT_TIMEZONE
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:  # noqa: BLE001 — bad tz string falls back to default
+        return ZoneInfo(get_settings().DEFAULT_TIMEZONE)
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -1202,6 +1217,10 @@ async def generate_from_timetable(
         return batch_cache[bid]
 
     holidays = await _holiday_set(session, branch_id, from_date, to_date)
+    # Slot times (e.g. "11:00") are wall-clock in the branch's zone — resolve it
+    # once so we can store the correct UTC instant instead of treating the
+    # wall-clock as UTC (which shifted every generated lecture by the offset).
+    tz = await _branch_zoneinfo(session, branch_id)
 
     generated = 0
     skipped = 0
@@ -1233,8 +1252,14 @@ async def generate_from_timetable(
                 skipped += 1
                 errors.append(f"{label}: bad slot time")
                 continue
-            scheduled_start = datetime.combine(day, start_t, tzinfo=timezone.utc)
-            scheduled_end = datetime.combine(day, end_t, tzinfo=timezone.utc)
+            # Interpret the slot's wall-clock time in the branch zone, then store
+            # the equivalent UTC instant (e.g. 11:00 IST -> 05:30 UTC).
+            scheduled_start = datetime.combine(day, start_t, tzinfo=tz).astimezone(
+                timezone.utc
+            )
+            scheduled_end = datetime.combine(day, end_t, tzinfo=tz).astimezone(
+                timezone.utc
+            )
 
             if await teacher_repository.teacher_on_leave(
                 session, slot.teacher_id, day
