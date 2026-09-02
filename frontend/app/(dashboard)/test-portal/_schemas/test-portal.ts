@@ -9,6 +9,7 @@ export interface TestSummary {
   scheduled_at: string | null;
   total_marks: number;
   omr_type: string | null;
+  answer_key_file: string | null;
   test_status: string;
 }
 

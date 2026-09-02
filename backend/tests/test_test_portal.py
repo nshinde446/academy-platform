@@ -7,11 +7,24 @@ absentees last, multi-subject create, idempotent re-upload, and the exporters.
 
 import uuid
 
+import pytest
+from fastapi import HTTPException
 from sqlalchemy import select
 
+from app.core.storage import LocalFilesystemBackend
 from app.modules.student.models.student_models import Student, StudentBatchMapping
 from app.modules.tests.models.test_models import TestImportReview, TestSubject
 from app.modules.tests.services import ranklist_export, test_service
+
+
+async def _open_review_row(db_session, test_id):
+    return (await db_session.execute(
+        select(TestImportReview).where(
+            TestImportReview.test_id == test_id,
+            TestImportReview.resolved == False,
+            TestImportReview.is_deleted == False,
+        )
+    )).scalar_one()
 
 # ZipGrade-standard export headers (tolerant parser resolves these).
 CSV = (
@@ -155,3 +168,130 @@ async def test_exporters_build_bytes(db_session, seed_data):
     for col in ("Rank", "PRN", "Student Name", "Marks"):
         assert col in html
     assert "PRNA" in html and "ABSENT" in html
+
+
+# ─── PR-B: needs-review resolution ───────────────────────────────────────────
+
+async def test_resolve_review_assigns_marks_to_new_student(db_session, seed_data):
+    """A wrong-batch / typo row resolves onto a chosen student: they get the
+    row's marks, appear in the rank list, and the review row clears."""
+    await _make_students(db_session, seed_data)
+    test = await _make_test(db_session, seed_data)
+    await test_service.upload_result(
+        db_session, test.id, seed_data["branch_a"].id, CSV,
+        current_user_id=seed_data["admin_user"].id,
+    )
+    await db_session.commit()
+
+    # A branch student who wasn't in the test's batch (so wasn't matched/absent).
+    outsider = Student(
+        id=uuid.uuid4(), branch_id=seed_data["branch_a"].id,
+        academic_year_id=seed_data["academic_year"].id,
+        first_name="Ghost", last_name="Gupta", enrollment_number="PRNZ",
+        status="active", is_deleted=False,
+    )
+    db_session.add(outsider)
+    await db_session.commit()
+
+    review = await _open_review_row(db_session, test.id)
+    result = await test_service.resolve_review(
+        db_session, test.id, review.id, outsider.id, seed_data["branch_a"].id,
+        current_user_id=seed_data["admin_user"].id,
+    )
+    await db_session.commit()
+
+    assert result["resolved"] is True
+    assert result["marks_obtained"] == 100  # Ghost G row scored 100/200
+
+    rl = await test_service.get_ranklist(db_session, test.id, seed_data["branch_a"].id)
+    assert len(rl["needs_review"]) == 0
+    # 100 slots below PRNC(150) at the bottom of the ranked list.
+    assert rl["ranked"][-1]["student_id"] == outsider.id
+    assert rl["ranked"][-1]["marks_obtained"] == 100
+
+    await db_session.refresh(review)
+    assert review.resolved is True
+    assert review.resolved_student_id == outsider.id
+    assert review.resolved_at is not None
+
+
+async def test_resolve_review_overwrites_an_absent_student(db_session, seed_data):
+    """Resolving onto a student previously marked absent flips them to appeared."""
+    ids = await _make_students(db_session, seed_data)
+    test = await _make_test(db_session, seed_data)
+    await test_service.upload_result(
+        db_session, test.id, seed_data["branch_a"].id, CSV,
+        current_user_id=seed_data["admin_user"].id,
+    )
+    await db_session.commit()
+
+    review = await _open_review_row(db_session, test.id)
+    # PRND was absent; the reviewer realizes the PRNX row is really PRND.
+    await test_service.resolve_review(
+        db_session, test.id, review.id, ids["PRND"], seed_data["branch_a"].id,
+        current_user_id=seed_data["admin_user"].id,
+    )
+    await db_session.commit()
+
+    rl = await test_service.get_ranklist(db_session, test.id, seed_data["branch_a"].id)
+    assert len(rl["absentees"]) == 0
+    assert len(rl["needs_review"]) == 0
+    prnd = next(r for r in rl["ranked"] if r["student_id"] == ids["PRND"])
+    assert prnd["marks_obtained"] == 100
+    assert prnd["absent"] is False
+
+
+async def test_resolve_review_rejects_double_resolve(db_session, seed_data):
+    ids = await _make_students(db_session, seed_data)
+    test = await _make_test(db_session, seed_data)
+    await test_service.upload_result(
+        db_session, test.id, seed_data["branch_a"].id, CSV,
+        current_user_id=seed_data["admin_user"].id,
+    )
+    await db_session.commit()
+
+    review = await _open_review_row(db_session, test.id)
+    await test_service.resolve_review(
+        db_session, test.id, review.id, ids["PRND"], seed_data["branch_a"].id,
+        current_user_id=seed_data["admin_user"].id,
+    )
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await test_service.resolve_review(
+            db_session, test.id, review.id, ids["PRND"], seed_data["branch_a"].id,
+            current_user_id=seed_data["admin_user"].id,
+        )
+    assert exc.value.status_code == 409
+
+
+# ─── PR-B: answer-key file (reference only) ──────────────────────────────────
+
+async def test_answer_key_upload_and_download_roundtrip(db_session, seed_data, tmp_path):
+    test = await _make_test(db_session, seed_data)
+    storage = LocalFilesystemBackend(tmp_path)
+
+    info = await test_service.set_answer_key(
+        db_session, test.id, seed_data["branch_a"].id,
+        "PCM Answer Key.pdf", b"%PDF-1.4 fake key",
+        storage, current_user_id=seed_data["admin_user"].id,
+    )
+    await db_session.commit()
+    assert info["filename"] == "PCM Answer Key.pdf"
+    assert str(test.id) in info["answer_key_file"]
+
+    filename, data = await test_service.get_answer_key(
+        db_session, test.id, seed_data["branch_a"].id, storage,
+    )
+    assert filename == "PCM Answer Key.pdf"
+    assert data == b"%PDF-1.4 fake key"
+
+
+async def test_get_answer_key_404_when_unset(db_session, seed_data, tmp_path):
+    test = await _make_test(db_session, seed_data)
+    storage = LocalFilesystemBackend(tmp_path)
+    with pytest.raises(HTTPException) as exc:
+        await test_service.get_answer_key(
+            db_session, test.id, seed_data["branch_a"].id, storage,
+        )
+    assert exc.value.status_code == 404

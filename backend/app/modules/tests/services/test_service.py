@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.storage import StorageBackend, safe_filename
 from app.modules.audit.services import audit_service
 from app.modules.batch.repositories import batch_repository
 from app.modules.events.services import event_service
@@ -784,6 +785,42 @@ async def _batch_roster(session: AsyncSession, batch_id: uuid.UUID) -> list:
     )).all())
 
 
+async def _upsert_mark(
+    session: AsyncSession,
+    *,
+    test,
+    branch_id: uuid.UUID,
+    student_id: uuid.UUID,
+    marks: float,
+    is_absent: bool,
+    raw: dict | None,
+    current_user_id: uuid.UUID,
+    now: datetime,
+) -> None:
+    """Create or overwrite a StudentMark for (student, test). Shared by the CSV
+    import and the needs-review resolve path so both write marks identically."""
+    total = test.total_marks or 0.0
+    pct = (marks / total * 100) if (total > 0 and not is_absent) else 0.0
+    grade = None if is_absent else _calculate_grade(pct)
+    existing = await test_repository.get_student_mark(session, student_id, test.id)
+    fields = dict(
+        marks_obtained=marks, max_marks=total, percentage=pct, grade=grade,
+        is_absent=is_absent, raw_csv_row=raw, marked_at=now,
+        marked_by=current_user_id,
+    )
+    if existing:
+        # is_absent False must overwrite a prior True → set it explicitly
+        # (update_student_mark skips None/falsey-safe fields via its own guard).
+        existing.is_absent = is_absent
+        await test_repository.update_student_mark(session, existing, **fields)
+    else:
+        await test_repository.create_student_mark(
+            session, student_id=student_id, test_id=test.id,
+            branch_id=branch_id, academic_year_id=test.academic_year_id,
+            **fields,
+        )
+
+
 async def upload_result(
     session: AsyncSession,
     test_id: uuid.UUID,
@@ -826,36 +863,19 @@ async def upload_result(
         r.is_deleted = True
 
     now = datetime.now(timezone.utc)
-    total = test.total_marks or 0.0
     matched_ids: set[uuid.UUID] = set()
     matched = 0
     needs_review = 0
-
-    async def _upsert(student_id, *, marks, is_absent, raw):
-        pct = (marks / total * 100) if (total > 0 and not is_absent) else 0.0
-        grade = None if is_absent else _calculate_grade(pct)
-        existing = await test_repository.get_student_mark(session, student_id, test_id)
-        fields = dict(
-            marks_obtained=marks, max_marks=total, percentage=pct, grade=grade,
-            is_absent=is_absent, raw_csv_row=raw, marked_at=now,
-            marked_by=current_user_id,
-        )
-        if existing:
-            # is_absent False must overwrite a prior True → set it explicitly.
-            existing.is_absent = is_absent
-            await test_repository.update_student_mark(session, existing, **fields)
-        else:
-            await test_repository.create_student_mark(
-                session, student_id=student_id, test_id=test_id,
-                branch_id=branch_id, academic_year_id=test.academic_year_id,
-                **fields,
-            )
 
     for row in rows:
         key = (row["prn"] or "").strip().lower()
         if key and key in prn_to_student:
             sid = prn_to_student[key]
-            await _upsert(sid, marks=row["score"] or 0.0, is_absent=False, raw=row["raw"])
+            await _upsert_mark(
+                session, test=test, branch_id=branch_id, student_id=sid,
+                marks=row["score"] or 0.0, is_absent=False, raw=row["raw"],
+                current_user_id=current_user_id, now=now,
+            )
             matched_ids.add(sid)
             matched += 1
         else:
@@ -870,7 +890,11 @@ async def upload_result(
     absent = 0
     for sid, _f, _l, _enr in roster:
         if sid not in matched_ids:
-            await _upsert(sid, marks=0.0, is_absent=True, raw=None)
+            await _upsert_mark(
+                session, test=test, branch_id=branch_id, student_id=sid,
+                marks=0.0, is_absent=True, raw=None,
+                current_user_id=current_user_id, now=now,
+            )
             absent += 1
 
     await session.flush()
@@ -959,6 +983,153 @@ async def get_ranklist(session: AsyncSession, test_id: uuid.UUID, branch_id: uui
         "absentees": absentees,
         "needs_review": needs_review,
     }
+
+
+async def resolve_review(
+    session: AsyncSession,
+    test_id: uuid.UUID,
+    review_id: uuid.UUID,
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    """Resolve an unmatched ZipGrade row by assigning it to a student (PR-B).
+
+    The reviewer picks the right student (a PRN typo, or a student sat the test
+    outside their batch). We re-derive the marks from the row we kept verbatim,
+    write the StudentMark (overwriting any absent placeholder), and mark the
+    review row resolved. The rank list recomputes from marks, so it updates on
+    the next read.
+    """
+    test = await test_repository.get_test_by_id(session, test_id)
+    if not test:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
+    if test.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    review = (await session.execute(
+        select(TestImportReview).where(
+            TestImportReview.id == review_id,
+            TestImportReview.test_id == test_id,
+            TestImportReview.is_deleted == False,
+        )
+    )).scalar_one_or_none()
+    if not review:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review row not found")
+    if review.resolved:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Row already resolved")
+
+    student = (await session.execute(
+        select(Student).where(
+            Student.id == student_id,
+            Student.is_deleted == False,
+        )
+    )).scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+    if student.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Student is in another branch")
+
+    score, _total, _pct = zipgrade_csv.score_from_raw(review.raw_row or {})
+    marks = score or 0.0
+    now = datetime.now(timezone.utc)
+    await _upsert_mark(
+        session, test=test, branch_id=branch_id, student_id=student_id,
+        marks=marks, is_absent=False, raw=review.raw_row,
+        current_user_id=current_user_id, now=now,
+    )
+
+    review.resolved = True
+    review.resolved_student_id = student_id
+    review.resolved_at = now
+    await session.flush()
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="UPDATE",
+        table_name="test_import_review",
+        record_id=review_id,
+        new_values={"resolved_student_id": str(student_id), "marks_obtained": marks},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return {"resolved": True, "student_id": student_id, "marks_obtained": marks}
+
+
+# ─── Test Portal: answer-key file (reference only, no scoring) ────────────────
+
+
+def _answer_key_storage_key(test_id: uuid.UUID, filename: str) -> str:
+    """Namespaced, path-safe storage key for a test's answer-key file."""
+    safe = safe_filename(filename)
+    return f"answer-keys/{test_id}--{safe}"
+
+
+async def set_answer_key(
+    session: AsyncSession,
+    test_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    filename: str,
+    content: bytes,
+    storage: StorageBackend,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    """Store an uploaded answer-key file for reference (§4.2). Phase 1 doesn't
+    score against it — ZipGrade already scored the sheets — it's kept so staff
+    can eyeball the key. Replaces any prior key on the test."""
+    test = await test_repository.get_test_by_id(session, test_id)
+    if not test:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
+    if test.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    new_key = _answer_key_storage_key(test_id, filename)
+    prior = test.answer_key_file
+    storage.write(new_key, content)
+    # Drop the previous file if it was under a different key (name changed).
+    if prior and prior != new_key:
+        storage.delete(prior)
+    test.answer_key_file = new_key
+    await session.flush()
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="UPDATE",
+        table_name="tests",
+        record_id=test_id,
+        new_values={"answer_key_file": new_key},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return {"answer_key_file": new_key, "filename": safe_filename(filename)}
+
+
+async def get_answer_key(
+    session: AsyncSession,
+    test_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    storage: StorageBackend,
+) -> tuple[str, bytes]:
+    """Return (download_filename, bytes) for a test's stored answer key, or 404
+    if none is set."""
+    test = await test_repository.get_test_by_id(session, test_id)
+    if not test:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
+    if test.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+    if not test.answer_key_file:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No answer key on this test")
+    try:
+        data = storage.read(test.answer_key_file)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Answer key file missing")
+    # The stored key ends with "<uuid>--<original name>"; hand that name back.
+    download_name = test.answer_key_file.rsplit("--", 1)[-1] or "answer-key"
+    return download_name, data
 
 
 # ─── StudentResponse Service (Tier 11) ───────────────────────────────────────
