@@ -66,10 +66,17 @@ class TestCreate(BaseModel):
     description: str | None = None
     paper_type: str = "TEST"  # DPP | CPP | TEST
     batch_id: uuid.UUID
-    subject_id: uuid.UUID
+    # A test covers one or more subjects (full multi-subject). Either field may
+    # be given: `subject_ids` for the Test Portal multi-subject flow, or the
+    # legacy single `subject_id` (paper composer). The primary subject_id is set
+    # to the first of subject_ids when only that is provided.
+    subject_id: uuid.UUID | None = None
+    subject_ids: list[uuid.UUID] | None = None
     scheduled_at: datetime | None = None
     duration_minutes: int = 60
     total_marks: float = 100.0
+    # OMR sheet layout the ZipGrade CSV is scanned against ("50Q" | "100Q").
+    omr_type: str | None = None
     # Optional link back to the lecture this paper was generated from
     # (set by the lectures "Generate DPP" flow → DPP-coverage metric).
     source_lecture_id: uuid.UUID | None = None
@@ -82,9 +89,11 @@ class TestResponse(BaseModel):
     paper_type: str
     batch_id: uuid.UUID
     subject_id: uuid.UUID
+    subject_ids: list[uuid.UUID] = []
     scheduled_at: datetime | None = None
     duration_minutes: int
     total_marks: float
+    omr_type: str | None = None
     test_status: str
     branch_id: uuid.UUID
     academic_year_id: uuid.UUID
@@ -200,3 +209,40 @@ class TestReportResponse(BaseModel):
     lowest: float
     pass_count: int
     fail_count: int
+
+
+# ── Test Portal: CSV upload + rank list ─────────────────────────────────────
+
+
+class UploadResultSummary(BaseModel):
+    """Outcome counts after a ZipGrade CSV upload (§4.4)."""
+    matched: int
+    needs_review: int
+    absent: int
+    total_rows: int
+
+
+class RankRow(BaseModel):
+    rank: int | None = None  # null for absentees
+    student_id: uuid.UUID
+    prn: str | None = None
+    name: str
+    marks_obtained: float | None = None
+    percentage: float | None = None
+    absent: bool = False
+
+
+class ReviewRow(BaseModel):
+    id: uuid.UUID
+    csv_prn: str | None = None
+    csv_name: str | None = None
+    resolved: bool = False
+
+
+class RankListResponse(BaseModel):
+    test_id: uuid.UUID
+    test_name: str
+    total_marks: float
+    ranked: list[RankRow]       # appeared, highest → lowest
+    absentees: list[RankRow]    # grouped at the bottom
+    needs_review: list[ReviewRow]  # unmatched CSV rows (excluded from ranking)
