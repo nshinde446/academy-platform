@@ -65,6 +65,14 @@ export function RankList({
         </Button>
         <Button
           size="sm"
+          variant="ghost"
+          title="Download a sample ZipGrade export to see the expected format"
+          render={<a href="/zipgrade-sample.csv" download="zipgrade-sample.csv" />}
+        >
+          Sample CSV
+        </Button>
+        <Button
+          size="sm"
           variant="outline"
           disabled={!rl || rl.ranked.length === 0 || download.isPending}
           onClick={() => download.mutate({ testId: test.id, format: "pdf" })}
