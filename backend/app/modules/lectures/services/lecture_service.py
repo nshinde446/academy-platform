@@ -926,12 +926,17 @@ async def list_eligible_substitutes(
     session: AsyncSession,
     lecture_id: uuid.UUID,
     branch_id: uuid.UUID,
+    allow_cross_subject: bool = False,
 ) -> list[dict]:
-    """Teachers who could actually cover this lecture: they teach the subject
-    (Subject→Teacher lock), they're free at the lecture's time (no conflict),
-    and they're not on leave that day. Excludes the originally-scheduled teacher.
-    This is what the substitute picker should show — so an admin can't choose a
-    teacher the backend would then reject with a 422.
+    """Teachers who could actually cover this lecture: they're free at the
+    lecture's time (no conflict) and not on leave that day. Excludes the
+    originally-scheduled teacher. This is what the substitute picker shows — so an
+    admin can't choose a teacher the backend would then reject.
+
+    By default only subject-qualified teachers are offered (Subject→Teacher lock).
+    With ``allow_cross_subject`` every available teacher is offered, each flagged
+    ``same_subject`` (and carrying their own subject names) so the picker can group
+    "same subject" above "other subjects".
     """
     lecture = await lecture_repository.get_by_id(session, lecture_id)
     if not lecture:
@@ -942,10 +947,16 @@ async def list_eligible_substitutes(
     qualified = await teacher_repository.list_for_subject(
         session, branch_id, lecture.subject_id
     )
+    qualified_ids = {t.id for t in qualified}
+    candidates = (
+        await teacher_repository.list_active(session, branch_id)
+        if allow_cross_subject
+        else qualified
+    )
     on_date = _aware(lecture.scheduled_start).date()
 
-    out: list[dict] = []
-    for t in qualified:
+    available = []
+    for t in candidates:
         if t.id == lecture.teacher_id:
             continue
         if await lecture_repository.check_teacher_conflict(
@@ -958,9 +969,29 @@ async def list_eligible_substitutes(
             continue
         if await teacher_repository.teacher_on_leave(session, t.id, on_date):
             continue
-        out.append(
-            {"teacher_id": t.id, "first_name": t.first_name, "last_name": t.last_name}
+        available.append(t)
+
+    # Only label cross-subject rows with their subjects (the extra query is
+    # pointless for the same-subject-only default path).
+    subjects_by_teacher: dict = {}
+    if allow_cross_subject:
+        subjects_by_teacher = await teacher_repository.subject_names_for_teachers(
+            session, [t.id for t in available]
         )
+
+    out = [
+        {
+            "teacher_id": t.id,
+            "first_name": t.first_name,
+            "last_name": t.last_name,
+            "same_subject": t.id in qualified_ids,
+            "subjects": subjects_by_teacher.get(t.id, []),
+        }
+        for t in available
+    ]
+    # Same-subject candidates first, then by name — so the picker's default group
+    # leads regardless of alphabetical order across the two groups.
+    out.sort(key=lambda r: (not r["same_subject"], r["first_name"], r["last_name"]))
     return out
 
 
@@ -1409,11 +1440,15 @@ async def mark_substitute(
 
     # The substitute must also be qualified for the lecture's subject
     # (Subject→Teacher lock applies to whoever actually delivers it) and not be
-    # on leave themselves that day (S5).
+    # on leave themselves that day (S5). ``allow_cross_subject`` deliberately
+    # opts out of the subject lock for this one assignment (e.g. a Physics
+    # teacher covering a Maths class) — the leave + differ-from-scheduled checks
+    # still stand.
     if data.actual_teacher_id is not None:
-        await _validate_teacher_subject(
-            session, data.actual_teacher_id, lecture.subject_id
-        )
+        if not data.allow_cross_subject:
+            await _validate_teacher_subject(
+                session, data.actual_teacher_id, lecture.subject_id
+            )
         if await teacher_repository.teacher_on_leave(
             session, data.actual_teacher_id, _aware(lecture.scheduled_start).date()
         ):

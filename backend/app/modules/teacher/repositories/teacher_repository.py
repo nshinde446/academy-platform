@@ -379,3 +379,49 @@ async def list_for_subject(
         .order_by(Teacher.first_name, Teacher.last_name)
     )
     return list(result.scalars().unique().all())
+
+
+async def list_active(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> list[Teacher]:
+    """Every active teacher in the branch, regardless of subject. Powers the
+    cross-subject substitute picker, where any available teacher may cover a
+    class (the same-subject lock is opt-out there, not enforced)."""
+    result = await session.execute(
+        select(Teacher)
+        .where(
+            Teacher.branch_id == branch_id,
+            Teacher.is_deleted == False,  # noqa: E712
+        )
+        .order_by(Teacher.first_name, Teacher.last_name)
+    )
+    return list(result.scalars().unique().all())
+
+
+async def subject_names_for_teachers(
+    session: AsyncSession, teacher_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[str]]:
+    """{teacher_id: [subject name, …]} for the given teachers (active mappings),
+    de-duplicated by name so per-course sibling rows collapse to one label. Used
+    to show a cross-subject candidate's own subject(s) in the picker."""
+    from app.modules.academic.models.academic_models import Subject
+
+    if not teacher_ids:
+        return {}
+    result = await session.execute(
+        select(TeacherSubjectMapping.teacher_id, Subject.name)
+        .join(Subject, Subject.id == TeacherSubjectMapping.subject_id)
+        .where(
+            TeacherSubjectMapping.teacher_id.in_(teacher_ids),
+            TeacherSubjectMapping.is_deleted == False,  # noqa: E712
+            Subject.is_deleted == False,  # noqa: E712
+        )
+    )
+    out: dict[uuid.UUID, list[str]] = {}
+    for teacher_id, name in result.all():
+        names = out.setdefault(teacher_id, [])
+        if name not in names:
+            names.append(name)
+    for names in out.values():
+        names.sort()
+    return out

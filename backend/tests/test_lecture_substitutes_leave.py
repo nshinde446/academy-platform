@@ -23,6 +23,8 @@ CLASSROOM_ID = "00000000-0000-0000-0000-000000000080"
 TEACHER_ID = "00000000-0000-0000-0000-000000000060"
 # A second Physics-qualified teacher we add for the substitute tests.
 TEACHER2_ID = "00000000-0000-0000-0000-0000000000a2"
+# A teacher with NO subject mapping — the cross-subject candidate.
+TEACHER3_ID = "00000000-0000-0000-0000-0000000000a3"
 
 
 async def _login_admin(client: AsyncClient):
@@ -49,6 +51,20 @@ async def _seed_second_teacher(session: AsyncSession):
             teacher_id=uuid.UUID(TEACHER2_ID),
             subject_id=uuid.UUID(SUBJECT_ID),
             branch_id=uuid.UUID(BRANCH_A_ID),
+            status="active",
+        )
+    )
+    await session.commit()
+
+
+async def _seed_unqualified_teacher(session: AsyncSession):
+    """A teacher assigned to NO subject — eligible only as a cross-subject cover."""
+    session.add(
+        Teacher(
+            id=uuid.UUID(TEACHER3_ID),
+            branch_id=uuid.UUID(BRANCH_A_ID),
+            first_name="Cross",
+            last_name="Cover",
             status="active",
         )
     )
@@ -151,3 +167,76 @@ async def test_eligible_substitutes_excludes_on_leave(
         params={"branch_id": BRANCH_A_ID},
     )
     assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_cross_subject_substitutes_only_appear_with_flag(
+    client: AsyncClient, db_session: AsyncSession, seed_data
+):
+    """A teacher from another subject is offered ONLY when allow_cross_subject is
+    set, and is flagged same_subject=false; the same-subject teacher stays
+    same_subject=true. Default (no flag) still hides cross-subject teachers."""
+    await _login_admin(client)
+    await _seed_second_teacher(db_session)       # same subject
+    await _seed_unqualified_teacher(db_session)  # other/no subject
+
+    created = await _schedule_lecture(
+        client, TEACHER_ID, "2026-06-16T09:00:00Z", "2026-06-16T10:00:00Z"
+    )
+    lecture_id = created.json()["id"]
+
+    # Default: only the subject-qualified teacher, all flagged same_subject.
+    resp = await client.get(
+        f"/api/v1/lectures/{lecture_id}/eligible-substitutes",
+        params={"branch_id": BRANCH_A_ID},
+    )
+    ids = [r["teacher_id"] for r in resp.json()]
+    assert TEACHER2_ID in ids
+    assert TEACHER3_ID not in ids
+    assert all(r["same_subject"] for r in resp.json())
+
+    # With the flag: the cross-subject teacher appears, flagged same_subject=false;
+    # the same-subject one stays true and sorts ahead of it.
+    resp2 = await client.get(
+        f"/api/v1/lectures/{lecture_id}/eligible-substitutes",
+        params={"branch_id": BRANCH_A_ID, "allow_cross_subject": True},
+    )
+    rows = resp2.json()
+    by = {r["teacher_id"]: r for r in rows}
+    assert by[TEACHER2_ID]["same_subject"] is True
+    assert by[TEACHER3_ID]["same_subject"] is False
+    # Same-subject candidate leads the list.
+    assert rows[0]["same_subject"] is True
+
+
+@pytest.mark.asyncio
+async def test_mark_cross_subject_substitute_requires_flag(
+    client: AsyncClient, db_session: AsyncSession, seed_data
+):
+    """Marking a teacher from another subject is rejected by the Subject→Teacher
+    lock unless allow_cross_subject is set for that assignment."""
+    await _login_admin(client)
+    await _seed_unqualified_teacher(db_session)
+
+    created = await _schedule_lecture(
+        client, TEACHER_ID, "2026-06-17T09:00:00Z", "2026-06-17T10:00:00Z"
+    )
+    lecture_id = created.json()["id"]
+
+    # Without the flag → 422 (lock holds).
+    resp = await client.patch(
+        f"/api/v1/lectures/{lecture_id}/substitute",
+        params={"branch_id": BRANCH_A_ID},
+        json={"actual_teacher_id": TEACHER3_ID},
+    )
+    assert resp.status_code == 422
+    assert "not assigned to this subject" in resp.json()["error"]["message"]
+
+    # With the flag → accepted, and the cross-subject teacher is recorded.
+    resp2 = await client.patch(
+        f"/api/v1/lectures/{lecture_id}/substitute",
+        params={"branch_id": BRANCH_A_ID},
+        json={"actual_teacher_id": TEACHER3_ID, "allow_cross_subject": True},
+    )
+    assert resp2.status_code == 200
+    assert resp2.json()["actual_teacher_id"] == TEACHER3_ID

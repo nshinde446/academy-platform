@@ -148,13 +148,28 @@ export function MarkSubstituteDialog({
   const [reason, setReason] = useState<ChangeReason>("SUBSTITUTE");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
+  // Opt-in: also offer teachers from other subjects (e.g. a Physics teacher
+  // covers a Maths class). Off by default — the same-subject lock is the norm.
+  const [allowCrossSubject, setAllowCrossSubject] = useState(false);
 
-  // Backend authority on who can actually cover this lecture: qualified for the
-  // subject, free at this time, and not on leave. The picker is restricted to
-  // these so an admin can't choose someone the API would 422 on.
-  const eligibleQuery = useEligibleSubstitutes(branchId, lecture?.id, open);
+  // Backend authority on who can actually cover this lecture: free at this time
+  // and not on leave (and, unless cross-subject is allowed, qualified for the
+  // subject). The picker is restricted to these so an admin can't choose someone
+  // the API would 422 on.
+  const eligibleQuery = useEligibleSubstitutes(
+    branchId,
+    lecture?.id,
+    open,
+    allowCrossSubject
+  );
   const eligibleIds = useMemo(
     () => new Set((eligibleQuery.data ?? []).map((e) => e.teacher_id)),
+    [eligibleQuery.data]
+  );
+  // teacher_id → its eligibility meta (same_subject + own subject names), so a
+  // cross-subject candidate can be labelled with the subject they actually teach.
+  const eligibleMeta = useMemo(
+    () => new Map((eligibleQuery.data ?? []).map((e) => [e.teacher_id, e])),
     [eligibleQuery.data]
   );
 
@@ -163,6 +178,7 @@ export function MarkSubstituteDialog({
       setActualTeacherId(lecture?.actual_teacher_id ?? "");
       setReason((lecture?.change_reason as ChangeReason) ?? "SUBSTITUTE");
       setNotes(lecture?.change_notes ?? "");
+      setAllowCrossSubject(false);
       setError("");
     }
   }, [open, lecture]);
@@ -196,6 +212,15 @@ export function MarkSubstituteDialog({
   const others = ranked.filter((r) => r.score <= 0);
   const selectedRank = ranked.find((r) => r.teacher.id === actualTeacherId);
 
+  // Label a cross-subject candidate with the subject they actually teach, so the
+  // admin sees they're covering outside their subject.
+  const crossTag = (teacherId: string): string => {
+    const meta = eligibleMeta.get(teacherId);
+    if (!meta || meta.same_subject) return "";
+    const subj = meta.subjects.join("/");
+    return subj ? ` · ${subj} (other subject)` : " · other subject";
+  };
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!actualTeacherId) {
@@ -211,6 +236,7 @@ export function MarkSubstituteDialog({
         actual_teacher_id: actualTeacherId,
         change_reason: reason,
         change_notes: notes.trim() || null,
+        allow_cross_subject: allowCrossSubject,
       });
       onOpenChange(false);
     } catch (err: any) {
@@ -264,10 +290,20 @@ export function MarkSubstituteDialog({
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="sub_teacher">Actual teacher *</Label>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={allowCrossSubject}
+                onChange={(e) => setAllowCrossSubject(e.target.checked)}
+                className="h-3.5 w-3.5 accent-primary"
+              />
+              Allow teachers from other subjects
+            </label>
             {branchId && eligibleQuery.isSuccess && ranked.length === 0 && (
               <p className="text-xs text-amber-600 dark:text-amber-400">
-                No eligible substitute — everyone qualified is busy at this time
-                or on leave.
+                {allowCrossSubject
+                  ? "No teacher is free at this time (or all are on leave)."
+                  : "No same-subject substitute is free — tick “Allow teachers from other subjects” to widen the search."}
               </p>
             )}
             <select
@@ -288,6 +324,7 @@ export function MarkSubstituteDialog({
                         .filter((x) => !x.startsWith("conflict"))
                         .slice(0, 2)
                         .join(", ")}
+                      {crossTag(r.teacher.id)}
                     </option>
                   ))}
                 </optgroup>
@@ -304,6 +341,7 @@ export function MarkSubstituteDialog({
                       {r.reasons.some((x) => x.startsWith("conflict"))
                         ? " — busy"
                         : ""}
+                      {crossTag(r.teacher.id)}
                     </option>
                   ))}
                 </optgroup>

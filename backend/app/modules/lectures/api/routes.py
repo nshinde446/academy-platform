@@ -550,15 +550,20 @@ async def delete_teacher_leave(
 async def list_eligible_substitutes(
     lecture_id: uuid.UUID,
     branch_id: uuid.UUID = Query(...),
+    allow_cross_subject: bool = Query(
+        False,
+        description="Also offer teachers from other subjects (flagged same_subject=false).",
+    ),
     current_user: dict = Depends(
         require_roles(["super_admin", "branch_admin", "academic_head"])
     ),
     session: AsyncSession = Depends(get_db),
 ):
-    """Teachers who can actually cover this lecture: qualified for the subject,
-    free at its time, and not on leave. Powers the substitute picker."""
+    """Teachers who can actually cover this lecture: free at its time and not on
+    leave. Same-subject only by default; ``allow_cross_subject`` also offers other
+    subjects' teachers. Powers the substitute picker."""
     return await lecture_service.list_eligible_substitutes(
-        session, lecture_id, branch_id
+        session, lecture_id, branch_id, allow_cross_subject=allow_cross_subject
     )
 
 

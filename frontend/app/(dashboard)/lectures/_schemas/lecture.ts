@@ -52,6 +52,9 @@ export interface LectureSubstitute {
   actual_teacher_id: string | null;
   change_reason?: ChangeReason | null;
   change_notes?: string | null;
+  // Opt out of the same-subject lock for this assignment (e.g. a Physics
+  // teacher covers a Maths class). Default false keeps the lock.
+  allow_cross_subject?: boolean;
 }
 
 export interface LectureNoShow {
@@ -125,6 +128,10 @@ export interface EligibleSubstitute {
   teacher_id: string;
   first_name: string;
   last_name: string;
+  // False only when offered via cross-subject cover; carries the teacher's own
+  // subject names so the picker can label an "other subject" candidate.
+  same_subject: boolean;
+  subjects: string[];
 }
 
 // S5 — a teacher's planned unavailability (inclusive date range).
