@@ -628,14 +628,23 @@ export function useDeleteHoliday(branchId: string | undefined) {
 export function useEligibleSubstitutes(
   branchId: string | undefined,
   lectureId: string | undefined,
-  enabled: boolean
+  enabled: boolean,
+  allowCrossSubject = false
 ) {
   return useQuery<EligibleSubstitute[]>({
-    queryKey: substituteKeys.forLecture(branchId!, lectureId!),
+    queryKey: [
+      ...substituteKeys.forLecture(branchId!, lectureId!),
+      allowCrossSubject,
+    ],
     queryFn: async () => {
       const res = await apiClient.get<EligibleSubstitute[]>(
         `/api/v1/lectures/${lectureId}/eligible-substitutes`,
-        { params: { branch_id: branchId } }
+        {
+          params: {
+            branch_id: branchId,
+            allow_cross_subject: allowCrossSubject,
+          },
+        }
       );
       return res.data;
     },

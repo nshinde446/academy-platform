@@ -136,11 +136,18 @@ class HolidayResponse(BaseModel):
 
 
 class EligibleSubstitute(BaseModel):
-    """A teacher who can actually cover a lecture (qualified, free, not on leave)."""
+    """A teacher who can actually cover a lecture (free, not on leave).
+
+    ``same_subject`` is True when the teacher is assigned to the lecture's
+    subject (the default, safe pick); False rows only appear when the caller opts
+    into cross-subject cover. ``subjects`` are the teacher's own subject names, so
+    the picker can show "Chemistry" next to a cross-subject candidate."""
 
     teacher_id: uuid.UUID
     first_name: str
     last_name: str
+    same_subject: bool = True
+    subjects: list[str] = []
 
 
 class TeacherLeaveCreate(BaseModel):
@@ -179,11 +186,17 @@ class LectureNoShow(BaseModel):
 
 class LectureSubstitute(BaseModel):
     """Mark a lecture as taught by someone other than the scheduled teacher.
-    Set actual_teacher_id to null to clear the substitution."""
+    Set actual_teacher_id to null to clear the substitution.
+
+    ``allow_cross_subject`` opts out of the Subject→Teacher lock for THIS
+    assignment: when True, a teacher not assigned to the lecture's subject may
+    cover it (e.g. a Physics teacher takes a Maths class). Default False keeps the
+    lock as the guarantee; the override is deliberate and per-assignment."""
 
     actual_teacher_id: uuid.UUID | None
     change_reason: str | None = "SUBSTITUTE"
     change_notes: str | None = None
+    allow_cross_subject: bool = False
 
 
 class LectureResponse(BaseModel):
