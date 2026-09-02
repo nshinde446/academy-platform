@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 
-def _safe_filename(filename: str) -> str:
+def safe_filename(filename: str) -> str:
     """Sanitize a user-supplied filename for filesystem safety.
 
     Removes path separators, collapses whitespace, strips control chars.
@@ -36,6 +36,10 @@ def _safe_filename(filename: str) -> str:
     name = re.sub(r"\s+", " ", name).strip()
     name = name.replace("/", "_").replace("\\", "_")
     return name or "unnamed"
+
+
+# Back-compat alias — the private name was used internally before it was exported.
+_safe_filename = safe_filename
 
 
 def compute_sha256(data: bytes) -> str:

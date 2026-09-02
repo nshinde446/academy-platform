@@ -84,6 +84,81 @@ export function useRankList(branchId: string | undefined, testId: string | undef
   });
 }
 
+// Resolve an unmatched needs-review row onto a chosen student.
+export function useResolveReview(branchId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      testId,
+      reviewId,
+      studentId,
+    }: {
+      testId: string;
+      reviewId: string;
+      studentId: string;
+    }) => {
+      const res = await apiClient.post(
+        `/api/v1/tests/${testId}/review/${reviewId}/resolve`,
+        { student_id: studentId },
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    onSuccess: (_data, vars) => {
+      if (branchId) {
+        qc.invalidateQueries({
+          queryKey: testPortalKeys.ranklist(branchId, vars.testId),
+        });
+      }
+    },
+  });
+}
+
+// Upload an answer-key file (kept for reference; not scored against).
+export function useUploadAnswerKey(branchId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ testId, file }: { testId: string; file: File }) => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await apiClient.post(
+        `/api/v1/tests/${testId}/answer-key`,
+        form,
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) {
+        qc.invalidateQueries({ queryKey: testPortalKeys.tests(branchId) });
+      }
+    },
+  });
+}
+
+// Download a test's stored answer-key file as a blob and save it.
+export function useDownloadAnswerKey(branchId: string | undefined) {
+  return useMutation({
+    mutationFn: async ({ testId }: { testId: string }) => {
+      const res = await apiClient.get(`/api/v1/tests/${testId}/answer-key`, {
+        params: { branch_id: branchId },
+        responseType: "blob",
+      });
+      const cd = res.headers["content-disposition"] as string | undefined;
+      const match = cd?.match(/filename="?([^"]+)"?/);
+      const filename = match?.[1] ?? "answer-key";
+      const url = URL.createObjectURL(res.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    },
+  });
+}
+
 // Download the rank list (PDF / Excel) as a blob and save it.
 export function useDownloadRankList(branchId: string | undefined) {
   return useMutation({

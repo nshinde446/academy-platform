@@ -1,3 +1,4 @@
+import mimetypes
 import uuid
 
 from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
@@ -5,8 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.settings import get_settings
 from app.core.database.session import get_db
+from app.core.storage import StorageBackend, get_storage_backend
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.tests.schemas.test_schemas import (
+    AnswerKeyInfo,
     AutoPickRequest,
     MarkBatchSubmit,
     MarkResponse,
@@ -16,6 +19,8 @@ from app.modules.tests.schemas.test_schemas import (
     QuestionResponse,
     QuestionUpdate,
     RankListResponse,
+    ResolveReviewRequest,
+    ResolveReviewResult,
     ResponseBulkResult,
     ResponseBulkSubmit,
     TestCreate,
@@ -442,6 +447,61 @@ async def download_ranklist(
     return Response(
         content=data, media_type=ranklist_export.PDF_MIME,
         headers={"Content-Disposition": f'attachment; filename="{slug}.pdf"'},
+    )
+
+
+@tests_router.post("/{test_id}/review/{review_id}/resolve", response_model=ResolveReviewResult)
+async def resolve_review(
+    test_id: uuid.UUID,
+    review_id: uuid.UUID,
+    body: ResolveReviewRequest,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(_PORTAL_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Assign an unmatched ZipGrade row to a student → write their mark and mark
+    the row resolved. The rank list recomputes on the next read."""
+    return await test_service.resolve_review(
+        session, test_id, review_id, body.student_id, branch_id,
+        current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@tests_router.post("/{test_id}/answer-key", response_model=AnswerKeyInfo)
+async def upload_answer_key(
+    test_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_roles(_PORTAL_ROLES)),
+    session: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage_backend),
+):
+    """Store an answer-key file for reference (kept, not scored against)."""
+    content = await file.read()
+    return await test_service.set_answer_key(
+        session, test_id, branch_id, file.filename or "answer-key", content, storage,
+        current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@tests_router.get("/{test_id}/answer-key")
+async def download_answer_key(
+    test_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(_PORTAL_ROLES + ["teacher"])),
+    session: AsyncSession = Depends(get_db),
+    storage: StorageBackend = Depends(get_storage_backend),
+):
+    """Download the stored answer-key file (404 if none set)."""
+    filename, data = await test_service.get_answer_key(session, test_id, branch_id, storage)
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return Response(
+        content=data, media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

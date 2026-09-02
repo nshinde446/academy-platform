@@ -22,12 +22,27 @@ const RANKLIST: RankListData = {
 
 const uploadMutate = vi.fn().mockResolvedValue({ matched: 2, absent: 1, needs_review: 1, total_rows: 3 });
 const downloadMutate = vi.fn();
+const uploadKeyMutate = vi.fn().mockResolvedValue({ answer_key_file: "k", filename: "key.pdf" });
+const downloadKeyMutate = vi.fn();
 
 vi.mock("@/app/(dashboard)/test-portal/_hooks/use-test-portal", () => ({
   useRankList: () => ({ data: RANKLIST, isLoading: false, isError: false }),
   useUploadResult: () => ({ mutateAsync: uploadMutate, isPending: false }),
   useDownloadRankList: () => ({ mutate: downloadMutate, isPending: false }),
+  useUploadAnswerKey: () => ({ mutateAsync: uploadKeyMutate, isPending: false }),
+  useDownloadAnswerKey: () => ({ mutate: downloadKeyMutate, isPending: false }),
+  useResolveReview: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
+
+// The resolve dialog is unit-tested on its own; stub it here so RankList renders
+// without a QueryClientProvider (the real dialog fetches the student roster).
+vi.mock(
+  "@/app/(dashboard)/test-portal/_components/resolve-review-dialog",
+  () => ({
+    ResolveReviewDialog: ({ open }: { open: boolean }) =>
+      open ? <div data-testid="resolve-dialog" /> : null,
+  }),
+);
 
 vi.mock("@/components/ui/toast", () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
@@ -44,12 +59,15 @@ const TEST: TestSummary = {
   scheduled_at: "2026-08-31T00:00:00Z",
   total_marks: 200,
   omr_type: "100Q",
+  answer_key_file: null,
   test_status: "SCHEDULED",
 };
 
 beforeEach(() => {
   uploadMutate.mockClear();
   downloadMutate.mockClear();
+  uploadKeyMutate.mockClear();
+  downloadKeyMutate.mockClear();
 });
 
 describe("Test Portal RankList", () => {
@@ -83,5 +101,29 @@ describe("Test Portal RankList", () => {
     await user.click(screen.getByRole("button", { name: /download excel/i }));
     expect(downloadMutate).toHaveBeenNthCalledWith(1, { testId: "t1", format: "pdf" });
     expect(downloadMutate).toHaveBeenNthCalledWith(2, { testId: "t1", format: "xlsx" });
+  });
+
+  it("lists each needs-review row and opens the resolve dialog", async () => {
+    const user = userEvent.setup();
+    render(<RankList branchId="br1" test={TEST} />);
+    // The one unmatched row (PRNX / Ghost) is listed with a Resolve button.
+    expect(screen.getByText("PRNX")).toBeInTheDocument();
+    expect(screen.queryByTestId("resolve-dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /resolve/i }));
+    expect(screen.getByTestId("resolve-dialog")).toBeInTheDocument();
+  });
+
+  it("shows an upload-answer-key button, and a download only once a key exists", async () => {
+    const { rerender } = render(<RankList branchId="br1" test={TEST} />);
+    // No key yet → upload label, no download button.
+    expect(screen.getByRole("button", { name: /upload answer key/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^answer key$/i })).not.toBeInTheDocument();
+
+    // Once a key is stored → label flips to Replace and a download appears.
+    rerender(<RankList branchId="br1" test={{ ...TEST, answer_key_file: "answer-keys/t1--key.pdf" }} />);
+    expect(screen.getByRole("button", { name: /replace answer key/i })).toBeInTheDocument();
+    const dl = screen.getByRole("button", { name: /^answer key$/i });
+    await userEvent.setup().click(dl);
+    expect(downloadKeyMutate).toHaveBeenCalledWith({ testId: "t1" });
   });
 });

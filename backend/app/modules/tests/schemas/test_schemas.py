@@ -94,6 +94,7 @@ class TestResponse(BaseModel):
     duration_minutes: int
     total_marks: float
     omr_type: str | None = None
+    answer_key_file: str | None = None
     test_status: str
     branch_id: uuid.UUID
     academic_year_id: uuid.UUID
@@ -246,3 +247,20 @@ class RankListResponse(BaseModel):
     ranked: list[RankRow]       # appeared, highest → lowest
     absentees: list[RankRow]    # grouped at the bottom
     needs_review: list[ReviewRow]  # unmatched CSV rows (excluded from ranking)
+
+
+class ResolveReviewRequest(BaseModel):
+    """Assign an unmatched ZipGrade row to a student (PR-B)."""
+    student_id: uuid.UUID
+
+
+class ResolveReviewResult(BaseModel):
+    resolved: bool
+    student_id: uuid.UUID
+    marks_obtained: float
+
+
+class AnswerKeyInfo(BaseModel):
+    """Result of an answer-key upload."""
+    answer_key_file: str
+    filename: str

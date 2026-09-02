@@ -5,6 +5,7 @@ from app.core.storage.backend import (
     compute_sha256,
     get_storage_backend,
     reset_storage_backend_for_tests,
+    safe_filename,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "compute_sha256",
     "get_storage_backend",
     "reset_storage_backend_for_tests",
+    "safe_filename",
 ]

@@ -66,6 +66,24 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def score_from_raw(raw: dict[str, Any]) -> tuple[float | None, float | None, float | None]:
+    """Re-derive (score, total, percent) from a single stored raw ZipGrade row.
+
+    Used when resolving a needs-review row: the original row was kept verbatim on
+    ``TestImportReview.raw_row``, and resolving it to a student needs the marks
+    back out without re-uploading the whole file. Resolves columns by the same
+    aliases as :func:`parse_zipgrade_csv`."""
+    header_map = {_norm(h): h for h in raw.keys() if h}
+    score_col = _pick(header_map, _SCORE_ALIASES)
+    total_col = _pick(header_map, _TOTAL_ALIASES)
+    percent_col = _pick(header_map, _PERCENT_ALIASES)
+    return (
+        _to_float(raw.get(score_col)) if score_col else None,
+        _to_float(raw.get(total_col)) if total_col else None,
+        _to_float(raw.get(percent_col)) if percent_col else None,
+    )
+
+
 def parse_zipgrade_csv(content: bytes) -> list[dict[str, Any]]:
     """Parse ZipGrade results CSV bytes into normalized rows. Raises
     ``ZipGradeCsvError`` if the file has no header or no PRN column."""
