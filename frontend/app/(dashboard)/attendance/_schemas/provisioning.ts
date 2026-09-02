@@ -42,6 +42,33 @@ export interface ReconcileResponse {
   drift: ReconcileRow[]; // present on both, name differs
 }
 
+// ── institute-wide reconcile (dedup across all terminals) ────────────────────
+
+// One terminal's own live self-report, shown as a small health strip — not a
+// second copy of the roster.
+export interface MachineLiveStatus {
+  dev_id: string;
+  last_seen_at: string | null;
+  user_count: number | null;
+  face_count: number | null;
+  fp_count: number | null;
+  firmware: string | null;
+}
+
+// Each student counted ONCE across every machine. The three primary buckets
+// (face_enrolled/awaiting_face/not_pushed) partition the roster; name_drift is a
+// quality overlay on the enrolled set. Actionable buckets carry rows;
+// face_enrolled is the all-good count.
+export interface InstituteReconcileResponse {
+  total_students: number;
+  face_enrolled: number;
+  awaiting_face: ReconcileRow[];
+  not_pushed: ReconcileRow[];
+  name_drift: ReconcileRow[];
+  on_device_not_on_platform: ReconcileRow[];
+  machines: MachineLiveStatus[];
+}
+
 // ── push flow (dry-run → enqueue → queue status) ─────────────────────────────
 
 export type PlannedAction = "create" | "update" | "no_change" | "skipped";

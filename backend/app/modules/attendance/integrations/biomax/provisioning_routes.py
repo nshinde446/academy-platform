@@ -29,6 +29,7 @@ from app.modules.attendance.schemas.provisioning_schemas import (
     BiometricStatusResponse,
     CrossDeviceRestoreRequest,
     DeviceCommandResponse,
+    InstituteReconcileResponse,
     DeviceStatusResponse,
     DeviceUserSnapshotRequest,
     DeviceUserSnapshotResponse,
@@ -104,6 +105,22 @@ async def reconcile(
     _require_known_device(dev_id)
     branch_id = _resolve_branch()
     return await provisioning_service.reconcile(session, branch_id, dev_id)
+
+
+@router.get("/reconcile-institute", response_model=InstituteReconcileResponse)
+async def reconcile_institute(
+    _enabled: None = Depends(_require_enabled),
+    _user: dict = Depends(_ADMIN),
+    session: AsyncSession = Depends(get_db),
+):
+    """Institute-wide enrollment status across ALL configured terminals, each
+    student counted once (a student enrolled on either machine is one 'face
+    enrolled'). This is the simple, deduplicated dashboard view; the per-machine
+    live counts come back as a small health strip, not a second roster."""
+    branch_id = _resolve_branch()
+    return await provisioning_service.reconcile_institute(
+        session, branch_id, sorted(_allowed_serials())
+    )
 
 
 @router.post("/dry-run", response_model=ProvisionPlanResponse)

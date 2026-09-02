@@ -298,6 +298,62 @@ async def test_reconcile_matches_and_detects_drift(db_session, seed_data):
     assert [r.vendor_user_id for r in rec2.drift] == ["6002"]
 
 
+DEV2 = "AMDB25083200131"  # a second terminal (other floor, same institute)
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_reconcile_institute_dedups_across_both_machines(db_session, seed_data):
+    """Institute-wide reconcile counts each student ONCE across both terminals: a
+    face on either machine = enrolled (not also 'awaiting' from the other), drift is
+    caught from either machine, and device-only users are surfaced once."""
+    branch = seed_data["branch_a"].id
+    a = await _student(db_session, seed_data, rfid="7001", first="Aa", last="One")
+    b = await _student(db_session, seed_data, rfid="7002", first="Bb", last="Two")
+    c = await _student(db_session, seed_data, rfid="7003", first="Cc", last="Three")
+    d = await _student(db_session, seed_data, rfid="7004", first="Dd", last="Four")
+
+    # A: face on DEV2 only, AND identity-only on DEV — must count once as enrolled,
+    #    never also as "awaiting" from the faceless machine.
+    await device_command_repo.upsert_device_user(
+        db_session, branch_id=branch, dev_id=DEV2, vendor_user_id="7001",
+        name="Aa One", has_face=True)
+    await device_command_repo.upsert_device_user(
+        db_session, branch_id=branch, dev_id=DEV, vendor_user_id="7001",
+        name="Aa One", has_face=False)
+    # B: identity-only on DEV, no face anywhere -> awaiting face.
+    await device_command_repo.upsert_device_user(
+        db_session, branch_id=branch, dev_id=DEV, vendor_user_id="7002",
+        name="Bb Two", has_face=False)
+    # C: nowhere -> not pushed.
+    # D: face on DEV with a WRONG name -> enrolled + name drift.
+    await device_command_repo.upsert_device_user(
+        db_session, branch_id=branch, dev_id=DEV, vendor_user_id="7004",
+        name="Wrong Name", has_face=True)
+    # A user on DEV2 with no platform student -> on-device-not-on-platform.
+    await device_command_repo.upsert_device_user(
+        db_session, branch_id=branch, dev_id=DEV2, vendor_user_id="9999",
+        name="Ghost", has_face=True)
+    # live self-report for the machine strip
+    await device_command_repo.upsert_device_status(
+        db_session, branch_id=branch, dev_id=DEV,
+        snapshot={"userCount": 116, "faceCount": 115, "fpCount": 1, "firmware": "K8D"})
+    await db_session.commit()
+
+    rec = await provisioning_service.reconcile_institute(db_session, branch, [DEV, DEV2])
+
+    assert rec.total_students == 4                       # a,b,c,d (seed student has no rfid)
+    assert rec.face_enrolled == 2                        # A (via DEV2) + D — each once
+    assert [r.vendor_user_id for r in rec.awaiting_face] == ["7002"]   # A not here (dedup)
+    assert [r.vendor_user_id for r in rec.not_pushed] == ["7003"]
+    assert [r.vendor_user_id for r in rec.name_drift] == ["7004"]      # drift from DEV
+    assert [r.vendor_user_id for r in rec.on_device_not_on_platform] == ["9999"]
+
+    machines = {m.dev_id: m for m in rec.machines}
+    assert set(machines) == {DEV, DEV2}
+    assert machines[DEV].user_count == 116 and machines[DEV].face_count == 115
+    assert machines[DEV2].user_count is None             # never reported yet
+
+
 @pytest.mark.usefixtures("seed_data")
 async def test_reconcile_reports_device_only(db_session, seed_data):
     # A user on the device with no matching platform student.

@@ -20,15 +20,15 @@ import { useRowSelection } from "@/hooks/use-row-selection";
 import {
   useCancelCommand,
   useDeviceCommands,
-  useDeviceStatus,
+  useInstituteReconcile,
   useProvisionDevices,
   useProvisionDryRun,
   useProvisionPush,
-  useReconcile,
 } from "../_hooks/use-provisioning";
 import type {
   CommandStatus,
   DeviceCommandRow,
+  MachineLiveStatus,
   ProvisionPlanResponse,
   ReconcileRow,
 } from "../_schemas/provisioning";
@@ -52,37 +52,40 @@ interface DeviceSyncProps {
   branchId: string | undefined;
 }
 
-// Reconciliation + push between platform students and the BioMax device's own
-// user table (mirrored from its realtime_enroll_data pushes). Read side: three
-// groups — need pushing / only on device / name drift. Write side: pick the
-// students that need registering, preview the plan (dry-run), confirm, and the
-// commands land in the outbound queue. Nothing here emits to the device — the
-// device drains the queue on its next contact (a later, capture-gated step).
+// Institute-wide enrollment status across ALL terminals, each student counted
+// ONCE (a face on either machine = enrolled, never double-counted per device).
+// Read side: face-enrolled (count) + the actionable buckets — awaiting face /
+// not pushed / name drift / on-device-not-on-platform. Write side: pick students
+// that need registering, choose the target machine, preview (dry-run), confirm;
+// the command lands in that machine's outbound queue. Nothing emits directly —
+// the device drains the queue on its next contact.
 export function DeviceSync({ branchId }: DeviceSyncProps) {
   const toast = useToast();
   const devicesQuery = useProvisionDevices(branchId);
   const enabled = devicesQuery.data?.enabled ?? false;
-  const devices = useMemo(
-    () => devicesQuery.data?.devices ?? [],
-    [devicesQuery.data],
+
+  const reconcileQuery = useInstituteReconcile(branchId, enabled);
+  const data = reconcileQuery.data;
+  const machines = useMemo(() => data?.machines ?? [], [data]);
+
+  // A single machine selector drives BOTH the push target and which queue you
+  // watch — the roster/status above is device-independent, so this never
+  // duplicates the student data, it just picks where a write lands.
+  const [selectedDevId, setSelectedDevId] = useState("");
+  const targetDevId = selectedDevId || machines[0]?.dev_id || "";
+
+  const commandsQuery = useDeviceCommands(
+    branchId,
+    targetDevId || undefined,
+    enabled,
   );
 
-  // Derive the effective device (default = first configured) rather than
-  // defaulting through an effect — keeps the selection valid as devices load
-  // without a setState-in-effect cascade.
-  const [selectedDevId, setSelectedDevId] = useState("");
-  const devId = selectedDevId || devices[0]?.dev_id || "";
-
-  const reconcileQuery = useReconcile(branchId, devId || undefined, enabled);
-  const data = reconcileQuery.data;
-  const commandsQuery = useDeviceCommands(branchId, devId || undefined, enabled);
-
-  // One selection model spanning both push-eligible groups (need-pushing +
-  // drift). Device-only rows can't be pushed — no platform student behind them.
+  // One selection model spanning both push-eligible groups (not-pushed + drift).
+  // Device-only rows can't be pushed — no platform student behind them.
   const selection = useRowSelection();
 
-  const dryRun = useProvisionDryRun(devId || undefined);
-  const push = useProvisionPush(branchId, devId || undefined);
+  const dryRun = useProvisionDryRun(targetDevId || undefined);
+  const push = useProvisionPush(branchId, targetDevId || undefined);
   const [plan, setPlan] = useState<ProvisionPlanResponse | null>(null);
 
   async function handlePreview() {
@@ -123,102 +126,83 @@ export function DeviceSync({ branchId }: DeviceSyncProps) {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Controls + status */}
+      {/* Status pill + what this screen is */}
       <Card size="sm">
         <CardContent>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              Device
-              <select
-                value={devId}
-                onChange={(e) => {
-                  setSelectedDevId(e.target.value);
-                  selection.clear();
-                }}
-                className={CONTROL_CLASS}
-                aria-label="Select device"
-                disabled={devices.length === 0}
-              >
-                {devices.length === 0 ? (
-                  <option value="">No device configured</option>
-                ) : (
-                  devices.map((d) => (
-                    <option key={d.dev_id} value={d.dev_id}>
-                      {d.dev_id}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-            <div className="flex items-center gap-1 pb-1">
-              <StatusPill enabled={enabled} />
-              <InfoHint
-                text={
-                  <>
-                    Compares the platform&apos;s students against the device&apos;s
-                    own user table (mirrored from its enrollment pushes). Matching
-                    is by device <em>userId</em>, which is the student&apos;s roll
-                    number. Pushing queues a register command per student; the
-                    device applies it on its next contact. Enrollment mirroring
-                    and pushing only run when provisioning is enabled, so until
-                    then the device side reads empty by design.
-                  </>
-                }
-              />
-            </div>
+          <div className="flex items-center gap-1">
+            <StatusPill enabled={enabled} />
+            <InfoHint
+              text={
+                <>
+                  Institute-wide enrollment across{" "}
+                  <em>every</em> terminal, each student counted once — a face on
+                  either machine means enrolled, so the same student is never
+                  shown twice. Matching is by device <em>userId</em> (the
+                  student&apos;s roll number). Each machine&apos;s own live counts
+                  appear as a small health strip. Pushing queues a register
+                  command onto the chosen machine; it applies on the next
+                  contact. Everything is dormant until{" "}
+                  <code>BIOMAX_PROVISIONING_ENABLED</code> is set.
+                </>
+              }
+            />
           </div>
         </CardContent>
       </Card>
 
-      {/* Live on-device counts (what the terminal itself reports every poll) */}
-      {enabled && devId && (
-        <DeviceLiveStatus branchId={branchId} devId={devId} enabled={enabled} />
-      )}
+      {/* Per-machine live health strip (each terminal's own self-report) */}
+      {enabled && machines.length > 0 && <MachinesStrip machines={machines} />}
 
-      {/* Summary tiles */}
+      {/* Institute summary — each student counted once */}
       {enabled && data && (
         <Card size="sm">
           <CardContent>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <Tile label="Students" value={data.total_students} />
+              <Tile label="Face enrolled" value={data.face_enrolled} tone="ok" />
+              <Tile label="Awaiting face" value={data.awaiting_face.length} />
               <Tile
-                label="Need pushing"
-                value={data.on_platform_not_on_device.length}
+                label="Not pushed"
+                value={data.not_pushed.length}
                 tone="warn"
               />
               <Tile
-                label="Awaiting face"
-                value={(data.awaiting_face_enrollment ?? []).length}
-              />
-              <Tile
-                label="Only on device"
-                value={data.on_device_not_on_platform.length}
-              />
-              <Tile label="Name drift" value={data.drift.length} tone="warn" />
-              <Tile
-                label="In queue"
-                value={
-                  (commandsQuery.data ?? []).filter(
-                    (c) => c.command_status === "pending" || c.command_status === "sent",
-                  ).length
-                }
+                label="Name drift"
+                value={data.name_drift.length}
+                tone="warn"
               />
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Push action bar — explicit selection, never a blind bulk push */}
+      {/* Push action bar — explicit selection + explicit target machine */}
       {enabled && selection.count > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
           <span className="text-sm font-medium">
             {selection.count} student{selection.count === 1 ? "" : "s"} selected
           </span>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            Target machine
+            <select
+              value={targetDevId}
+              onChange={(e) => setSelectedDevId(e.target.value)}
+              className={CONTROL_CLASS}
+              aria-label="Target machine for push"
+            >
+              {machines.map((m) => (
+                <option key={m.dev_id} value={m.dev_id}>
+                  {m.dev_id}
+                </option>
+              ))}
+            </select>
+          </label>
           <Button
             size="sm"
             onClick={handlePreview}
-            disabled={dryRun.isPending || push.isPending}
+            disabled={!targetDevId || dryRun.isPending || push.isPending}
           >
-            {dryRun.isPending ? "Preparing…" : "Push to device…"}
+            {dryRun.isPending ? "Preparing…" : "Push to machine…"}
           </Button>
           <Button
             variant="ghost"
@@ -242,46 +226,50 @@ export function DeviceSync({ branchId }: DeviceSyncProps) {
         <TableSkeleton rows={6} />
       ) : reconcileQuery.isError ? (
         <p className="text-destructive text-sm">
-          Failed to reconcile with the device.
+          Failed to load institute enrollment status.
         </p>
       ) : !data ? null : (
         <div className="flex flex-col gap-6">
           <ReconcileSection
-            title="Need pushing (no identity on device yet)"
-            hint="Students with a valid device userId (roll number) that we have NOT confirmed onto the device — select and push to register their identity."
-            rows={data.on_platform_not_on_device}
-            emptyText="Every student's identity has been pushed to the device."
+            title="Not pushed (no identity on any machine)"
+            hint="Students with a valid device userId (roll number) not confirmed onto ANY terminal — select, choose a target machine, and push to register their identity."
+            rows={data.not_pushed}
+            emptyText="Every student's identity has been pushed to a machine."
             linkStudents
             selection={selection}
           />
           <ReconcileSection
             title="Awaiting face enrollment"
-            hint="Identity already pushed and confirmed on the device, but the device hasn't mirrored them back — in practice because no face is enrolled yet. The next step is enrolling their face at the terminal, NOT another push."
-            rows={data.awaiting_face_enrollment ?? []}
+            hint="Identity pushed and confirmed on a machine, but no face is enrolled yet (the device hasn't mirrored them back with a face). The next step is enrolling their face at a terminal, NOT another push."
+            rows={data.awaiting_face}
             emptyText="No students are waiting on a face enrollment."
             linkStudents
           />
           <ReconcileSection
             title="Name drift"
-            hint="Present on both, but the name on the device differs from the platform — pushing re-registers with the platform name."
-            rows={data.drift}
+            hint="Enrolled, but a machine's stored name differs from the platform — pushing re-registers with the platform name."
+            rows={data.name_drift}
             emptyText="No name mismatches."
             linkStudents
             selection={selection}
           />
           <ReconcileSection
-            title="On the device, not on the platform"
-            hint="Users enrolled on the device with no matching student here — a stale entry, a manual enrollment, or a roll number that doesn't exist on the platform. Not pushable from here."
+            title="On a machine, not on the platform"
+            hint="Users on a terminal with no matching student here — a stale entry, a manual enrollment, or a roll number that doesn't exist on the platform. Not pushable from here."
             rows={data.on_device_not_on_platform}
             emptyText="No device users are unaccounted for."
           />
 
-          <QueuePanel
-            branchId={branchId}
-            devId={devId}
-            rows={commandsQuery.data ?? []}
-            loading={commandsQuery.isLoading}
-          />
+          {targetDevId && (
+            <QueuePanel
+              branchId={branchId}
+              devId={targetDevId}
+              machines={machines}
+              onDevIdChange={setSelectedDevId}
+              rows={commandsQuery.data ?? []}
+              loading={commandsQuery.isLoading}
+            />
+          )}
         </div>
       )}
 
@@ -432,11 +420,15 @@ function commandTarget(row: DeviceCommandRow): string {
 function QueuePanel({
   branchId,
   devId,
+  machines,
+  onDevIdChange,
   rows,
   loading,
 }: {
   branchId: string;
   devId: string;
+  machines: MachineLiveStatus[];
+  onDevIdChange: (devId: string) => void;
   rows: DeviceCommandRow[];
   loading: boolean;
 }) {
@@ -457,7 +449,7 @@ function QueuePanel({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold">Command queue</h3>
         <Badge variant="secondary" className="text-[10px] tabular-nums">
           {rows.length}
@@ -465,13 +457,27 @@ function QueuePanel({
         <InfoHint
           text={
             <>
-              Register commands waiting for the device. It drains them on its
-              next contact: <b>pending</b> &rarr; <b>sent</b> &rarr;{" "}
+              Register commands waiting for the selected machine. It drains them
+              on its next contact: <b>pending</b> &rarr; <b>sent</b> &rarr;{" "}
               <b>confirmed</b> (or <b>failed</b>). A pending command can be
               cancelled; once sent, the device already has it.
             </>
           }
         />
+        {machines.length > 1 && (
+          <select
+            value={devId}
+            onChange={(e) => onDevIdChange(e.target.value)}
+            className={`${CONTROL_CLASS} ml-auto h-8`}
+            aria-label="Queue for machine"
+          >
+            {machines.map((m) => (
+              <option key={m.dev_id} value={m.dev_id}>
+                {m.dev_id}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
       {loading ? (
         <TableSkeleton rows={3} />
@@ -562,54 +568,62 @@ function LiveTile({ label, value }: { label: string; value: number | null | unde
   );
 }
 
-// The terminal's OWN live counts, reported on every poll — a real-time view of
-// what's on the machine (and a heartbeat) without touching it.
-function DeviceLiveStatus({
-  branchId,
-  devId,
-  enabled,
-}: {
-  branchId: string;
-  devId: string;
-  enabled: boolean;
-}) {
-  const q = useDeviceStatus(branchId, devId, enabled);
-  const d = q.data;
-  // Tick a "now" from an effect so the heartbeat stays fresh without calling an
-  // impure Date.now() during render (react-hooks purity rule).
+// Each terminal's OWN live counts, reported on every poll — a real-time view of
+// what's physically on each machine (and its heartbeat), shown once per machine.
+// This is the ground truth the device reports about itself, distinct from the
+// platform-side reconcile above.
+function MachinesStrip({ machines }: { machines: MachineLiveStatus[] }) {
+  // Tick a "now" from an effect so heartbeats stay fresh without an impure
+  // Date.now() during render (react-hooks purity rule).
   const [now, setNow] = useState(0);
   useEffect(() => {
     setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 10_000);
     return () => clearInterval(t);
   }, []);
-  const seen = d?.last_seen_at ? new Date(d.last_seen_at) : null;
-  const secsAgo =
-    seen && now ? Math.max(0, Math.round((now - seen.getTime()) / 1000)) : null;
-  const online = secsAgo != null && secsAgo < 120; // it polls every ~20–30s
 
   return (
     <Card size="sm">
       <CardContent>
-        <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
-          <div className="flex items-center gap-2">
-            <span
-              className={`h-2 w-2 rounded-full ${online ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
-            />
-            <span className="text-xs text-muted-foreground">
-              {seen
-                ? online
-                  ? "On device — live"
-                  : `Last seen ${relTime(secsAgo!)}`
-                : "Waiting for the device to report…"}
-            </span>
-          </div>
-          <LiveTile label="Users on device" value={d?.user_count} />
-          <LiveTile label="Faces enrolled" value={d?.face_count} />
-          <LiveTile label="Fingerprints" value={d?.fp_count} />
-          {d?.firmware && (
-            <span className="text-[11px] text-muted-foreground">fw {d.firmware}</span>
-          )}
+        <div className="flex flex-col gap-3">
+          {machines.map((m) => {
+            const seen = m.last_seen_at ? new Date(m.last_seen_at) : null;
+            const secsAgo =
+              seen && now
+                ? Math.max(0, Math.round((now - seen.getTime()) / 1000))
+                : null;
+            const online = secsAgo != null && secsAgo < 120; // polls every ~20–30s
+            return (
+              <div
+                key={m.dev_id}
+                className="flex flex-wrap items-center gap-x-8 gap-y-2"
+              >
+                <div className="flex min-w-[13rem] items-center gap-2">
+                  <span
+                    className={`h-2 w-2 rounded-full ${online ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
+                  />
+                  <div className="flex flex-col leading-tight">
+                    <span className="font-mono text-xs">{m.dev_id}</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {seen
+                        ? online
+                          ? "on device — live"
+                          : `last seen ${relTime(secsAgo!)}`
+                        : "waiting for the device to report…"}
+                    </span>
+                  </div>
+                </div>
+                <LiveTile label="Users on device" value={m.user_count} />
+                <LiveTile label="Faces enrolled" value={m.face_count} />
+                <LiveTile label="Fingerprints" value={m.fp_count} />
+                {m.firmware && (
+                  <span className="text-[11px] text-muted-foreground">
+                    fw {m.firmware}
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </CardContent>
     </Card>
@@ -634,12 +648,14 @@ function Tile({
 }: {
   label: string;
   value: number;
-  tone?: "default" | "warn";
+  tone?: "default" | "warn" | "ok";
 }) {
   const cls =
     tone === "warn" && value > 0
       ? "text-amber-600 dark:text-amber-400"
-      : "text-foreground";
+      : tone === "ok" && value > 0
+        ? "text-emerald-600 dark:text-emerald-400"
+        : "text-foreground";
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-xs text-muted-foreground">{label}</span>

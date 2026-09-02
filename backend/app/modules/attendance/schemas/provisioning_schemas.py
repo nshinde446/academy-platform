@@ -167,6 +167,38 @@ class ReconcileRow(BaseModel):
     student_id: uuid.UUID | None = None
 
 
+class MachineLiveStatus(BaseModel):
+    """One terminal's own live self-report (from its poll heartbeat) — shown as a
+    small per-machine health strip on the institute dashboard, NOT as a second copy
+    of the roster."""
+
+    dev_id: str
+    last_seen_at: datetime | None = None
+    user_count: int | None = None
+    face_count: int | None = None
+    fp_count: int | None = None
+    firmware: str | None = None
+
+
+class InstituteReconcileResponse(BaseModel):
+    """Institute-wide enrollment status, each student counted ONCE across every
+    terminal (a student enrolled on either machine is one 'face enrolled', not two).
+
+    The three primary buckets partition the roster: a student is face-enrolled
+    (has a face on any machine, or has ever punched), else awaiting-face (identity
+    pushed/confirmed to a machine but no face yet), else not-pushed. ``name_drift``
+    is a quality overlay on the enrolled set (device name ≠ platform name).
+    Actionable buckets carry their rows; the all-good ``face_enrolled`` is a count."""
+
+    total_students: int
+    face_enrolled: int
+    awaiting_face: list[ReconcileRow]
+    not_pushed: list[ReconcileRow]
+    name_drift: list[ReconcileRow]
+    on_device_not_on_platform: list[ReconcileRow]
+    machines: list[MachineLiveStatus]
+
+
 class ReconcileResponse(BaseModel):
     """Diff between platform students and the device's user mirror.
 

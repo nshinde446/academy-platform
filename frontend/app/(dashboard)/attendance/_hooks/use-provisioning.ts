@@ -3,6 +3,7 @@ import apiClient from "@/services/api-client";
 import type {
   DeviceCommandRow,
   DeviceStatusResponse,
+  InstituteReconcileResponse,
   ProvisionDevicesResponse,
   ProvisionPlanResponse,
   ProvisionPushResponse,
@@ -19,6 +20,8 @@ export const provisioningKeys = {
     [...provisioningKeys.all, "devices", branchId] as const,
   reconcile: (branchId: string, devId: string) =>
     [...provisioningKeys.all, "reconcile", branchId, devId] as const,
+  institute: (branchId: string) =>
+    [...provisioningKeys.all, "reconcile-institute", branchId] as const,
   commands: (branchId: string, devId: string) =>
     [...provisioningKeys.all, "commands", branchId, devId] as const,
   status: (branchId: string, devId: string) =>
@@ -80,6 +83,26 @@ export function useReconcile(
       return res.data;
     },
     enabled: !!branchId && !!devId && enabled,
+  });
+}
+
+// Institute-wide reconcile: every student counted once across all terminals.
+// The simple, deduplicated dashboard view — a student enrolled on either machine
+// is one 'face enrolled', never double-counted per device.
+export function useInstituteReconcile(
+  branchId: string | undefined,
+  enabled: boolean,
+) {
+  return useQuery<InstituteReconcileResponse>({
+    queryKey: provisioningKeys.institute(branchId ?? ""),
+    queryFn: async () => {
+      const res = await apiClient.get<InstituteReconcileResponse>(
+        "/api/v1/attendance/provisioning/reconcile-institute",
+      );
+      return res.data;
+    },
+    enabled: !!branchId && enabled,
+    refetchInterval: QUEUE_LIVE_MS,
   });
 }
 
