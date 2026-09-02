@@ -60,6 +60,27 @@ async def _make_test(db_session, seed_data, total_marks=200.0):
     return test
 
 
+def test_parse_real_zipgrade_header():
+    """Real ZipGrade export uses ExternalID as the PRN (NOT ZipGradeID) and
+    EarnedPts/PossiblePts/PercentCorrect, with no spaces in headers."""
+    from app.modules.tests.services import zipgrade_csv
+
+    raw = (
+        "QuizName,QuizClass,FirstName,LastName,ZipGradeID,ExternalID,"
+        "EarnedPts,PossiblePts,PercentCorrect\n"
+        '"RAVET 11TH JEE","","Janhavi","Deshmukh",9999999,"2807024",'
+        "27.0,80.0,33.8\n"
+    ).encode("utf-8")
+    rows = zipgrade_csv.parse_zipgrade_csv(raw)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["prn"] == "2807024"          # ExternalID — not ZipGradeID 9999999
+    assert r["name"] == "Janhavi Deshmukh"
+    assert r["score"] == 27.0
+    assert r["total"] == 80.0
+    assert r["percent"] == 33.8
+
+
 async def test_upload_matches_flags_and_marks_absent(db_session, seed_data):
     await _make_students(db_session, seed_data)
     test = await _make_test(db_session, seed_data)
@@ -118,6 +139,30 @@ async def test_reupload_is_idempotent(db_session, seed_data):
         )
     )).scalars().all()
     assert len(open_rows) == 1
+
+
+async def test_name_fallback_matches_blank_prn(db_session, seed_data):
+    """A row scanned without a PRN auto-matches by unique exact name; a name
+    that matches nobody still goes to needs-review."""
+    await _make_students(db_session, seed_data)  # names "PRNA Student" … unique
+    test = await _make_test(db_session, seed_data)
+    csv = (
+        "Student Name,Student ID,Earned Points,Possible Points\n"
+        "PRNA Student,,190,200\n"     # blank PRN, unique name -> matches PRNA
+        "Nobody Here,,50,200\n"       # blank PRN, no name match -> review
+    ).encode("utf-8")
+    summary = await test_service.upload_result(
+        db_session, test.id, seed_data["branch_a"].id, csv,
+        current_user_id=seed_data["admin_user"].id,
+    )
+    await db_session.commit()
+    assert summary["matched"] == 1
+    assert summary["needs_review"] == 1
+
+    rl = await test_service.get_ranklist(db_session, test.id, seed_data["branch_a"].id)
+    assert rl["ranked"][0]["prn"] == "PRNA"
+    assert rl["ranked"][0]["marks_obtained"] == 190
+    assert len(rl["absentees"]) == 3  # PRNB/C/D had no row
 
 
 async def test_multi_subject_create(db_session, seed_data):

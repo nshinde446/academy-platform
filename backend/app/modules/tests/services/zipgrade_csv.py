@@ -19,23 +19,30 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from typing import Any
 
-# Header aliases (compared lowercase, stripped). First match wins. The PRN
-# aliases deliberately exclude ZipGrade's own internal "zipgrade id".
-_PRN_ALIASES = ["student id", "studentid", "prn", "external id", "id number"]
-_NAME_ALIASES = ["student name", "name", "full name"]
-_FIRST_ALIASES = ["first name", "firstname"]
-_LAST_ALIASES = ["last name", "lastname", "surname"]
+# Headers are normalized by stripping every non-alphanumeric char (so
+# "External ID", "ExternalID" and "external_id" all become "externalid"), then
+# matched by exact equality against these aliases in priority order. ZipGrade's
+# real export uses ExternalID (the PRN marked on the sheet), EarnedPts,
+# PossiblePts, PercentCorrect, FirstName/LastName. The PRN aliases deliberately
+# exclude ZipGrade's internal "zipgradeid".
+_PRN_ALIASES = ["externalid", "studentid", "prn", "idnumber"]
+_NAME_ALIASES = ["studentname", "name", "fullname"]
+_FIRST_ALIASES = ["firstname"]
+_LAST_ALIASES = ["lastname", "surname"]
 _SCORE_ALIASES = [
-    "earned points", "points earned", "score", "marks", "marks obtained",
-    "total earned",
+    "earnedpts", "earnedpoints", "pointsearned", "score", "marks",
+    "marksobtained", "totalearned",
 ]
 _TOTAL_ALIASES = [
-    "possible points", "points possible", "total points", "total marks",
-    "possible", "max points",
+    "possiblepts", "possiblepoints", "pointspossible", "totalpoints",
+    "totalmarks", "maxpoints",
 ]
-_PERCENT_ALIASES = ["percent correct", "percent", "percentage", "pct", "%"]
+_PERCENT_ALIASES = ["percentcorrect", "percent", "percentage", "pct"]
+
+_NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
 
 class ZipGradeCsvError(ValueError):
@@ -43,7 +50,7 @@ class ZipGradeCsvError(ValueError):
 
 
 def _norm(s: str) -> str:
-    return (s or "").strip().lstrip("﻿").lower()
+    return _NON_ALNUM.sub("", (s or "").strip().lstrip("﻿").lower())
 
 
 def _pick(header_map: dict[str, str], aliases: list[str]) -> str | None:
