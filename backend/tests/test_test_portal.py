@@ -141,28 +141,27 @@ async def test_reupload_is_idempotent(db_session, seed_data):
     assert len(open_rows) == 1
 
 
-async def test_name_fallback_matches_blank_prn(db_session, seed_data):
-    """A row scanned without a PRN auto-matches by unique exact name; a name
-    that matches nobody still goes to needs-review."""
-    await _make_students(db_session, seed_data)  # names "PRNA Student" … unique
+async def test_blank_prn_goes_to_review_not_name_matched(db_session, seed_data):
+    """Matching is by PRN only — a row scanned without a PRN is flagged for
+    review even when its name matches a student in the batch."""
+    await _make_students(db_session, seed_data)  # names "PRNA Student" … in batch
     test = await _make_test(db_session, seed_data)
     csv = (
         "Student Name,Student ID,Earned Points,Possible Points\n"
-        "PRNA Student,,190,200\n"     # blank PRN, unique name -> matches PRNA
-        "Nobody Here,,50,200\n"       # blank PRN, no name match -> review
+        "PRNA Student,,190,200\n"     # blank PRN, name in batch -> STILL review
     ).encode("utf-8")
     summary = await test_service.upload_result(
         db_session, test.id, seed_data["branch_a"].id, csv,
         current_user_id=seed_data["admin_user"].id,
     )
     await db_session.commit()
-    assert summary["matched"] == 1
+    assert summary["matched"] == 0
     assert summary["needs_review"] == 1
 
     rl = await test_service.get_ranklist(db_session, test.id, seed_data["branch_a"].id)
-    assert rl["ranked"][0]["prn"] == "PRNA"
-    assert rl["ranked"][0]["marks_obtained"] == 190
-    assert len(rl["absentees"]) == 3  # PRNB/C/D had no row
+    assert rl["ranked"] == []            # nobody matched by PRN
+    assert len(rl["absentees"]) == 4     # all four had no PRN-matched row
+    assert len(rl["needs_review"]) == 1
 
 
 async def test_multi_subject_create(db_session, seed_data):

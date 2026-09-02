@@ -1,7 +1,5 @@
 import json
-import re
 import uuid
-from collections import Counter
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
@@ -769,14 +767,6 @@ async def generate_report(session: AsyncSession, test_id: uuid.UUID, branch_id: 
 # ─── Test Portal: ZipGrade CSV upload + rank list ────────────────────────────
 
 
-_NAME_WS = re.compile(r"\s+")
-
-
-def _norm_name(name: str | None) -> str:
-    """Lowercased, whitespace-collapsed full name for the fallback match."""
-    return _NAME_WS.sub(" ", (name or "").strip().lower())
-
-
 async def _batch_roster(session: AsyncSession, batch_id: uuid.UUID) -> list:
     """Active students enrolled in the batch: (id, first, last, enrollment)."""
     return list((await session.execute(
@@ -818,20 +808,12 @@ async def upload_result(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
     roster = await _batch_roster(session, test.batch_id)
-    # PRN (enrollment_number) -> student_id, case-insensitive.
+    # PRN (enrollment_number) -> student_id, case-insensitive. Matching is by
+    # PRN only; a row with a missing or unknown PRN goes to needs-review.
     prn_to_student = {
         (enr or "").strip().lower(): sid
         for sid, _f, _l, enr in roster
         if (enr or "").strip()
-    }
-    # Fallback index for rows scanned without a PRN: exact full name -> student,
-    # but ONLY for names that are unique in the roster (ambiguous names are left
-    # out so a duplicate name can never auto-match the wrong student).
-    name_counts = Counter(_norm_name(f"{f} {l}") for _s, f, l, _e in roster)
-    name_to_student = {
-        _norm_name(f"{f} {l}"): sid
-        for sid, f, l, _e in roster
-        if name_counts[_norm_name(f"{f} {l}")] == 1
     }
 
     # Idempotency: clear prior unmatched-review rows for this test.
@@ -873,14 +855,12 @@ async def upload_result(
     for row in rows:
         key = (row["prn"] or "").strip().lower()
         sid = prn_to_student.get(key) if key else None
-        # PRN blank/unmatched → try a unique exact-name match (safe fallback).
-        if sid is None:
-            sid = name_to_student.get(_norm_name(row["name"]))
         if sid is not None:
             await _upsert(sid, marks=row["score"] or 0.0, is_absent=False, raw=row["raw"])
             matched_ids.add(sid)
             matched += 1
         else:
+            # No PRN match (missing or unknown PRN) → flagged for admin review.
             session.add(TestImportReview(
                 test_id=test_id, branch_id=branch_id,
                 csv_prn=row["prn"] or None, csv_name=row["name"] or None,
