@@ -116,6 +116,57 @@ class Test(BaseModel):
     source_lecture_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("lectures.id"), nullable=True
     )
+    # Test Portal (offline OMR flow): the OMR sheet layout the ZipGrade CSV was
+    # scanned against, e.g. "50Q" | "100Q". NULL for composer-built papers.
+    omr_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Uploaded answer-key file kept for reference (Phase 1 doesn't score with it —
+    # ZipGrade already scored). Stored path/key; set in PR-B.
+    answer_key_file: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class TestSubject(BaseModel):
+    """Subjects covered by a test (full multi-subject). ``tests.subject_id``
+    still holds the first/primary subject for backward compatibility with the
+    paper composer, ranking and student history."""
+
+    __tablename__ = "test_subjects"
+
+    test_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("tests.id"), nullable=False
+    )
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("subjects.id"), nullable=False
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
+    )
+
+
+class TestImportReview(BaseModel):
+    """A ZipGrade CSV row whose PRN didn't match any student in the test's batch
+    — flagged for an admin to fix (typo / wrong batch). Resolution (assign a
+    student -> create a StudentMark) lands in PR-B."""
+
+    __tablename__ = "test_import_review"
+
+    test_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("tests.id"), nullable=False
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
+    )
+    csv_prn: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    csv_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    raw_row: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    resolved: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    resolved_student_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("students.id"), nullable=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class TestQuestion(BaseModel):
@@ -145,6 +196,9 @@ class StudentMark(BaseModel):
     percentage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     grade: Mapped[str | None] = mapped_column(String(10), nullable=True)
     is_absent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Original ZipGrade CSV row this mark came from (audit / re-processing).
+    # NULL for marks entered by hand.
+    raw_csv_row: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     marked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

@@ -3,12 +3,20 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.audit.services import audit_service
 from app.modules.batch.repositories import batch_repository
 from app.modules.events.services import event_service
+from app.modules.student.models.student_models import Student, StudentBatchMapping
+from app.modules.tests.models.test_models import (
+    StudentMark,
+    TestImportReview,
+    TestSubject,
+)
 from app.modules.tests.repositories import test_repository
+from app.modules.tests.services import zipgrade_csv
 
 VALID_DIFFICULTIES = {"EASY", "MEDIUM", "HARD"}
 VALID_BLOOMS = {"REMEMBER", "UNDERSTAND", "APPLY", "ANALYZE", "EVALUATE", "CREATE"}
@@ -326,21 +334,41 @@ async def create_test(
     if not batch:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
 
+    # A test covers one or more subjects. Accept `subject_ids` (multi) or the
+    # legacy single `subject_id`; the primary subject_id is the first, kept for
+    # backward compatibility (paper composer / ranking / history).
+    subject_ids = data.get("subject_ids") or (
+        [data["subject_id"]] if data.get("subject_id") else []
+    )
+    if not subject_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one subject is required",
+        )
+    # De-duplicate while preserving order.
+    subject_ids = list(dict.fromkeys(subject_ids))
+
     test = await test_repository.create_test(
         session,
         name=data["name"],
         description=data.get("description"),
         paper_type=paper_type,
         batch_id=data["batch_id"],
-        subject_id=data["subject_id"],
+        subject_id=subject_ids[0],
         scheduled_at=data.get("scheduled_at"),
         duration_minutes=data.get("duration_minutes", 60),
         total_marks=data.get("total_marks", 100.0),
+        omr_type=data.get("omr_type"),
         test_status="DRAFT",
         branch_id=batch.branch_id,
         academic_year_id=batch.start_academic_year_id,
         source_lecture_id=data.get("source_lecture_id"),
     )
+    for sid in subject_ids:
+        session.add(TestSubject(
+            test_id=test.id, subject_id=sid, branch_id=batch.branch_id,
+        ))
+    await session.flush()
 
     await audit_service.log_action(
         session,
@@ -733,6 +761,203 @@ async def generate_report(session: AsyncSession, test_id: uuid.UUID, branch_id: 
         "lowest": stats["lowest"],
         "pass_count": pass_count,
         "fail_count": fail_count,
+    }
+
+
+# ─── Test Portal: ZipGrade CSV upload + rank list ────────────────────────────
+
+
+async def _batch_roster(session: AsyncSession, batch_id: uuid.UUID) -> list:
+    """Active students enrolled in the batch: (id, first, last, enrollment)."""
+    return list((await session.execute(
+        select(
+            Student.id, Student.first_name, Student.last_name,
+            Student.enrollment_number,
+        )
+        .join(StudentBatchMapping, StudentBatchMapping.student_id == Student.id)
+        .where(
+            StudentBatchMapping.batch_id == batch_id,
+            StudentBatchMapping.is_deleted == False,
+            Student.is_deleted == False,
+        )
+        .distinct()
+    )).all())
+
+
+async def upload_result(
+    session: AsyncSession,
+    test_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    csv_bytes: bytes,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    """Import a ZipGrade results CSV: match each row's PRN to a batch student,
+    save marks, flag unmatched rows for review, and mark missing students absent
+    (§4.3–4.5). Idempotent — re-uploading replaces the prior import for this test.
+    """
+    test = await test_repository.get_test_by_id(session, test_id)
+    if not test:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
+    if test.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    try:
+        rows = zipgrade_csv.parse_zipgrade_csv(csv_bytes)
+    except zipgrade_csv.ZipGradeCsvError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    roster = await _batch_roster(session, test.batch_id)
+    # PRN (enrollment_number) -> student_id, case-insensitive.
+    prn_to_student = {
+        (enr or "").strip().lower(): sid
+        for sid, _f, _l, enr in roster
+        if (enr or "").strip()
+    }
+
+    # Idempotency: clear prior unmatched-review rows for this test.
+    prior_review = (await session.execute(
+        select(TestImportReview).where(
+            TestImportReview.test_id == test_id,
+            TestImportReview.is_deleted == False,
+        )
+    )).scalars().all()
+    for r in prior_review:
+        r.is_deleted = True
+
+    now = datetime.now(timezone.utc)
+    total = test.total_marks or 0.0
+    matched_ids: set[uuid.UUID] = set()
+    matched = 0
+    needs_review = 0
+
+    async def _upsert(student_id, *, marks, is_absent, raw):
+        pct = (marks / total * 100) if (total > 0 and not is_absent) else 0.0
+        grade = None if is_absent else _calculate_grade(pct)
+        existing = await test_repository.get_student_mark(session, student_id, test_id)
+        fields = dict(
+            marks_obtained=marks, max_marks=total, percentage=pct, grade=grade,
+            is_absent=is_absent, raw_csv_row=raw, marked_at=now,
+            marked_by=current_user_id,
+        )
+        if existing:
+            # is_absent False must overwrite a prior True → set it explicitly.
+            existing.is_absent = is_absent
+            await test_repository.update_student_mark(session, existing, **fields)
+        else:
+            await test_repository.create_student_mark(
+                session, student_id=student_id, test_id=test_id,
+                branch_id=branch_id, academic_year_id=test.academic_year_id,
+                **fields,
+            )
+
+    for row in rows:
+        key = (row["prn"] or "").strip().lower()
+        if key and key in prn_to_student:
+            sid = prn_to_student[key]
+            await _upsert(sid, marks=row["score"] or 0.0, is_absent=False, raw=row["raw"])
+            matched_ids.add(sid)
+            matched += 1
+        else:
+            session.add(TestImportReview(
+                test_id=test_id, branch_id=branch_id,
+                csv_prn=row["prn"] or None, csv_name=row["name"] or None,
+                raw_row=row["raw"],
+            ))
+            needs_review += 1
+
+    # Batch students with no matching row → Absent.
+    absent = 0
+    for sid, _f, _l, _enr in roster:
+        if sid not in matched_ids:
+            await _upsert(sid, marks=0.0, is_absent=True, raw=None)
+            absent += 1
+
+    await session.flush()
+    await event_service.emit_event(
+        session,
+        event_type="MARKS_UPDATED",
+        test_id=test_id,
+        batch_id=test.batch_id,
+        subject_id=test.subject_id,
+        branch_id=branch_id,
+        metadata={"matched": matched, "needs_review": needs_review, "absent": absent},
+    )
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="UPDATE",
+        table_name="student_marks",
+        record_id=test_id,
+        new_values={"matched": matched, "needs_review": needs_review, "absent": absent},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return {
+        "matched": matched, "needs_review": needs_review, "absent": absent,
+        "total_rows": len(rows),
+    }
+
+
+async def get_ranklist(session: AsyncSession, test_id: uuid.UUID, branch_id: uuid.UUID) -> dict:
+    """The current rank list (§4.6): appeared students highest→lowest, absentees
+    grouped at the bottom, and unmatched rows returned separately (excluded from
+    ranking). Computed on the fly from StudentMark so it's always in sync."""
+    test = await test_repository.get_test_by_id(session, test_id)
+    if not test:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
+    if test.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    marks = await test_repository.get_marks_by_test(session, test_id)
+    student_ids = [m.student_id for m in marks]
+    students: dict[uuid.UUID, tuple[str, str | None]] = {}
+    if student_ids:
+        for sid, first, last, enr in (await session.execute(
+            select(Student.id, Student.first_name, Student.last_name,
+                   Student.enrollment_number)
+            .where(Student.id.in_(student_ids))
+        )).all():
+            students[sid] = (f"{first} {last}".strip(), enr)
+
+    def _row(m, rank):
+        name, prn = students.get(m.student_id, ("Unknown", None))
+        return {
+            "rank": rank, "student_id": m.student_id, "prn": prn, "name": name,
+            "marks_obtained": None if m.is_absent else m.marks_obtained,
+            "percentage": None if m.is_absent else m.percentage,
+            "absent": m.is_absent,
+        }
+
+    appeared = sorted(
+        (m for m in marks if not m.is_absent),
+        key=lambda m: m.marks_obtained, reverse=True,
+    )
+    ranked = [_row(m, i + 1) for i, m in enumerate(appeared)]
+    absentees = sorted(
+        (_row(m, None) for m in marks if m.is_absent),
+        key=lambda r: r["name"],
+    )
+
+    review = (await session.execute(
+        select(TestImportReview).where(
+            TestImportReview.test_id == test_id,
+            TestImportReview.resolved == False,
+            TestImportReview.is_deleted == False,
+        )
+    )).scalars().all()
+    needs_review = [
+        {"id": r.id, "csv_prn": r.csv_prn, "csv_name": r.csv_name, "resolved": r.resolved}
+        for r in review
+    ]
+
+    return {
+        "test_id": test_id,
+        "test_name": test.name,
+        "total_marks": test.total_marks,
+        "ranked": ranked,
+        "absentees": absentees,
+        "needs_review": needs_review,
     }
 
 

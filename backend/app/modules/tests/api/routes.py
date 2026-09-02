@@ -1,8 +1,9 @@
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config.settings import get_settings
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.tests.schemas.test_schemas import (
@@ -14,14 +15,16 @@ from app.modules.tests.schemas.test_schemas import (
     QuestionCreate,
     QuestionResponse,
     QuestionUpdate,
+    RankListResponse,
     ResponseBulkResult,
     ResponseBulkSubmit,
     TestCreate,
     TestQuestionsAdd,
     TestReportResponse,
     TestResponse,
+    UploadResultSummary,
 )
-from app.modules.tests.services import test_service
+from app.modules.tests.services import ranklist_export, test_service
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 tests_router = APIRouter(prefix="/tests", tags=["tests"])
@@ -382,6 +385,63 @@ async def submit_responses(
         branch_id,
         current_user["user_id"],
         request.client.host if request.client else None,
+    )
+
+
+# ─── Test Portal: ZipGrade CSV upload + rank list ─────────────────────────────
+
+_PORTAL_ROLES = ["super_admin", "branch_admin", "academic_head"]
+
+
+@tests_router.post("/{test_id}/upload-result", response_model=UploadResultSummary)
+async def upload_result(
+    test_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_roles(_PORTAL_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Upload a ZipGrade results CSV → match PRNs, save marks, flag unmatched
+    rows, mark absentees, and (re)build the rank list."""
+    content = await file.read()
+    return await test_service.upload_result(
+        session, test_id, branch_id, content, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@tests_router.get("/{test_id}/ranklist", response_model=RankListResponse)
+async def get_ranklist(
+    test_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(_PORTAL_ROLES + ["teacher"])),
+    session: AsyncSession = Depends(get_db),
+):
+    return await test_service.get_ranklist(session, test_id, branch_id)
+
+
+@tests_router.get("/{test_id}/ranklist/download")
+async def download_ranklist(
+    test_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    format: str = Query("pdf", pattern="^(pdf|xlsx)$"),
+    current_user: dict = Depends(require_roles(_PORTAL_ROLES + ["teacher"])),
+    session: AsyncSession = Depends(get_db),
+):
+    ranklist = await test_service.get_ranklist(session, test_id, branch_id)
+    brand = get_settings().ACADEMY_BRAND_NAME
+    slug = "".join(c if c.isalnum() else "-" for c in ranklist["test_name"]).strip("-").lower() or "rank-list"
+    if format == "xlsx":
+        data = ranklist_export.ranklist_xlsx(brand=brand, ranklist=ranklist)
+        return Response(
+            content=data, media_type=ranklist_export.XLSX_MIME,
+            headers={"Content-Disposition": f'attachment; filename="{slug}.xlsx"'},
+        )
+    data = await ranklist_export.ranklist_pdf(brand=brand, ranklist=ranklist)
+    return Response(
+        content=data, media_type=ranklist_export.PDF_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{slug}.pdf"'},
     )
 
 
