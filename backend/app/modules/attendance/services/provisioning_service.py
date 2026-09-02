@@ -31,6 +31,8 @@ from app.modules.attendance.repositories import (
     device_command_repo,
 )
 from app.modules.attendance.schemas.provisioning_schemas import (
+    InstituteReconcileResponse,
+    MachineLiveStatus,
     PlannedCommand,
     ProvisionPlanResponse,
     ProvisionPushResponse,
@@ -311,6 +313,113 @@ async def reconcile(
         awaiting_face_enrollment=awaiting_face,
         on_device_not_on_platform=on_device_only,
         drift=drift,
+    )
+
+
+def _snapshot_int(snap: dict, key: str) -> int | None:
+    v = snap.get(key)
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+async def reconcile_institute(
+    session: AsyncSession, branch_id: uuid.UUID, dev_ids: list[str]
+) -> InstituteReconcileResponse:
+    """Institute-wide reconcile across ALL terminals, each student counted once.
+
+    Unlike per-device ``reconcile``, a student is judged against the UNION of every
+    machine's mirror: face-enrolled if any machine holds their face (or they've ever
+    punched), awaiting-face if pushed/confirmed to any machine but faceless, else
+    not-pushed. Name drift = enrolled but some machine's name differs. This is the
+    dedup the per-device view can't give — a student on both floors is one student.
+    """
+    result = await session.execute(
+        select(Student).where(
+            Student.branch_id == branch_id,
+            Student.is_deleted == False,  # noqa: E712
+            Student.rfid_number.isnot(None),
+        )
+    )
+    platform: dict[str, Student] = {}
+    for s in result.scalars().all():
+        rfid = (s.rfid_number or "").strip()
+        if rfid.isdigit():
+            platform[rfid] = s
+
+    # Union the per-device mirrors: presence, has-face, and the set of device names
+    # seen for each userId (any differing name is drift once the user is enrolled).
+    device_uids: set[str] = set()
+    has_face_uids: set[str] = set()
+    names_by_uid: dict[str, set[str]] = {}
+    device_only_name: dict[str, str | None] = {}
+    for dev_id in dev_ids:
+        for u in await device_command_repo.list_device_users(session, branch_id, dev_id):
+            uid = u.vendor_user_id
+            device_uids.add(uid)
+            if getattr(u, "has_face", False):
+                has_face_uids.add(uid)
+            if uid not in platform:
+                device_only_name.setdefault(uid, getattr(u, "name", None))
+            else:
+                names_by_uid.setdefault(uid, set()).add(getattr(u, "name", None) or "")
+
+    # Identities confirmed onto ANY machine (per its ack) — pushed but maybe faceless.
+    confirmed: set[str] = set()
+    uids = list(platform.keys())
+    for dev_id in dev_ids:
+        confirmed |= await device_command_repo.confirmed_user_ids(session, dev_id, uids)
+
+    punched = await attendance_repository.student_ids_with_punches(session, branch_id)
+
+    face_enrolled = 0
+    awaiting: list[ReconcileRow] = []
+    not_pushed: list[ReconcileRow] = []
+    drift: list[ReconcileRow] = []
+    for uid, student in platform.items():
+        row = ReconcileRow(
+            vendor_user_id=uid, name=device_name(student), student_id=student.id
+        )
+        enrolled = uid in has_face_uids or student.id in punched
+        if enrolled:
+            face_enrolled += 1
+            names = names_by_uid.get(uid, set())
+            if names and any(n != device_name(student) for n in names):
+                drift.append(row)
+        elif uid in device_uids or uid in confirmed:
+            awaiting.append(row)
+        else:
+            not_pushed.append(row)
+
+    on_device_only = [
+        ReconcileRow(vendor_user_id=uid, name=name)
+        for uid, name in device_only_name.items()
+    ]
+
+    machines: list[MachineLiveStatus] = []
+    for dev_id in dev_ids:
+        st = await device_command_repo.get_device_status(session, dev_id)
+        snap = (st.snapshot if st else None) or {}
+        machines.append(
+            MachineLiveStatus(
+                dev_id=dev_id,
+                last_seen_at=st.last_seen_at if st else None,
+                user_count=_snapshot_int(snap, "userCount"),
+                face_count=_snapshot_int(snap, "faceCount"),
+                fp_count=_snapshot_int(snap, "fpCount"),
+                firmware=(str(snap.get("firmware")) if snap.get("firmware") else None),
+            )
+        )
+
+    return InstituteReconcileResponse(
+        total_students=len(platform),
+        face_enrolled=face_enrolled,
+        awaiting_face=awaiting,
+        not_pushed=not_pushed,
+        name_drift=drift,
+        on_device_not_on_platform=on_device_only,
+        machines=machines,
     )
 
 

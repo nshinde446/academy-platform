@@ -3,24 +3,22 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { DeviceSync } from "@/app/(dashboard)/attendance/_components/device-sync";
 import type {
   DeviceCommandRow,
+  InstituteReconcileResponse,
   ProvisionDevicesResponse,
   ProvisionPlanResponse,
-  ReconcileResponse,
 } from "@/app/(dashboard)/attendance/_schemas/provisioning";
 
 const devicesMock = vi.fn();
-const reconcileMock = vi.fn();
+const instituteMock = vi.fn();
 const commandsMock = vi.fn();
-const statusMock = vi.fn();
 const dryRunMutate = vi.fn();
 const pushMutate = vi.fn();
 const cancelMutate = vi.fn();
 
 vi.mock("@/app/(dashboard)/attendance/_hooks/use-provisioning", () => ({
   useProvisionDevices: (...args: unknown[]) => devicesMock(...args),
-  useReconcile: (...args: unknown[]) => reconcileMock(...args),
+  useInstituteReconcile: (...args: unknown[]) => instituteMock(...args),
   useDeviceCommands: (...args: unknown[]) => commandsMock(...args),
-  useDeviceStatus: (...args: unknown[]) => statusMock(...args),
   useProvisionDryRun: () => ({ mutateAsync: dryRunMutate, isPending: false }),
   useProvisionPush: () => ({ mutateAsync: pushMutate, isPending: false }),
   useCancelCommand: () => ({ mutateAsync: cancelMutate, isPending: false }),
@@ -44,12 +42,12 @@ function setDevices(over: {
   });
 }
 
-function setReconcile(over: {
-  data?: ReconcileResponse;
+function setInstitute(over: {
+  data?: InstituteReconcileResponse;
   isLoading?: boolean;
   isError?: boolean;
 }) {
-  reconcileMock.mockReturnValue({
+  instituteMock.mockReturnValue({
     data: over.data,
     isLoading: over.isLoading ?? false,
     isError: over.isError ?? false,
@@ -60,27 +58,52 @@ function setCommands(rows: DeviceCommandRow[] | undefined, loading = false) {
   commandsMock.mockReturnValue({ data: rows, isLoading: loading });
 }
 
+const DEV1 = "AMDB26013800122";
+const DEV2 = "AMDB25083200131";
+
 const DEVICES: ProvisionDevicesResponse = {
   enabled: true,
-  devices: [{ dev_id: "AMDB26013800122" }],
+  devices: [{ dev_id: DEV1 }, { dev_id: DEV2 }],
 };
 
-const RECONCILE: ReconcileResponse = {
-  dev_id: "AMDB26013800122",
-  on_platform_not_on_device: [
+// Two machines so the health strip + queue selector are exercised. DEV1 has
+// reported live counts; DEV2 hasn't polled yet.
+const INSTITUTE: InstituteReconcileResponse = {
+  total_students: 5,
+  face_enrolled: 2,
+  awaiting_face: [],
+  not_pushed: [
     { vendor_user_id: "1001", name: "Ravi Kumar", student_id: "s1" },
     { vendor_user_id: "1002", name: "Asha Patil", student_id: "s2" },
   ],
+  name_drift: [],
   on_device_not_on_platform: [
     { vendor_user_id: "9999", name: "Ghost User", student_id: null },
   ],
-  drift: [],
+  machines: [
+    {
+      dev_id: DEV1,
+      last_seen_at: new Date().toISOString(),
+      user_count: 116,
+      face_count: 115,
+      fp_count: 1,
+      firmware: "K8D",
+    },
+    {
+      dev_id: DEV2,
+      last_seen_at: null,
+      user_count: null,
+      face_count: null,
+      fp_count: null,
+      firmware: null,
+    },
+  ],
 };
 
 function cmd(over: Partial<DeviceCommandRow>): DeviceCommandRow {
   return {
     id: "c1",
-    dev_id: "AMDB26013800122",
+    dev_id: DEV1,
     command: "SET_USER_INFO",
     vendor_user_id: "1001",
     batch_user_count: null,
@@ -95,39 +118,41 @@ function cmd(over: Partial<DeviceCommandRow>): DeviceCommandRow {
   };
 }
 
-describe("DeviceSync", () => {
+describe("DeviceSync (institute-wide)", () => {
   beforeEach(() => {
     devicesMock.mockReset();
-    reconcileMock.mockReset();
+    instituteMock.mockReset();
     commandsMock.mockReset();
-    statusMock.mockReset();
-    statusMock.mockReturnValue({ data: undefined, isLoading: false });
     dryRunMutate.mockReset();
     pushMutate.mockReset();
     cancelMutate.mockReset();
     toastSuccess.mockReset();
     toastError.mockReset();
-    setReconcile({ data: undefined });
+    setInstitute({ data: undefined });
     setCommands([]);
   });
 
   it("shows a dormant message and skips reconcile when provisioning is off", () => {
-    setDevices({ data: { enabled: false, devices: [{ dev_id: "DEV-1" }] } });
+    setDevices({ data: { enabled: false, devices: [{ dev_id: DEV1 }] } });
     render(<DeviceSync branchId="br1" />);
 
     expect(screen.getByText("Provisioning off")).toBeInTheDocument();
     expect(screen.getByText(/turned off/i)).toBeInTheDocument();
-    expect(reconcileMock).toHaveBeenLastCalledWith("br1", "DEV-1", false);
+    // Institute reconcile is gated on the enabled flag.
+    expect(instituteMock).toHaveBeenLastCalledWith("br1", false);
   });
 
-  it("renders the three reconcile groups; device-only rows aren't pushable", () => {
+  it("renders the institute summary and actionable buckets, dedup across machines", () => {
     setDevices({ data: DEVICES });
-    setReconcile({ data: RECONCILE });
+    setInstitute({ data: INSTITUTE });
     render(<DeviceSync branchId="br1" />);
 
     expect(screen.getByText("Provisioning on")).toBeInTheDocument();
+    // Summary tiles counted once across the institute.
+    expect(screen.getByText("Students")).toBeInTheDocument();
+    expect(screen.getByText("Face enrolled")).toBeInTheDocument();
     expect(
-      screen.getByText("Need pushing (no identity on device yet)"),
+      screen.getByText("Not pushed (no identity on any machine)"),
     ).toBeInTheDocument();
     expect(screen.getByText("Ravi Kumar")).toBeInTheDocument();
     expect(screen.getByText("Ghost User")).toBeInTheDocument();
@@ -142,36 +167,23 @@ describe("DeviceSync", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows the device's own live counts when it has reported them", () => {
+  it("shows each machine's own live counts in the health strip", () => {
     setDevices({ data: DEVICES });
-    setReconcile({ data: RECONCILE });
-    statusMock.mockReturnValue({
-      data: {
-        dev_id: "AMDB26013800122",
-        last_seen_at: new Date().toISOString(),
-        user_count: 1103,
-        face_count: 554,
-        fp_count: 0,
-        card_count: 0,
-        user_limit: 3000,
-        face_limit: 1500,
-        firmware: null,
-      },
-      isLoading: false,
-    });
+    setInstitute({ data: INSTITUTE });
     render(<DeviceSync branchId="br1" />);
 
-    expect(screen.getByText("Users on device")).toBeInTheDocument();
-    expect(screen.getByText("1103")).toBeInTheDocument();
-    expect(screen.getByText("Faces enrolled")).toBeInTheDocument();
-    expect(screen.getByText("554")).toBeInTheDocument();
+    // The serial is shown (strip + queue selector both reference it).
+    expect(screen.getAllByText(DEV1).length).toBeGreaterThan(0);
+    // DEV1's reported live counts.
+    expect(screen.getByText("116")).toBeInTheDocument();
+    expect(screen.getByText("115")).toBeInTheDocument();
   });
 
-  it("defaults the selector to the first configured device", () => {
+  it("gates the institute reconcile on the enabled flag", () => {
     setDevices({ data: DEVICES });
-    setReconcile({ data: undefined, isLoading: true });
+    setInstitute({ data: undefined, isLoading: true });
     render(<DeviceSync branchId="br1" />);
-    expect(reconcileMock).toHaveBeenLastCalledWith("br1", "AMDB26013800122", true);
+    expect(instituteMock).toHaveBeenLastCalledWith("br1", true);
   });
 
   it("tells non-admins the feature is admin-only on a 403", () => {
@@ -182,9 +194,9 @@ describe("DeviceSync", () => {
 
   it("selecting a student reveals the push bar and dry-runs on push", async () => {
     setDevices({ data: DEVICES });
-    setReconcile({ data: RECONCILE });
+    setInstitute({ data: INSTITUTE });
     const plan: ProvisionPlanResponse = {
-      dev_id: "AMDB26013800122",
+      dev_id: DEV1,
       to_create: 1,
       to_update: 0,
       no_change: 0,
@@ -201,7 +213,7 @@ describe("DeviceSync", () => {
     };
     dryRunMutate.mockResolvedValue(plan);
     pushMutate.mockResolvedValue({
-      dev_id: "AMDB26013800122",
+      dev_id: DEV1,
       enqueued: 1,
       skipped: 0,
       commands: [],
@@ -210,12 +222,16 @@ describe("DeviceSync", () => {
     render(<DeviceSync branchId="br1" />);
 
     // No push bar until something is selected.
-    expect(screen.queryByRole("button", { name: /Push to device/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Push to machine/ })).toBeNull();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select Ravi Kumar" }));
     expect(screen.getByText("1 student selected")).toBeInTheDocument();
+    // A target-machine picker is offered in the push bar.
+    expect(
+      screen.getByRole("combobox", { name: /Target machine for push/ }),
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Push to device/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Push to machine/ }));
     await waitFor(() => expect(dryRunMutate).toHaveBeenCalledWith(["s1"]));
 
     // Preview dialog opens with the plan.
@@ -232,11 +248,11 @@ describe("DeviceSync", () => {
 
   it("shows awaiting-face rows as a non-pushable, informational group", () => {
     setDevices({ data: DEVICES });
-    setReconcile({
+    setInstitute({
       data: {
-        ...RECONCILE,
-        on_platform_not_on_device: [],
-        awaiting_face_enrollment: [
+        ...INSTITUTE,
+        not_pushed: [],
+        awaiting_face: [
           { vendor_user_id: "2001", name: "Meera Joshi", student_id: "s9" },
         ],
       },
@@ -253,12 +269,12 @@ describe("DeviceSync", () => {
 
   it("select-all in a section selects every row in it", () => {
     setDevices({ data: DEVICES });
-    setReconcile({ data: RECONCILE });
+    setInstitute({ data: INSTITUTE });
     render(<DeviceSync branchId="br1" />);
 
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /Select all in Need pushing/,
+        name: /Select all in Not pushed/,
       }),
     );
     expect(screen.getByText("2 students selected")).toBeInTheDocument();
@@ -266,7 +282,7 @@ describe("DeviceSync", () => {
 
   it("renders the command queue with statuses and cancels a pending command", async () => {
     setDevices({ data: DEVICES });
-    setReconcile({ data: RECONCILE });
+    setInstitute({ data: INSTITUTE });
     setCommands([
       cmd({ id: "c1", vendor_user_id: "1001", command_status: "pending" }),
       cmd({ id: "c2", vendor_user_id: "1002", command_status: "confirmed" }),
@@ -288,7 +304,7 @@ describe("DeviceSync", () => {
 
   it("labels batch commands legibly instead of a bare dash", () => {
     setDevices({ data: DEVICES });
-    setReconcile({ data: RECONCILE });
+    setInstitute({ data: INSTITUTE });
     setCommands([
       cmd({
         id: "b1",
