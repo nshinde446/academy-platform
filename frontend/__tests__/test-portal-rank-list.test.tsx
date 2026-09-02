@@ -64,6 +64,13 @@ describe("Test Portal RankList", () => {
     expect(within(rows[2]).getByText("ABSENT")).toBeInTheDocument();
   });
 
+  it("offers a downloadable sample ZipGrade CSV for reference", () => {
+    render(<RankList branchId="br1" test={TEST} />);
+    const link = screen.getByRole("link", { name: /sample csv/i });
+    expect(link).toHaveAttribute("href", "/zipgrade-sample.csv");
+    expect(link).toHaveAttribute("download");
+  });
+
   it("surfaces the needs-review count", () => {
     render(<RankList branchId="br1" test={TEST} />);
     expect(screen.getByText(/1 row need review/i)).toBeInTheDocument();
