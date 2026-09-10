@@ -30,6 +30,7 @@ import { DefaulterBoard } from "./_components/defaulter-board";
 import { InstituteOverview } from "./_components/institute-overview";
 import { InstitutePulse } from "./_components/institute-pulse";
 import { DeviceSync } from "./_components/device-sync";
+import { ReportsHub } from "./_components/reports-hub";
 import { AttendanceNav, type AttendanceView } from "./_components/attendance-nav";
 
 // Roles that may see/use the device-provisioning surface (matches the backend
@@ -319,6 +320,8 @@ export default function AttendancePage() {
             <InstituteOverview branchId={branchId} />
           ) : effectiveView === "device" ? (
             <DeviceSync branchId={branchId} />
+          ) : effectiveView === "reports" ? (
+            <ReportsHub branchId={branchId} batches={batches} />
           ) : (
           <div className="flex flex-col gap-6">
       {/* Lecture picker */}

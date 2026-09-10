@@ -10,6 +10,7 @@ export type AttendanceView =
   | "month"
   | "day"
   | "lecture"
+  | "reports"
   | "device";
 
 const ICON_PROPS = {
@@ -89,6 +90,18 @@ const ITEMS: {
       <svg {...ICON_PROPS}>
         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
         <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+      </svg>
+    ),
+  },
+  {
+    view: "reports",
+    name: "Download reports",
+    desc: "Export attendance — biometric daywise/batchwise summaries, ledgers, registers.",
+    managerOnly: true,
+    icon: (
+      <svg {...ICON_PROPS}>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6M12 12v6M9 15l3 3 3-3" />
       </svg>
     ),
   },

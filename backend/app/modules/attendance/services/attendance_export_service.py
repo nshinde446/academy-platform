@@ -106,6 +106,75 @@ def student_xlsx(
     return _xlsx_bytes(wb)
 
 
+def _fmt_dmy(d: date) -> str:
+    """d/m/yyyy — matches the institute's shared biometric-report samples."""
+    return f"{d.day}/{d.month}/{d.year}"
+
+
+# Columns shared by both biometric summary reports (daywise-batchwise +
+# batchwise-datewise) — they differ only in ordering, which the caller sets.
+_BIO_HEADERS = [
+    "Date", "Class", "Batch", "Total Enrolled",
+    "Biometric Present", "Biometric Absent",
+]
+
+
+def biometric_summary_xlsx(
+    *, brand: str, title: str, subtitle: str, rows: list[dict],
+) -> bytes:
+    """One flat sheet: Date · Class · Batch · Total Enrolled · Biometric Present ·
+    Biometric Absent. Used for both biometric summary reports (the rows are
+    pre-ordered by the caller)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Biometric Attendance"
+
+    ws["A1"] = brand
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = title
+    ws["A2"].font = Font(bold=True, size=12)
+    ws["A3"] = subtitle
+
+    head = 5
+    for c, h in enumerate(_BIO_HEADERS, start=1):
+        cell = ws.cell(row=head, column=c, value=h)
+        cell.font = _BOLD
+        cell.fill = _HEAD_FILL
+        cell.alignment = _CENTER
+    for i, r in enumerate(rows, start=head + 1):
+        ws.cell(row=i, column=1, value=_fmt_dmy(r["date"]))
+        ws.cell(row=i, column=2, value=r["class_label"]).alignment = _CENTER
+        ws.cell(row=i, column=3, value=r["batch_name"])
+        ws.cell(row=i, column=4, value=r["total_enrolled"]).alignment = _CENTER
+        ws.cell(row=i, column=5, value=r["present"]).alignment = _CENTER
+        ws.cell(row=i, column=6, value=r["absent"]).alignment = _CENTER
+
+    for c, w in enumerate((14, 8, 24, 15, 18, 18), start=1):
+        ws.column_dimensions[get_column_letter(c)].width = w
+    return _xlsx_bytes(wb)
+
+
+def biometric_summary_html(
+    *, brand: str, title: str, subtitle: str, rows: list[dict],
+) -> str:
+    body_rows = "".join(
+        f"<tr><td>{_esc(_fmt_dmy(r['date']))}</td>"
+        f"<td class='c'>{_esc(r['class_label'])}</td>"
+        f"<td>{_esc(r['batch_name'])}</td>"
+        f"<td class='c'>{r['total_enrolled']}</td>"
+        f"<td class='c'>{r['present']}</td>"
+        f"<td class='c'>{r['absent']}</td></tr>"
+        for r in rows
+    )
+    ths = "".join(f"<th>{_esc(h)}</th>" for h in _BIO_HEADERS)
+    body = (
+        f"<h1>{_esc(brand)} — {_esc(title)}</h1>"
+        f"<p class='sub'>{_esc(subtitle)}</p>"
+        f"<table><tr>{ths}</tr>{body_rows}</table>"
+    )
+    return _doc(body)
+
+
 def _write_matrix_sheet(ws, *, title_lines: list[str], matrix: dict) -> None:
     dates: list[date] = matrix["dates"]
     for i, line in enumerate(title_lines, start=1):
