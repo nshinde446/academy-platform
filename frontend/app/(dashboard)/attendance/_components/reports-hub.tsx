@@ -97,7 +97,7 @@ const REPORTS: ReportDef[] = [
     key: "day",
     scope: "day",
     title: "Single-day snapshot",
-    desc: "One batch's in/out roster for a single day.",
+    desc: "One batch's in/out roster for a single day (uses the From date).",
     needsBatch: true,
     needsDay: true,
     formats: ["pdf", "xlsx"],
@@ -117,7 +117,6 @@ export function ReportsHub({
   const download = useDownloadAttendanceReport(branchId);
   const [start, setStart] = useState(monthStartISO);
   const [end, setEnd] = useState(todayISO);
-  const [day, setDay] = useState(todayISO);
   const [batchId, setBatchId] = useState("");
   // Which button is mid-download, so only it shows a spinner. Key = "report:fmt".
   const [busy, setBusy] = useState<string | null>(null);
@@ -134,7 +133,8 @@ export function ReportsHub({
         scope: def.scope,
         fmt,
         id: def.needsBatch ? batchId : undefined,
-        ...(def.needsDay ? { day } : { start, end }),
+        // The single-day snapshot reuses the "From" date — no separate field.
+        ...(def.needsDay ? { day: start } : { start, end }),
       });
     } catch (err) {
       toast.error(errorOf(err));
@@ -169,16 +169,6 @@ export function ReportsHub({
                 onChange={(e) => setEnd(e.target.value)}
                 className={CONTROL}
                 aria-label="Report range end"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              Single day
-              <input
-                type="date"
-                value={day}
-                onChange={(e) => setDay(e.target.value)}
-                className={CONTROL}
-                aria-label="Single-day report date"
               />
             </label>
             <label className="flex min-w-[12rem] flex-col gap-1 text-xs text-muted-foreground">

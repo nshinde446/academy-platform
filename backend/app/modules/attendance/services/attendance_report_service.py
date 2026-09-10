@@ -60,15 +60,16 @@ async def student_report(
     brand = get_settings().ACADEMY_BRAND_NAME
     base = f"attendance-{_slug(name)}-{start}-{end}"
 
+    gen = ex.generated_stamp(tz)
     if fmt == "xlsx":
         data = ex.student_xlsx(
             brand=brand, student_name=name, start=start, end=end,
-            summary=summary, timeline=timeline, tz_name=tz,
+            summary=summary, timeline=timeline, tz_name=tz, generated=gen,
         )
         return f"{base}.xlsx", data, XLSX_MIME
     html = ex.student_html(
         brand=brand, student_name=name, start=start, end=end,
-        summary=summary, timeline=timeline, tz_name=tz,
+        summary=summary, timeline=timeline, tz_name=tz, generated=gen,
     )
     return f"{base}.pdf", await ex.render_html_to_pdf(html), PDF_MIME
 
@@ -91,13 +92,16 @@ async def batch_report(
     brand = get_settings().ACADEMY_BRAND_NAME
     base = f"attendance-{_slug(batch.name)}-{start}-{end}"
 
+    gen = ex.generated_stamp(tz)
     if fmt == "xlsx":
         data = ex.batch_xlsx(
             brand=brand, batch_name=batch.name, start=start, end=end, matrix=matrix,
+            generated=gen,
         )
         return f"{base}.xlsx", data, XLSX_MIME
     html = ex.batch_html(
         brand=brand, batch_name=batch.name, start=start, end=end, matrix=matrix,
+        generated=gen,
     )
     return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME
 
@@ -115,13 +119,14 @@ async def daily_ledger_report(
     brand = get_settings().ACADEMY_BRAND_NAME
     base = f"attendance-daily-ledger-{start}-{end}"
 
+    gen = ex.generated_stamp(tz)
     if fmt == "xlsx":
         data = ex.daily_ledger_xlsx(
-            brand=brand, start=start, end=end, ledger=ledger, tz_name=tz,
+            brand=brand, start=start, end=end, ledger=ledger, tz_name=tz, generated=gen,
         )
         return f"{base}.xlsx", data, XLSX_MIME
     html = ex.daily_ledger_html(
-        brand=brand, start=start, end=end, ledger=ledger, tz_name=tz,
+        brand=brand, start=start, end=end, ledger=ledger, tz_name=tz, generated=gen,
     )
     return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME
 
@@ -146,13 +151,16 @@ async def day_report(
     brand = get_settings().ACADEMY_BRAND_NAME
     base = f"attendance-{_slug(batch.name)}-{day.isoformat()}"
 
+    gen = ex.generated_stamp(tz)
     if fmt == "xlsx":
         data = ex.day_report_xlsx(
             brand=brand, batch_name=batch.name, day=day, rows=rows, tz_name=tz,
+            generated=gen,
         )
         return f"{base}.xlsx", data, XLSX_MIME
     html = ex.day_report_html(
         brand=brand, batch_name=batch.name, day=day, rows=rows, tz_name=tz,
+        generated=gen,
     )
     return f"{base}.pdf", await ex.render_html_to_pdf(html), PDF_MIME
 
@@ -174,10 +182,13 @@ async def daywise_batchwise_report(
     subtitle = f"Biometric · {ex._period(start, end)}"
     base = f"biometric-daywise-batchwise-{start}-{end}"
 
+    gen = ex.generated_stamp(tz)
     if fmt == "xlsx":
-        data = ex.biometric_summary_xlsx(brand=brand, title=title, subtitle=subtitle, rows=rows)
+        data = ex.biometric_summary_xlsx(
+            brand=brand, title=title, subtitle=subtitle, rows=rows, generated=gen)
         return f"{base}.xlsx", data, XLSX_MIME
-    html = ex.biometric_summary_html(brand=brand, title=title, subtitle=subtitle, rows=rows)
+    html = ex.biometric_summary_html(
+        brand=brand, title=title, subtitle=subtitle, rows=rows, generated=gen)
     return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME
 
 
@@ -204,10 +215,13 @@ async def batchwise_datewise_report(
     subtitle = f"{batch.name} · Biometric · {ex._period(start, end)}"
     base = f"biometric-{_slug(batch.name)}-{start}-{end}"
 
+    gen = ex.generated_stamp(tz)
     if fmt == "xlsx":
-        data = ex.biometric_summary_xlsx(brand=brand, title=title, subtitle=subtitle, rows=rows)
+        data = ex.biometric_summary_xlsx(
+            brand=brand, title=title, subtitle=subtitle, rows=rows, generated=gen)
         return f"{base}.xlsx", data, XLSX_MIME
-    html = ex.biometric_summary_html(brand=brand, title=title, subtitle=subtitle, rows=rows)
+    html = ex.biometric_summary_html(
+        brand=brand, title=title, subtitle=subtitle, rows=rows, generated=gen)
     return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME
 
 
@@ -246,11 +260,15 @@ async def all_batches_report(
     brand = get_settings().ACADEMY_BRAND_NAME
     base = f"attendance-all-batches-{start}-{end}"
 
+    gen = ex.generated_stamp(tz)
     if fmt == "xlsx":
         data = ex.all_batches_xlsx(
             brand=brand, start=start, end=end,
             summaries=summaries, matrices=matrices, batch_names=batch_names,
+            generated=gen,
         )
         return f"{base}.xlsx", data, XLSX_MIME
-    html = ex.all_batches_html(brand=brand, start=start, end=end, summaries=summaries)
+    html = ex.all_batches_html(
+        brand=brand, start=start, end=end, summaries=summaries, generated=gen,
+    )
     return f"{base}.pdf", await ex.render_html_to_pdf(html), PDF_MIME

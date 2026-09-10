@@ -58,6 +58,13 @@ def _period(start: date, end: date) -> str:
     return f"{start.isoformat()} to {end.isoformat()}"
 
 
+def generated_stamp(tz_name: str) -> str:
+    """The 'when this file was produced' line stamped on every report (requested
+    by the institute — every download must carry its generation time)."""
+    now = datetime.now(get_tz(tz_name))
+    return f"Report generated {now.strftime('%Y-%m-%d %H:%M %Z')}"
+
+
 def _xlsx_bytes(wb: Workbook) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
@@ -69,7 +76,7 @@ def _xlsx_bytes(wb: Workbook) -> bytes:
 
 def student_xlsx(
     *, brand: str, student_name: str, start: date, end: date,
-    summary: dict, timeline: list[Any], tz_name: str,
+    summary: dict, timeline: list[Any], tz_name: str, generated: str = "",
 ) -> bytes:
     wb = Workbook()
     ws = wb.active
@@ -85,6 +92,7 @@ def student_xlsx(
         f"Absent {summary['absent_days']} · "
         f"{summary['attendance_pct']}%"
     )
+    ws["A5"] = generated
 
     header_row = 6
     headers = ["Date", "In", "Out", "Status", "Sign-off"]
@@ -120,7 +128,7 @@ _BIO_HEADERS = [
 
 
 def biometric_summary_xlsx(
-    *, brand: str, title: str, subtitle: str, rows: list[dict],
+    *, brand: str, title: str, subtitle: str, rows: list[dict], generated: str = "",
 ) -> bytes:
     """One flat sheet: Date · Class · Batch · Total Enrolled · Biometric Present ·
     Biometric Absent. Used for both biometric summary reports (the rows are
@@ -134,6 +142,7 @@ def biometric_summary_xlsx(
     ws["A2"] = title
     ws["A2"].font = Font(bold=True, size=12)
     ws["A3"] = subtitle
+    ws["A4"] = generated
 
     head = 5
     for c, h in enumerate(_BIO_HEADERS, start=1):
@@ -155,7 +164,7 @@ def biometric_summary_xlsx(
 
 
 def biometric_summary_html(
-    *, brand: str, title: str, subtitle: str, rows: list[dict],
+    *, brand: str, title: str, subtitle: str, rows: list[dict], generated: str = "",
 ) -> str:
     body_rows = "".join(
         f"<tr><td>{_esc(_fmt_dmy(r['date']))}</td>"
@@ -172,10 +181,16 @@ def biometric_summary_html(
         f"<p class='sub'>{_esc(subtitle)}</p>"
         f"<table><tr>{ths}</tr>{body_rows}</table>"
     )
-    return _doc(body)
+    return _doc(body, generated)
 
 
-def _write_matrix_sheet(ws, *, title_lines: list[str], matrix: dict) -> None:
+def _write_matrix_sheet(
+    ws, *, title_lines: list[str], matrix: dict, generated: str = "",
+) -> None:
+    # The generation stamp rides as an extra title line, so the header row (derived
+    # from len(title_lines)) shifts with it automatically.
+    if generated:
+        title_lines = [*title_lines, generated]
     dates: list[date] = matrix["dates"]
     for i, line in enumerate(title_lines, start=1):
         ws.cell(row=i, column=1, value=line)
@@ -230,6 +245,7 @@ def _write_matrix_sheet(ws, *, title_lines: list[str], matrix: dict) -> None:
 
 def batch_xlsx(
     *, brand: str, batch_name: str, start: date, end: date, matrix: dict,
+    generated: str = "",
 ) -> bytes:
     wb = Workbook()
     ws = wb.active
@@ -242,6 +258,7 @@ def batch_xlsx(
             f"{matrix['student_count']} students · {len(matrix['dates'])} working days · P present / L late / A absent",
         ],
         matrix=matrix,
+        generated=generated,
     )
     return _xlsx_bytes(wb)
 
@@ -261,6 +278,7 @@ def _safe_sheet_title(name: str, used: set[str]) -> str:
 def all_batches_xlsx(
     *, brand: str, start: date, end: date,
     summaries: list[dict], matrices: dict[str, dict], batch_names: dict[str, str],
+    generated: str = "",
 ) -> bytes:
     wb = Workbook()
     ws = wb.active
@@ -268,6 +286,7 @@ def all_batches_xlsx(
     ws["A1"] = f"{brand} — all batches"
     ws["A1"].font = Font(bold=True, size=14)
     ws["A2"] = f"Attendance summary · {_period(start, end)}"
+    ws["A3"] = generated
 
     head = 4
     cols = ["Batch", "Code", "Students", "Working days", "Present", "Total", "Avg %"]
@@ -295,15 +314,18 @@ def all_batches_xlsx(
             sheet,
             title_lines=[name, f"Register · {_period(start, end)}"],
             matrix=matrix,
+            generated=generated,
         )
     return _xlsx_bytes(wb)
 
 
 def daily_ledger_xlsx(
     *, brand: str, start: date, end: date, ledger: list[dict], tz_name: str,
+    generated: str = "",
 ) -> bytes:
     """The immutable all-students daily ledger — one row per student per day with
-    a record, batch-independent (see daily_service.daily_ledger)."""
+    a record, batch-independent (see daily_service.daily_ledger). The Batch column
+    is the student's current batch (a convenience label, not part of the day fact)."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Daily ledger"
@@ -313,9 +335,10 @@ def daily_ledger_xlsx(
     ws["A2"] = _period(start, end)
     students = len({r["student_id"] for r in ledger})
     ws["A3"] = f"{students} students · {len(ledger)} day records"
+    ws["A4"] = generated
 
     head = 5
-    headers = ["#", "Student", "PRN", "Date", "In", "Out", "Status", "Sign-off"]
+    headers = ["#", "Student", "PRN", "Date", "In", "Out", "Status", "Sign-off", "Batch"]
     for c, h in enumerate(headers, start=1):
         cell = ws.cell(row=head, column=c, value=h)
         cell.font = _BOLD
@@ -331,10 +354,12 @@ def daily_ledger_xlsx(
         ws.cell(row=row, column=6, value=_fmt_time(r["last_out"], tz_name))
         ws.cell(row=row, column=7, value=r["day_status"])
         ws.cell(row=row, column=8, value=r["signoff"])
+        ws.cell(row=row, column=9, value=r.get("batch_name") or "")
 
     ws.column_dimensions["B"].width = 24
     for col in ("C", "D", "E", "F", "G", "H"):
         ws.column_dimensions[col].width = 12
+    ws.column_dimensions["I"].width = 18
     return _xlsx_bytes(wb)
 
 
@@ -355,10 +380,13 @@ td.c { text-align: center; }
 """
 
 
-def _doc(body: str) -> str:
+def _doc(body: str, generated: str = "") -> str:
+    foot = (
+        f"<p class='sub genstamp'>{html.escape(generated)}</p>" if generated else ""
+    )
     return (
         f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
-        f"<style>{_PDF_CSS}</style></head><body>{body}</body></html>"
+        f"<style>{_PDF_CSS}</style></head><body>{body}{foot}</body></html>"
     )
 
 
@@ -377,7 +405,7 @@ def _status_class(day_status: str | None) -> str:
 
 def student_html(
     *, brand: str, student_name: str, start: date, end: date,
-    summary: dict, timeline: list[Any], tz_name: str,
+    summary: dict, timeline: list[Any], tz_name: str, generated: str = "",
 ) -> str:
     rows = sorted(timeline, key=lambda r: r.attendance_date)
     body = [
@@ -395,7 +423,7 @@ def student_html(
             f"<td>{_esc(r.day_status)}</td><td>{_esc(r.signoff)}</td></tr>"
         )
     body.append("</table>")
-    return _doc("".join(body))
+    return _doc("".join(body), generated)
 
 
 def _matrix_table_html(matrix: dict) -> str:
@@ -430,6 +458,7 @@ def _matrix_table_html(matrix: dict) -> str:
 
 def batch_html(
     *, brand: str, batch_name: str, start: date, end: date, matrix: dict,
+    generated: str = "",
 ) -> str:
     body = (
         f"<h1>{_esc(brand)} — {_esc(batch_name)}</h1>"
@@ -438,11 +467,12 @@ def batch_html(
         f"(P present / L late / A absent)</p>"
         f"{_matrix_table_html(matrix)}"
     )
-    return _doc(body)
+    return _doc(body, generated)
 
 
 def all_batches_html(
     *, brand: str, start: date, end: date, summaries: list[dict],
+    generated: str = "",
 ) -> str:
     rows = "".join(
         f"<tr><td>{_esc(s['batch_name'])}</td><td>{_esc(s['batch_code'])}</td>"
@@ -457,11 +487,12 @@ def all_batches_html(
         f"<table><tr><th>Batch</th><th>Code</th><th>Students</th><th>Working days</th>"
         f"<th>Present</th><th>Total</th><th>Avg %</th></tr>{rows}</table>"
     )
-    return _doc(body)
+    return _doc(body, generated)
 
 
 def daily_ledger_html(
     *, brand: str, start: date, end: date, ledger: list[dict], tz_name: str,
+    generated: str = "",
 ) -> str:
     students = len({r["student_id"] for r in ledger})
     rows = "".join(
@@ -471,7 +502,8 @@ def daily_ledger_html(
         f"<td class='c'>{_esc(_fmt_time(r['first_in'], tz_name))}</td>"
         f"<td class='c'>{_esc(_fmt_time(r['last_out'], tz_name))}</td>"
         f"<td class='{_status_class(r['day_status'])}'>{_esc(r['day_status'])}</td>"
-        f"<td>{_esc(r['signoff'])}</td></tr>"
+        f"<td>{_esc(r['signoff'])}</td>"
+        f"<td>{_esc(r.get('batch_name') or '')}</td></tr>"
         for i, r in enumerate(ledger, start=1)
     )
     body = (
@@ -479,9 +511,10 @@ def daily_ledger_html(
         f"<p class='sub'>{_period(start, end)} · {students} students · "
         f"{len(ledger)} day records</p>"
         f"<table><tr><th>#</th><th>Student</th><th>PRN</th><th>Date</th>"
-        f"<th>In</th><th>Out</th><th>Status</th><th>Sign-off</th></tr>{rows}</table>"
+        f"<th>In</th><th>Out</th><th>Status</th><th>Sign-off</th><th>Batch</th></tr>"
+        f"{rows}</table>"
     )
-    return _doc(body)
+    return _doc(body, generated)
 
 
 # ── Day report (single day, single batch — matches the shared sample PDF) ────
@@ -539,6 +572,7 @@ def _status_cell(row: dict) -> str:
 
 def day_report_html(
     *, brand: str, batch_name: str, day: date, rows: list[dict], tz_name: str,
+    generated: str = "",
 ) -> str:
     total, present, absent, pct = _day_counts(rows)
     logo = _logo_data_uri()
@@ -547,7 +581,7 @@ def day_report_html(
         f"<div class='brandbar'>{logo_html}<h1>{_esc(brand)}</h1></div>",
         f"<div class='meta'><span><b>Batch:</b> {_esc(batch_name)}</span>"
         f"<span><b>Date:</b> {_esc(_fmt_day_long(day))}</span>"
-        f"<span><b>Generated:</b> {_VENDOR}</span></div>",
+        f"<span><b>Generated:</b> {_esc(generated or _VENDOR)}</span></div>",
         "<div class='tiles'>"
         f"<div class='tile total'><div class='n'>{total}</div><div class='l'>Total Students</div></div>"
         f"<div class='tile present'><div class='n'>{present}</div><div class='l'>Present</div></div>"
@@ -580,6 +614,7 @@ def day_report_html(
 
 def day_report_xlsx(
     *, brand: str, batch_name: str, day: date, rows: list[dict], tz_name: str,
+    generated: str = "",
 ) -> bytes:
     total, present, absent, pct = _day_counts(rows)
     wb = Workbook()
@@ -588,7 +623,8 @@ def day_report_xlsx(
 
     ws["A1"] = brand
     ws["A1"].font = Font(bold=True, size=14, color="003464")
-    ws["A2"] = f"Batch: {batch_name}  ·  Date: {_fmt_day_long(day)}  ·  Generated: {_VENDOR}"
+    stamp = f"  ·  {generated}" if generated else ""
+    ws["A2"] = f"Batch: {batch_name}  ·  Date: {_fmt_day_long(day)}{stamp}"
     ws["A3"] = f"Total {total}  ·  Present {present}  ·  Absent {absent}  ·  {pct}%"
 
     head = 5
