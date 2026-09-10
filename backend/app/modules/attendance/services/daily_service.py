@@ -764,6 +764,30 @@ async def daily_ledger(
         )
         .order_by(Student.first_name, Student.last_name, DailyAttendance.attendance_date)
     )).all()
+
+    # The Batch column is a convenience label (the institute asked for it) — the
+    # student's current batch, resolved separately so the day fact stays
+    # batch-independent. One batch per student (deterministic: first by name if
+    # somehow in several).
+    from app.modules.batch.models.batch_models import Batch
+    from app.modules.student.models.student_models import StudentBatchMapping
+
+    student_ids = {r.id for r in rows}
+    batch_by_student: dict[uuid.UUID, str] = {}
+    if student_ids:
+        brows = (await session.execute(
+            select(StudentBatchMapping.student_id, Batch.name)
+            .join(Batch, Batch.id == StudentBatchMapping.batch_id)
+            .where(
+                StudentBatchMapping.student_id.in_(student_ids),
+                StudentBatchMapping.is_deleted == False,  # noqa: E712
+                Batch.is_deleted == False,  # noqa: E712
+            )
+            .order_by(Batch.name)
+        )).all()
+        for sid, bname in brows:
+            batch_by_student.setdefault(sid, bname)  # first (alphabetical) wins
+
     return [
         {
             "student_id": r.id,
@@ -775,6 +799,7 @@ async def daily_ledger(
             "day_status": r.day_status,
             "signoff": r.signoff,
             "source": r.source,
+            "batch_name": batch_by_student.get(r.id),
         }
         for r in rows
     ]

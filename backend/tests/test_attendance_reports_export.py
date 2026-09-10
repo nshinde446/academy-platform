@@ -334,3 +334,62 @@ async def test_daywise_and_batchwise_reports_xlsx(db_session, seed_data):
     ws = wb.active
     dates = [ws.cell(row=r, column=1).value for r in (6, 7)]
     assert dates == ["22/6/2026", "23/6/2026"]
+
+
+# ── generation timestamp (all reports) + ledger Batch column ─────────────────
+
+import uuid as _uuid
+
+
+def test_all_report_builders_carry_generation_timestamp():
+    gen = "Report generated 2026-09-10 22:50 IST"
+    led = [{
+        "student_id": _uuid.uuid4(), "name": "Aarav Patil", "enrollment_number": "1",
+        "attendance_date": date(2026, 6, 1), "first_in": None, "last_out": None,
+        "day_status": "PRESENT", "signoff": "NA", "source": "BIOMETRIC",
+        "batch_name": "11TH CET-1",
+    }]
+    # xlsx builders stamp a visible cell
+    b = ex.biometric_summary_xlsx(brand="MSA", title="t", subtitle="s", rows=[], generated=gen)
+    assert load_workbook(io.BytesIO(b)).active["A4"].value == gen
+    dl = ex.daily_ledger_xlsx(brand="MSA", start=START, end=END, ledger=led,
+                              tz_name="Asia/Kolkata", generated=gen)
+    assert load_workbook(io.BytesIO(dl)).active["A4"].value == gen
+    ab = ex.all_batches_xlsx(brand="MSA", start=START, end=END, summaries=[],
+                             matrices={}, batch_names={}, generated=gen)
+    assert load_workbook(io.BytesIO(ab)).active["A3"].value == gen
+    # html builders render it in the doc
+    assert gen in ex.biometric_summary_html(brand="MSA", title="t", subtitle="s", rows=[], generated=gen)
+    assert gen in ex.daily_ledger_html(brand="MSA", start=START, end=END, ledger=led,
+                                       tz_name="Asia/Kolkata", generated=gen)
+
+
+def test_daily_ledger_has_batch_column():
+    gen = "gen"
+    led = [{
+        "student_id": _uuid.uuid4(), "name": "Aarav Patil", "enrollment_number": "1",
+        "attendance_date": date(2026, 6, 1), "first_in": None, "last_out": None,
+        "day_status": "PRESENT", "signoff": "NA", "source": "BIOMETRIC",
+        "batch_name": "11TH CET-1",
+    }]
+    data = ex.daily_ledger_xlsx(brand="MSA", start=START, end=END, ledger=led,
+                                tz_name="Asia/Kolkata", generated=gen)
+    ws = load_workbook(io.BytesIO(data)).active
+    header = [ws.cell(row=5, column=c).value for c in range(1, 10)]
+    assert header[-1] == "Batch"
+    assert ws.cell(row=6, column=9).value == "11TH CET-1"
+    html = ex.daily_ledger_html(brand="MSA", start=START, end=END, ledger=led,
+                                tz_name="Asia/Kolkata", generated=gen)
+    assert "<th>Batch</th>" in html and "11TH CET-1" in html
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_daily_ledger_data_includes_student_batch(db_session, seed_data):
+    _present_setup(db_session, seed_data)
+    await db_session.commit()
+    ledger = await daily_service.daily_ledger(
+        session=db_session, branch_id=seed_data["branch_a"].id, start=START, end=END,
+    )
+    assert ledger, "expected at least one ledger row"
+    # seed student is mapped to "Batch A" by _present_setup.
+    assert all(r["batch_name"] == "Batch A" for r in ledger)
