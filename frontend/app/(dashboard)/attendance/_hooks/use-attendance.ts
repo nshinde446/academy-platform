@@ -151,7 +151,10 @@ export type ReportScope =
   | "batch"
   | "all-batches"
   | "daily-ledger"
-  | "day";
+  | "day"
+  // Biometric summary reports (Date · Class · Batch · Enrolled · Present · Absent)
+  | "daywise-batchwise" // date range × all batches
+  | "batchwise-datewise"; // one batch × date range
 
 export function useDownloadAttendanceReport(branchId: string | undefined) {
   return useMutation({
@@ -164,44 +167,48 @@ export function useDownloadAttendanceReport(branchId: string | undefined) {
       fmt,
     }: {
       scope: ReportScope;
+      // batch_id for batch/batchwise-datewise/day; student_id for student.
       id?: string;
-      start: string;
-      end: string;
+      start?: string;
+      end?: string;
       // The single-day report ("day" scope) uses batch_id (`id`) + `day`
       // instead of the start/end range the other scopes take.
       day?: string;
       fmt: "xlsx" | "pdf";
     }) => {
-      if (scope === "day") {
-        const res = await apiClient.get("/api/v1/attendance/reports/day", {
-          params: { branch_id: branchId, batch_id: id, day, fmt },
-          responseType: "blob",
-        });
-        const cd = res.headers["content-disposition"] as string | undefined;
-        const match = cd?.match(/filename="?([^"]+)"?/);
-        const filename = match?.[1] ?? `attendance-day.${fmt}`;
-        const url = URL.createObjectURL(res.data as Blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        return;
+      const base = "/api/v1/attendance/reports";
+      let path: string;
+      let params: Record<string, string | undefined>;
+      switch (scope) {
+        case "day":
+          path = `${base}/day`;
+          params = { branch_id: branchId, batch_id: id, day, fmt };
+          break;
+        case "student":
+          path = `${base}/student/${id}`;
+          params = { branch_id: branchId, start, end, fmt };
+          break;
+        case "batch":
+          path = `${base}/batch/${id}`;
+          params = { branch_id: branchId, start, end, fmt };
+          break;
+        case "batchwise-datewise":
+          path = `${base}/batchwise-datewise`;
+          params = { branch_id: branchId, batch_id: id, start, end, fmt };
+          break;
+        case "daily-ledger":
+          path = `${base}/daily-ledger`;
+          params = { branch_id: branchId, start, end, fmt };
+          break;
+        case "daywise-batchwise":
+          path = `${base}/daywise-batchwise`;
+          params = { branch_id: branchId, start, end, fmt };
+          break;
+        default:
+          path = `${base}/all-batches`;
+          params = { branch_id: branchId, start, end, fmt };
       }
-      const path =
-        scope === "student"
-          ? `/api/v1/attendance/reports/student/${id}`
-          : scope === "batch"
-            ? `/api/v1/attendance/reports/batch/${id}`
-            : scope === "daily-ledger"
-              ? `/api/v1/attendance/reports/daily-ledger`
-              : `/api/v1/attendance/reports/all-batches`;
-      const res = await apiClient.get(path, {
-        params: { branch_id: branchId, start, end, fmt },
-        responseType: "blob",
-      });
+      const res = await apiClient.get(path, { params, responseType: "blob" });
       // Filename comes from Content-Disposition; fall back to a sane default.
       const cd = res.headers["content-disposition"] as string | undefined;
       const match = cd?.match(/filename="?([^"]+)"?/);

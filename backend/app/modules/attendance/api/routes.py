@@ -321,6 +321,40 @@ async def download_daily_ledger_report(
     return _download(filename, data, mime)
 
 
+@router.get("/reports/daywise-batchwise")
+async def download_daywise_batchwise_report(
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    fmt: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Biometric attendance for a date range across all batches — one row per
+    (date × batch): enrolled / present / absent."""
+    filename, data, mime = await attendance_report_service.daywise_batchwise_report(
+        session, branch_id=branch_id, start=start, end=end, fmt=fmt,
+    )
+    return _download(filename, data, mime)
+
+
+@router.get("/reports/batchwise-datewise")
+async def download_batchwise_datewise_report(
+    branch_id: uuid.UUID = Query(...),
+    batch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    fmt: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Biometric attendance for one batch across a date range — one row per day."""
+    filename, data, mime = await attendance_report_service.batchwise_datewise_report(
+        session, batch_id=batch_id, branch_id=branch_id, start=start, end=end, fmt=fmt,
+    )
+    return _download(filename, data, mime)
+
+
 @router.get("/reports/day")
 async def download_day_report(
     branch_id: uuid.UUID = Query(...),

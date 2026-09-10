@@ -14,6 +14,7 @@ edit) is never overwritten. See docs/biometric-attendance-design.md §3.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
@@ -969,6 +970,61 @@ async def batch_matrix(
         "day_present": [day_present[d] for d in dates],
         "student_count": len(students),
     }
+
+
+_CLASS_RE = re.compile(r"^\s*(\d{1,2})")
+
+
+def _class_label(batch_name: str) -> str:
+    """The class/standard for a batch, parsed from the leading number in its name
+    (every batch is named e.g. '11TH CET-1' / '12th CJ'). Falls back to '—' when
+    a name doesn't start with a number."""
+    m = _CLASS_RE.match(batch_name or "")
+    return m.group(1) if m else "—"
+
+
+async def biometric_daily_batch_counts(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    start: date,
+    end: date,
+    batch_id: uuid.UUID | None = None,
+    tz_name: str | None = None,
+) -> list[dict]:
+    """Per (date × batch) biometric attendance counts over the range:
+    ``total_enrolled`` (batch size), ``present`` (students marked present/late that
+    day — biometric-driven), ``absent`` (the difference). One row per working day
+    per batch, reusing ``batch_matrix``'s per-date present totals. Optionally scoped
+    to a single ``batch_id``. Powers the daywise-batchwise + batchwise-datewise
+    downloadable reports."""
+    from app.modules.batch.models.batch_models import Batch
+
+    tz_name = tz_name or await branch_timezone(session, branch_id)
+    q = select(Batch).where(Batch.branch_id == branch_id, Batch.is_deleted == False)
+    if batch_id is not None:
+        q = q.where(Batch.id == batch_id)
+    batches = (await session.execute(q.order_by(Batch.name))).scalars().all()
+
+    out: list[dict] = []
+    for b in batches:
+        m = await batch_matrix(
+            session, branch_id=branch_id, batch_id=b.id,
+            start=start, end=end, tz_name=tz_name,
+        )
+        enrolled = m["student_count"]
+        for d, present in zip(m["dates"], m["day_present"]):
+            out.append({
+                "date": d,
+                "class_label": _class_label(b.name),
+                "batch_id": b.id,
+                "batch_name": b.name,
+                "batch_code": b.code,
+                "total_enrolled": enrolled,
+                "present": present,
+                "absent": enrolled - present,
+            })
+    return out
 
 
 async def branch_summary(

@@ -242,3 +242,95 @@ def test_html_builders_contain_data():
 
     b = ex.batch_html(brand="MSA", batch_name="NEET-12-B", start=START, end=END, matrix=_matrix())
     assert "NEET-12-B" in b and "Present / day" in b
+
+
+# ── biometric daywise/batchwise summary reports ──────────────────────────────
+
+from app.modules.attendance.services import attendance_report_service as rep
+
+
+def test_class_label_parses_standard_from_batch_name():
+    assert daily_service._class_label("11TH CET-1") == "11"
+    assert daily_service._class_label("12th CJ") == "12"
+    assert daily_service._class_label("11TH Impulse 1") == "11"
+    assert daily_service._class_label("NEET") == "—"          # no leading number
+    assert daily_service._class_label("") == "—"
+
+
+def _present_setup(db_session, seed_data):
+    """1 student in the batch; present 22 Jun, absent 23 Jun (two working days)."""
+    db_session.add(StudentBatchMapping(
+        student_id=seed_data["student"].id, batch_id=seed_data["batch"].id,
+        branch_id=seed_data["branch_a"].id, status="active", is_deleted=False,
+    ))
+    db_session.add(_lecture(seed_data, datetime(2026, 6, 22, 4, 30, tzinfo=timezone.utc)))
+    db_session.add(_lecture(seed_data, datetime(2026, 6, 23, 4, 30, tzinfo=timezone.utc)))
+    db_session.add(DailyAttendance(
+        student_id=seed_data["student"].id, branch_id=seed_data["branch_a"].id,
+        attendance_date=date(2026, 6, 22), day_status="PRESENT", signoff="MISSING",
+        source="BIOMETRIC",
+    ))
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_biometric_daily_batch_counts(db_session, seed_data):
+    _present_setup(db_session, seed_data)
+    await db_session.commit()
+
+    rows = await daily_service.biometric_daily_batch_counts(
+        session=db_session, branch_id=seed_data["branch_a"].id, start=START, end=END,
+    )
+    by_date = {r["date"]: r for r in rows if r["batch_id"] == seed_data["batch"].id}
+    assert by_date[date(2026, 6, 22)]["total_enrolled"] == 1
+    assert by_date[date(2026, 6, 22)]["present"] == 1
+    assert by_date[date(2026, 6, 22)]["absent"] == 0
+    assert by_date[date(2026, 6, 23)]["present"] == 0
+    assert by_date[date(2026, 6, 23)]["absent"] == 1
+    assert by_date[date(2026, 6, 22)]["class_label"] == "—"  # "Batch A" has no leading number
+
+    # Scoping to a single batch returns only that batch's rows.
+    scoped = await daily_service.biometric_daily_batch_counts(
+        session=db_session, branch_id=seed_data["branch_a"].id, start=START, end=END,
+        batch_id=seed_data["batch"].id,
+    )
+    assert {r["batch_id"] for r in scoped} == {seed_data["batch"].id}
+
+
+def test_biometric_summary_xlsx_layout():
+    rows = [
+        {"date": date(2026, 9, 8), "class_label": "11", "batch_name": "CET 1",
+         "total_enrolled": 60, "present": 50, "absent": 10},
+    ]
+    data = ex.biometric_summary_xlsx(
+        brand="MSA", title="Daywise – Batchwise Attendance Report",
+        subtitle="Biometric · x", rows=rows,
+    )
+    wb = load_workbook(io.BytesIO(data))
+    ws = wb.active
+    header = [ws.cell(row=5, column=c).value for c in range(1, 7)]
+    assert header == ["Date", "Class", "Batch", "Total Enrolled",
+                      "Biometric Present", "Biometric Absent"]
+    body = [ws.cell(row=6, column=c).value for c in range(1, 7)]
+    assert body == ["8/9/2026", "11", "CET 1", 60, 50, 10]
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_daywise_and_batchwise_reports_xlsx(db_session, seed_data):
+    _present_setup(db_session, seed_data)
+    await db_session.commit()
+
+    fn, data, mime = await rep.daywise_batchwise_report(
+        db_session, branch_id=seed_data["branch_a"].id, start=START, end=END, fmt="xlsx",
+    )
+    assert fn.endswith(".xlsx") and len(data) > 0
+    assert mime == rep.XLSX_MIME
+
+    fn2, data2, _ = await rep.batchwise_datewise_report(
+        db_session, batch_id=seed_data["batch"].id, branch_id=seed_data["branch_a"].id,
+        start=START, end=END, fmt="xlsx",
+    )
+    # Single-batch report: rows are date-ordered for just that batch.
+    wb = load_workbook(io.BytesIO(data2))
+    ws = wb.active
+    dates = [ws.cell(row=r, column=1).value for r in (6, 7)]
+    assert dates == ["22/6/2026", "23/6/2026"]

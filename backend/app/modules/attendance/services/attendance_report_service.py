@@ -157,6 +157,60 @@ async def day_report(
     return f"{base}.pdf", await ex.render_html_to_pdf(html), PDF_MIME
 
 
+async def daywise_batchwise_report(
+    session: AsyncSession, *, branch_id: uuid.UUID, start: date, end: date, fmt: str,
+) -> tuple[str, bytes, str]:
+    """Biometric attendance for a date range across ALL batches — one row per
+    (date × batch): Date · Class · Batch · Total Enrolled · Biometric Present ·
+    Biometric Absent, grouped by date then batch."""
+    _check_fmt(fmt)
+    tz = await daily_service.branch_timezone(session, branch_id)
+    rows = await daily_service.biometric_daily_batch_counts(
+        session, branch_id=branch_id, start=start, end=end, tz_name=tz,
+    )
+    rows.sort(key=lambda r: (r["date"], r["class_label"], r["batch_name"]))
+    brand = get_settings().ACADEMY_BRAND_NAME
+    title = "Daywise – Batchwise Attendance Report"
+    subtitle = f"Biometric · {ex._period(start, end)}"
+    base = f"biometric-daywise-batchwise-{start}-{end}"
+
+    if fmt == "xlsx":
+        data = ex.biometric_summary_xlsx(brand=brand, title=title, subtitle=subtitle, rows=rows)
+        return f"{base}.xlsx", data, XLSX_MIME
+    html = ex.biometric_summary_html(brand=brand, title=title, subtitle=subtitle, rows=rows)
+    return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME
+
+
+async def batchwise_datewise_report(
+    session: AsyncSession, *, batch_id: uuid.UUID, branch_id: uuid.UUID,
+    start: date, end: date, fmt: str,
+) -> tuple[str, bytes, str]:
+    """Biometric attendance for ONE batch across a date range — one row per day:
+    Date · Class · Batch · Total Enrolled · Biometric Present · Biometric Absent."""
+    _check_fmt(fmt)
+    batch = (await session.execute(
+        select(Batch).where(Batch.id == batch_id, Batch.branch_id == branch_id)
+    )).scalar_one_or_none()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    tz = await daily_service.branch_timezone(session, branch_id)
+    rows = await daily_service.biometric_daily_batch_counts(
+        session, branch_id=branch_id, start=start, end=end, batch_id=batch_id, tz_name=tz,
+    )
+    rows.sort(key=lambda r: r["date"])
+    brand = get_settings().ACADEMY_BRAND_NAME
+    title = "Batchwise – Datewise Attendance Report"
+    subtitle = f"{batch.name} · Biometric · {ex._period(start, end)}"
+    base = f"biometric-{_slug(batch.name)}-{start}-{end}"
+
+    if fmt == "xlsx":
+        data = ex.biometric_summary_xlsx(brand=brand, title=title, subtitle=subtitle, rows=rows)
+        return f"{base}.xlsx", data, XLSX_MIME
+    html = ex.biometric_summary_html(brand=brand, title=title, subtitle=subtitle, rows=rows)
+    return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME
+
+
 async def all_batches_report(
     session: AsyncSession, *, branch_id: uuid.UUID, start: date, end: date, fmt: str,
 ) -> tuple[str, bytes, str]:
