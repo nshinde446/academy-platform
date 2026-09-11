@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFi
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
-from app.modules.attendance.services import staff_report_service
+from app.modules.attendance.services import staff_faculty_service, staff_report_service
 from app.modules.auth.permissions.rbac import (
     get_current_user,
     require_manager_or_audit,
@@ -118,6 +118,41 @@ async def download_staff_report(
         session, branch_id=branch_id, kind=kind, frequency=frequency,
         department_ids=department_ids, staff_ids=staff_ids,
         start=start, end=end, fmt=fmt,
+    )
+    return _download(filename, data, mime)
+
+
+@router.get("/faculty-activity")
+async def download_faculty_activity(
+    branch_id: uuid.UUID = Query(...),
+    teacher_id: uuid.UUID = Query(...),
+    day: date = Query(...),
+    fmt: str = Query("pdf", description="pdf | xlsx"),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Daily Faculty Activity Report — a teacher's biometric IN/OUT joined with
+    the lectures they delivered that day (scheduled vs effective, delays)."""
+    filename, data, mime = await staff_faculty_service.daily_report(
+        session, branch_id=branch_id, teacher_id=teacher_id, day=day, fmt=fmt,
+    )
+    return _download(filename, data, mime)
+
+
+@router.get("/faculty-activity/summary")
+async def download_faculty_summary(
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    fmt: str = Query("pdf", description="pdf | xlsx"),
+    teacher_ids: list[uuid.UUID] | None = Query(None),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Cumulative per-teacher summary (present days, work, lectures, delayed)."""
+    filename, data, mime = await staff_faculty_service.summary_report(
+        session, branch_id=branch_id, start=start, end=end,
+        teacher_ids=teacher_ids, fmt=fmt,
     )
     return _download(filename, data, mime)
 
