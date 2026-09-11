@@ -101,6 +101,7 @@ async def ingest_rows(
         session,
         branch_id=branch_id,
         affected=[(a.student_id, a.punch_timestamp) for a in result.affected],
+        affected_staff=[(a.staff_id, a.punch_timestamp) for a in result.affected_staff],
         tz_name=tz_name,
     )
     return {
