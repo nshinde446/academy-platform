@@ -11,6 +11,10 @@ export interface BatchResponse {
   capacity: number;
   duration_years: number;
   target_exam_date: string | null;
+  // Class window "HH:MM" (24h). class_start_time is the Present/Late cutoff;
+  // null falls back to the institute default.
+  class_start_time: string | null;
+  class_end_time: string | null;
   status: string;
 }
 
@@ -22,6 +26,8 @@ export interface BatchCreate {
   code: string;
   capacity?: number;
   target_exam_date?: string | null;
+  class_start_time?: string | null;
+  class_end_time?: string | null;
 }
 
 export interface BatchUpdate {
@@ -29,6 +35,8 @@ export interface BatchUpdate {
   code?: string | null;
   capacity?: number | null;
   target_exam_date?: string | null;
+  class_start_time?: string | null;
+  class_end_time?: string | null;
 }
 
 export interface CourseResponse {

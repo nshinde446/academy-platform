@@ -396,6 +396,24 @@ async def manual_mark_day(
     )
 
 
+@router.post("/daily/recompute")
+async def recompute_daily(
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Recompute PRESENT/LATE for every student-day in the range from punches —
+    run after setting per-batch class times so historical afternoon-batch days
+    stop reading as wrongly LATE. Idempotent; MANUAL rows are preserved."""
+    recomputed = await daily_service.recompute_range(
+        session, branch_id=branch_id, start=start, end=end,
+    )
+    await session.commit()
+    return {"recomputed": recomputed}
+
+
 @router.post("/daily/notify")
 async def notify_day_students(
     body: DayNotifyRequest,
