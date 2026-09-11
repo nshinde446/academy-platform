@@ -29,6 +29,7 @@ const SECTIONS: NavSection[] = [
       { label: "Today", href: "/today" },
       { label: "Students", href: "/students" },
       { label: "Teachers", href: "/teachers" },
+      { label: "Staff", href: "/staff", isNew: true },
       { label: "Lectures", href: "/lectures" },
       { label: "Attendance", href: "/attendance" },
       { label: "Test Portal", href: "/test-portal", isNew: true },
