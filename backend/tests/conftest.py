@@ -45,6 +45,7 @@ from app.modules.lectures.models.lecture_models import (  # noqa: F401
 )
 from app.modules.attendance.models.attendance_models import (  # noqa: F401
     AttendanceException, AttendanceRecord, DailyAttendance, RawPunchLog,
+    StaffDailyAttendance, StaffRawPunchLog,
 )
 from app.modules.tests.models.test_models import (  # noqa: F401
     Question, QuestionMetadata, QuestionTopic, StudentMark, Test, TestQuestion,
