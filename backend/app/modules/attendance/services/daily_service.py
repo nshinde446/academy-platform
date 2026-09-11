@@ -32,6 +32,7 @@ from app.modules.attendance.time_utils import (
     class_start_on,
     day_bounds,
     local_date_of,
+    local_time_on,
 )
 from app.modules.academic.models.academic_models import Subject
 from app.modules.audit.services import audit_service
@@ -90,15 +91,57 @@ async def _punches_for_day(
     )).scalars().all())
 
 
+def _parse_hhmm(value: str | None) -> tuple[int, int] | None:
+    if not value:
+        return None
+    try:
+        h, m = value.split(":")
+        return int(h), int(m)
+    except (ValueError, AttributeError):
+        return None
+
+
+async def _student_class_start(
+    session: AsyncSession, student_id: uuid.UUID, day: date, tz_name: str
+) -> datetime:
+    """The PRESENT/LATE cutoff base for a student on ``day``: their batch's
+    class_start_time when set, else the global default. A student in several
+    timed batches uses the EARLIEST start (their day begins with their first
+    class), so an afternoon-only batch is judged against its own 2 PM start, not
+    the morning default."""
+    from app.modules.batch.models.batch_models import Batch
+
+    rows = (await session.execute(
+        select(Batch.class_start_time)
+        .join(StudentBatchMapping, StudentBatchMapping.batch_id == Batch.id)
+        .where(
+            StudentBatchMapping.student_id == student_id,
+            StudentBatchMapping.is_deleted == False,  # noqa: E712
+            Batch.is_deleted == False,  # noqa: E712
+            Batch.class_start_time.isnot(None),
+        )
+    )).all()
+    times = [hm for r in rows if (hm := _parse_hhmm(r[0])) is not None]
+    if not times:
+        return class_start_on(day, tz_name)
+    h, m = min(times)  # earliest class start of the day
+    return local_time_on(day, tz_name, h, m)
+
+
 def _classify(
-    punches: list[RawPunchLog], day: date, tz_name: str
+    punches: list[RawPunchLog], day: date, tz_name: str,
+    class_start: datetime | None = None,
 ) -> tuple[datetime | None, datetime | None, str, str, str]:
-    """-> (first_in, last_out, day_status, signoff, source)."""
+    """-> (first_in, last_out, day_status, signoff, source).
+
+    ``class_start`` is the on-time cutoff base (the student's batch start when
+    known); falls back to the global class start for callers that don't resolve
+    a batch."""
     if not punches:
         return None, None, "ABSENT", "NA", "SYSTEM"
 
     grace = timedelta(minutes=get_settings().ATTENDANCE_GRACE_PERIOD_MINUTES)
-    cutoff = class_start_on(day, tz_name) + grace
+    cutoff = (class_start or class_start_on(day, tz_name)) + grace
 
     first_in = punches[0].punch_timestamp
     if first_in.tzinfo is None:
@@ -135,7 +178,10 @@ async def rebuild_daily(
 
     start, end = day_bounds(day, tz_name)
     punches = await _punches_for_day(session, student_id, branch_id, start, end)
-    first_in, last_out, day_status, signoff, source = _classify(punches, day, tz_name)
+    class_start = await _student_class_start(session, student_id, day, tz_name)
+    first_in, last_out, day_status, signoff, source = _classify(
+        punches, day, tz_name, class_start=class_start
+    )
 
     if existing is None:
         existing = DailyAttendance(
@@ -161,17 +207,33 @@ async def rebuild_after_ingest(
     branch_id: uuid.UUID,
     affected: list[tuple[uuid.UUID, datetime]],
     tz_name: str | None = None,
+    affected_staff: list[tuple[uuid.UUID, datetime]] | None = None,
 ) -> int:
     """Recompute Layer 1 for exactly the (student, local-day) cells touched by a
     fresh punch ingest. Cheaper and more precise than sweeping the branch.
 
     ``affected`` is the (student_id, punch_timestamp) pairs ingest returned. We
     fold them to distinct (student_id, local-day) and rebuild each once.
-    Returns the number of day rows rebuilt. MANUAL rows are left untouched by
-    ``rebuild_daily`` itself (decision 7)."""
+    ``affected_staff`` does the same for staff punches (same fleet, resolved to
+    ``Staff.emp_code``), delegated to ``staff_daily_service.rebuild``.
+    Returns the number of student day rows rebuilt. MANUAL rows are left
+    untouched by ``rebuild_daily`` itself (decision 7)."""
+    tz_name = tz_name or await branch_timezone(session, branch_id)
+
+    # Staff share the funnel — rebuild their day rows too. Lazy import avoids a
+    # module cycle (staff_daily_service imports branch_timezone from here).
+    if affected_staff:
+        from app.modules.attendance.services import staff_daily_service
+
+        await staff_daily_service.rebuild(
+            session,
+            branch_id=branch_id,
+            affected_staff=list(affected_staff),
+            tz_name=tz_name,
+        )
+
     if not affected:
         return 0
-    tz_name = tz_name or await branch_timezone(session, branch_id)
     cells: set[tuple[uuid.UUID, date]] = {
         (student_id, local_date_of(ts, tz_name)) for student_id, ts in affected
     }
@@ -770,7 +832,6 @@ async def daily_ledger(
     # batch-independent. One batch per student (deterministic: first by name if
     # somehow in several).
     from app.modules.batch.models.batch_models import Batch
-    from app.modules.student.models.student_models import StudentBatchMapping
 
     student_ids = {r.id for r in rows}
     batch_by_student: dict[uuid.UUID, str] = {}
@@ -1050,6 +1111,30 @@ async def biometric_daily_batch_counts(
                 "absent": enrolled - present,
             })
     return out
+
+
+async def recompute_range(
+    session: AsyncSession, *, branch_id: uuid.UUID, start: date, end: date,
+) -> int:
+    """Rebuild every student-day with a record in the range from punches
+    (idempotent; MANUAL edits are preserved by rebuild_daily). Run this after
+    per-batch class times change so historical PRESENT/LATE reflects the corrected
+    cutoff (e.g. afternoon batches that were wrongly LATE against the morning
+    default). Returns the number of (student, day) rows recomputed."""
+    tz_name = await branch_timezone(session, branch_id)
+    pairs = (await session.execute(
+        select(DailyAttendance.student_id, DailyAttendance.attendance_date).where(
+            DailyAttendance.branch_id == branch_id,
+            DailyAttendance.attendance_date >= start,
+            DailyAttendance.attendance_date <= end,
+            DailyAttendance.is_deleted == False,  # noqa: E712
+        )
+    )).all()
+    for student_id, day in pairs:
+        await rebuild_daily(
+            session, student_id=student_id, branch_id=branch_id, day=day, tz_name=tz_name,
+        )
+    return len(pairs)
 
 
 async def branch_summary(

@@ -60,6 +60,8 @@ const MOCK_BATCHES: BatchResponse[] = [
     capacity: 30,
     duration_years: 2,
     target_exam_date: null,
+    class_start_time: null,
+    class_end_time: null,
     status: "active",
   },
   {
@@ -73,6 +75,8 @@ const MOCK_BATCHES: BatchResponse[] = [
     capacity: 25,
     duration_years: 1,
     target_exam_date: null,
+    class_start_time: null,
+    class_end_time: null,
     status: "inactive",
   },
 ];

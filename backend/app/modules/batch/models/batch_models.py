@@ -29,6 +29,11 @@ class Batch(BaseModel):
     # syllabus pace on /insights and /teachers detail. When null the
     # service falls back to mid-May of the end academic year.
     target_exam_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Per-batch class window ("HH:MM", 24h, branch-local). class_start_time is the
+    # cutoff for PRESENT vs LATE (+ grace) so afternoon batches aren't judged
+    # against a morning default; null falls back to the global ATTENDANCE_CLASS_START.
+    class_start_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    class_end_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
     # Set when a batch was auto-created by a student import (design §9), so an
     # "undo import" can reclaim the batches that import spun up. Null for
     # batches created manually on the Batches page.

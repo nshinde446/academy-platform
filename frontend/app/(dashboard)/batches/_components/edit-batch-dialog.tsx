@@ -27,6 +27,8 @@ function buildForm(b: BatchResponse | null) {
     code: b?.code ?? "",
     capacity: b ? String(b.capacity) : "30",
     target_exam_date: b?.target_exam_date ?? "",
+    class_start_time: b?.class_start_time ?? "",
+    class_end_time: b?.class_end_time ?? "",
   };
 }
 
@@ -65,6 +67,8 @@ export function EditBatchDialog({
         code: form.code,
         capacity,
         target_exam_date: form.target_exam_date || null,
+        class_start_time: form.class_start_time || null,
+        class_end_time: form.class_end_time || null,
       });
       onOpenChange(false);
     } catch (err: any) {
@@ -132,6 +136,35 @@ export function EditBatchDialog({
               <p className="text-[10px] text-muted-foreground">
                 Drives time-weighted syllabus pace.
               </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edit_batch_class_start">Class start time</Label>
+              <Input
+                id="edit_batch_class_start"
+                type="time"
+                value={form.class_start_time}
+                onChange={(e) =>
+                  setForm({ ...form, class_start_time: e.target.value })
+                }
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Present vs Late cutoff for this batch (e.g. afternoon batches).
+                Leave blank to use the institute default.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edit_batch_class_end">Class end time</Label>
+              <Input
+                id="edit_batch_class_end"
+                type="time"
+                value={form.class_end_time}
+                onChange={(e) =>
+                  setForm({ ...form, class_end_time: e.target.value })
+                }
+              />
             </div>
           </div>
 
