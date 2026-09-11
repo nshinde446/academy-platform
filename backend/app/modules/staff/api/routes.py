@@ -1,9 +1,11 @@
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
+from app.modules.attendance.services import staff_report_service
 from app.modules.auth.permissions.rbac import (
     get_current_user,
     require_manager_or_audit,
@@ -94,6 +96,30 @@ async def import_staff(
         session, file, branch_id, current_user["user_id"],
         request.client.host if request.client else None,
     )
+
+
+@router.get("/reports")
+async def download_staff_report(
+    branch_id: uuid.UUID = Query(...),
+    kind: str = Query(..., description="performance | present | absent | late_in | early_out | early_in | over_time | half_day | mis_punch | in_out | short_performance | gps_*"),
+    frequency: str = Query("monthly", description="daily | weekly | monthly"),
+    start: date = Query(...),
+    end: date = Query(...),
+    fmt: str = Query("pdf", description="pdf | xlsx"),
+    department_ids: list[uuid.UUID] | None = Query(None),
+    staff_ids: list[uuid.UUID] | None = Query(None),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Staff attendance report — the parameterized TeamOffice-style grid + typed
+    list reports, department-wise or single-staff, as PDF or Excel. Literal path,
+    before ``/{staff_id}``."""
+    filename, data, mime = await staff_report_service.generate(
+        session, branch_id=branch_id, kind=kind, frequency=frequency,
+        department_ids=department_ids, staff_ids=staff_ids,
+        start=start, end=end, fmt=fmt,
+    )
+    return _download(filename, data, mime)
 
 
 @router.get("/{staff_id}", response_model=StaffResponse)
