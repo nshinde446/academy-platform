@@ -1,0 +1,152 @@
+import uuid
+
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database.session import get_db
+from app.modules.auth.permissions.rbac import (
+    get_current_user,
+    require_manager_or_audit,
+    require_roles,
+)
+from app.modules.staff.schemas.staff_schemas import (
+    BulkDeleteSummary,
+    BulkStaffDelete,
+    DepartmentWithAllocation,
+    ImportSummary,
+    LinkTeacherRequest,
+    StaffCreate,
+    StaffResponse,
+    StaffUpdate,
+)
+from app.modules.staff.services import import_service, staff_service
+
+router = APIRouter(prefix="/staff", tags=["staff"])
+
+
+def _download(filename: str, data: bytes, media_type: str) -> Response:
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/departments", response_model=list[DepartmentWithAllocation])
+async def list_departments(
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Departments + code-range fill (powers the create dialog's next-ID preview)."""
+    return await staff_service.list_departments(session, branch_id)
+
+
+@router.post("", response_model=StaffResponse)
+async def create_staff(
+    body: StaffCreate,
+    request: Request,
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "floor_coordinator"])
+    ),
+    session: AsyncSession = Depends(get_db),
+):
+    return await staff_service.create_staff(
+        session, body, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.get("", response_model=list[StaffResponse])
+async def list_staff(
+    branch_id: uuid.UUID = Query(...),
+    department_id: uuid.UUID | None = Query(None),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    return await staff_service.list_staff(session, branch_id, department_id)
+
+
+@router.post("/bulk-delete", response_model=BulkDeleteSummary)
+async def bulk_delete_staff(
+    body: BulkStaffDelete,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_manager_or_audit("Delete", "staff")),
+    session: AsyncSession = Depends(get_db),
+):
+    """Soft-delete a selected set of staff. Literal path — before ``/{staff_id}``."""
+    return await staff_service.bulk_delete_staff(
+        session, branch_id, body.staff_ids, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.post("/import", response_model=ImportSummary)
+async def import_staff(
+    request: Request,
+    file: UploadFile = File(...),
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    return await import_service.import_staff(
+        session, file, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.get("/{staff_id}", response_model=StaffResponse)
+async def get_staff(
+    staff_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    return await staff_service.get_staff(session, staff_id, branch_id)
+
+
+@router.patch("/{staff_id}", response_model=StaffResponse)
+async def update_staff(
+    staff_id: uuid.UUID,
+    body: StaffUpdate,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(
+        require_roles(["super_admin", "branch_admin", "floor_coordinator"])
+    ),
+    session: AsyncSession = Depends(get_db),
+):
+    return await staff_service.update_staff(
+        session, staff_id, body, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.post("/{staff_id}/link-teacher", response_model=StaffResponse)
+async def link_teacher(
+    staff_id: uuid.UUID,
+    body: LinkTeacherRequest,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    return await staff_service.link_teacher(
+        session, staff_id, body.teacher_id, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.delete("/{staff_id}", status_code=204)
+async def delete_staff(
+    staff_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_manager_or_audit("Delete", "staff")),
+    session: AsyncSession = Depends(get_db),
+):
+    await staff_service.delete_staff(
+        session, staff_id, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
