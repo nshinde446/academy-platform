@@ -37,11 +37,15 @@ from app.modules.student.models.student_models import (  # noqa: F401
 from app.modules.teacher.models.teacher_models import (  # noqa: F401
     Teacher, TeacherBatchMapping, TeacherLeave, TeacherSubjectMapping,
 )
+from app.modules.staff.models.staff_models import (  # noqa: F401
+    Department, Staff,
+)
 from app.modules.lectures.models.lecture_models import (  # noqa: F401
     Holiday, Lecture, LectureAttendanceMapping, LectureTopicMapping,
 )
 from app.modules.attendance.models.attendance_models import (  # noqa: F401
     AttendanceException, AttendanceRecord, DailyAttendance, RawPunchLog,
+    StaffDailyAttendance, StaffRawPunchLog,
 )
 from app.modules.tests.models.test_models import (  # noqa: F401
     Question, QuestionMetadata, QuestionTopic, StudentMark, Test, TestQuestion,
