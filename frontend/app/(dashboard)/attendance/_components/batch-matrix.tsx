@@ -40,13 +40,15 @@ function dateParts(iso: string): { day: string; weekday: string; title: string }
   };
 }
 
-// Heatmap cell look per P/L/A code.
+// Heatmap cell look per P/L/E/A code.
 function cellClasses(code: string): string {
   switch (code) {
     case "P":
       return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
     case "L":
       return "bg-amber-500/15 text-amber-700 dark:text-amber-300";
+    case "E": // exception — scanned outside the scheduled window
+      return "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300";
     default:
       return "bg-destructive/10 text-destructive";
   }

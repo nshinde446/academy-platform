@@ -47,7 +47,7 @@ export interface RosterStudent {
 // Mirrors the backend DailyAttendance reports. A "day" row is one student on
 // one local day, independent of any lecture.
 
-export type DayStatus = "PRESENT" | "LATE" | "ABSENT";
+export type DayStatus = "PRESENT" | "LATE" | "ABSENT" | "EXCEPTION";
 export type Signoff = "COMPLETE" | "MISSING" | "NA";
 
 // One line in a classroom day register (Reference B export — P/A roster).

@@ -376,6 +376,7 @@ th, td { border: 1px solid #ccc; padding: 3pt 5pt; font-size: 8.5pt; text-align:
 th { background: #eef1f5; }
 td.c { text-align: center; }
 .P { background:#d7f0db; } .L { background:#fcefc7; } .A { background:#f8d7da; }
+.E { background:#e0e7ff; } /* exception — scanned outside the scheduled window */
 .tot td { font-weight: 700; background:#f4f6f9; }
 """
 
@@ -395,11 +396,13 @@ def _esc(v: Any) -> str:
 
 
 def _status_class(day_status: str | None) -> str:
-    """PDF cell tint class for a day status: P present / L late / A absent."""
+    """PDF cell tint class: P present / L late / E exception / A absent."""
     if day_status == "PRESENT":
         return "c P"
     if day_status == "LATE":
         return "c L"
+    if day_status == "EXCEPTION":
+        return "c E"
     return "c A"
 
 
@@ -542,6 +545,7 @@ td.c { text-align:center; }
 .st-present { color:#137a52; font-weight:700; }
 .st-absent { color:#c0392b; font-weight:700; }
 .st-late { color:#b9770e; font-weight:700; }
+.st-exception { color:#4f46e5; font-weight:700; }
 .manual { display:inline-block; margin-left:4px; font-size:7pt; color:#003464; border:1px solid #003464; border-radius:3px; padding:0 3px; vertical-align:middle; }
 .footer { margin-top:12px; background:#f4f6f9; text-align:center; padding:7pt; font-size:9.5pt; border-radius:4px; }
 .credit { text-align:right; color:#888; font-size:8pt; font-style:italic; margin-top:6px; }
@@ -567,6 +571,8 @@ def _status_cell(row: dict) -> str:
         cls = "st-late" if ds == "LATE" else "st-present"
         label = "Late" if ds == "LATE" else "Present"
         return f"<span class='{cls}'>{label}</span>{manual}"
+    if ds == "EXCEPTION":
+        return f"<span class='st-exception'>Exception</span>{manual}"
     return f"<span class='st-absent'>Absent</span>{manual}"
 
 
@@ -639,6 +645,8 @@ def day_report_xlsx(
         status = "Absent"
         if r.get("day_status") in ("PRESENT", "LATE"):
             status = "Late" if r["day_status"] == "LATE" else "Present"
+        elif r.get("day_status") == "EXCEPTION":
+            status = "Exception"
         if r.get("source") == "MANUAL":
             status += " (Manual)"
         ws.cell(row=row, column=1, value=i)
