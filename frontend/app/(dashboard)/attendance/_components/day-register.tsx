@@ -479,7 +479,9 @@ function RegisterRow({
               Manually Marked
             </span>
           )}
-          {present ? (
+          {row.day_status === "EXCEPTION" ? (
+            <Badge variant="secondary">Exception</Badge>
+          ) : present ? (
             <Badge variant={row.day_status === "LATE" ? "warning" : "success"}>
               {row.day_status === "LATE" ? "Late" : "Present"}
             </Badge>

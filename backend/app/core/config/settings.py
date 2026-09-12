@@ -59,6 +59,11 @@ class Settings(BaseSettings):
 
     ATTENDANCE_GRACE_PERIOD_MINUTES: int = 10
     ATTENDANCE_DUPLICATE_WINDOW_MINUTES: int = 5
+    # Timetable-driven attendance: a scan up to this many minutes BEFORE the
+    # first scheduled lecture counts as on-time (PRESENT). A scan outside the
+    # [first_start - early, last_end] window of the day's lectures is an
+    # EXCEPTION (on campus with nothing scheduled / wildly off-window).
+    ATTENDANCE_EARLY_WINDOW_MINUTES: int = 30
     # Day-attendance (biometric) — see docs/biometric-attendance-design.md.
     # Timezone is stored per branch (branch.timezone); this is only the
     # fallback for branches with no value set.
