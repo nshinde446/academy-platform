@@ -13,6 +13,8 @@ from app.modules.notifications.schemas.notification_schemas import (
     TemplateCreate,
     TemplateResponse,
     TemplateUpdate,
+    WhatsappBatchesUpdate,
+    WhatsappBatchRow,
 )
 from app.modules.notifications.services import notification_service
 
@@ -100,6 +102,35 @@ async def update_settings(
         session,
         branch_id=branch_id,
         data=body.model_dump(exclude_unset=True),
+        current_user_id=current_user["user_id"],
+        ip_address=request.client.host if request.client else None,
+    )
+
+
+@router.get("/whatsapp-batches", response_model=list[WhatsappBatchRow])
+async def list_whatsapp_batches(
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """The branch's batches with active-student counts and whether each has
+    WhatsApp parent notifications switched on (the per-batch pilot selection)."""
+    return await notification_service.list_whatsapp_batches(session, branch_id)
+
+
+@router.put("/whatsapp-batches", response_model=list[WhatsappBatchRow])
+async def set_whatsapp_batches(
+    body: WhatsappBatchesUpdate,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Replace the branch's enabled-batch set. Empty list = notify nobody."""
+    return await notification_service.set_whatsapp_batches(
+        session,
+        branch_id=branch_id,
+        batch_ids=body.batch_ids,
         current_user_id=current_user["user_id"],
         ip_address=request.client.host if request.client else None,
     )

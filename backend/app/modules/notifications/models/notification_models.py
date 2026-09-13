@@ -1,7 +1,18 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, Uuid
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    Uuid,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database.base import BaseModel
@@ -77,6 +88,41 @@ class NotificationSettings(BaseModel):
     # PENDING) so nothing goes out and no Meta charge is incurred.
     whatsapp_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
+    )
+
+
+class NotificationWhatsappBatch(BaseModel):
+    """One row per batch that has WhatsApp parent notifications switched ON.
+
+    Presence (with ``is_deleted = false``) = enabled. This is the per-batch
+    selection under the branch master switch (``NotificationSettings.whatsapp_enabled``):
+    a parent message is only produced when the master switch is on AND the
+    student's batch has a live row here. An empty set for a branch means *notify
+    nobody* — enablement is explicit opt-in per batch, so a branch can never
+    accidentally message every parent. Gates all three parent-message producers
+    (absent alert, daily digest, lecture reminder). See
+    docs/whatsapp-attendance-notifications.md.
+    """
+
+    __tablename__ = "notification_whatsapp_batches"
+    __table_args__ = (
+        # At most one live enablement row per (branch, batch); soft-deleted rows
+        # don't count, so toggling off then on again is clean.
+        Index(
+            "uq_notif_wa_batch_live",
+            "branch_id",
+            "batch_id",
+            unique=True,
+            postgresql_where=text("is_deleted = false"),
+            sqlite_where=text("is_deleted = 0"),
+        ),
+    )
+
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
+    )
+    batch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("batches.id"), nullable=False
     )
 
 

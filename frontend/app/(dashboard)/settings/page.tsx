@@ -11,6 +11,7 @@ import {
 } from "./_hooks/use-notification-settings";
 import type { DigestScope } from "./_schemas/settings";
 import { NotificationTemplatesCard } from "./_components/notification-templates-card";
+import { WhatsappBatchesCard } from "./_components/whatsapp-batches-card";
 
 const SCOPES: { value: DigestScope; label: string; hint: string }[] = [
   {
@@ -102,6 +103,9 @@ export default function SettingsPage() {
           />
         </CardContent>
       </Card>
+
+      {/* Per-batch selection — only meaningful once the master switch is on. */}
+      {whatsappEnabled && <WhatsappBatchesCard branchId={branchId} />}
 
       {/* Daily digest rule */}
       <Card className="max-w-2xl">
