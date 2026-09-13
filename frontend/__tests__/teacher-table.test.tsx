@@ -23,6 +23,7 @@ const ROWS: TeacherWithStats[] = [
     years_experience: 8,
     subject_id: "sub1",
     subject_name: "Physics",
+    staff_no: "91000",
     lectures_30d: 12,
     sub_rate_pct: 10,
     avg_outcome_delta_pp: 72,
@@ -35,6 +36,7 @@ const ROWS: TeacherWithStats[] = [
     years_experience: null,
     subject_id: null,
     subject_name: null,
+    staff_no: null,
     lectures_30d: 0,
     sub_rate_pct: 0,
     avg_outcome_delta_pp: null,
@@ -52,6 +54,7 @@ const TEACHERS: Record<string, TeacherResponse> = {
     phone: "9876543210",
     qualification: "M.Sc Physics, IIT Bombay",
     years_experience: 8,
+    staff_no: "91000",
     status: "active",
   },
   t2: {
@@ -64,6 +67,7 @@ const TEACHERS: Record<string, TeacherResponse> = {
     phone: null,
     qualification: null,
     years_experience: null,
+    staff_no: null,
     status: "active",
   },
 };

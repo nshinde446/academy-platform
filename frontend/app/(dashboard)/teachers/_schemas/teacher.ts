@@ -10,6 +10,8 @@ export interface TeacherResponse {
   phone: string | null;
   qualification: string | null;
   years_experience: number | null;
+  // Linked staff employee code (9xxxx) — the teacher's Staff No.
+  staff_no: string | null;
   status: string;
 }
 
@@ -49,6 +51,8 @@ export interface TeacherWithStats {
   years_experience: number | null;
   subject_id: string | null;
   subject_name: string | null;
+  // Linked staff employee code (9xxxx) — the teacher's Staff No.
+  staff_no: string | null;
   lectures_30d: number;
   sub_rate_pct: number;
   avg_outcome_delta_pp: number | null;

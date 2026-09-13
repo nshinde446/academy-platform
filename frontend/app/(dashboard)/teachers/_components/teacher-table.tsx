@@ -61,6 +61,7 @@ export function TeacherTable({
             )}
             <TableHead className="w-9"></TableHead>
             <TableHead>Name</TableHead>
+            <TableHead className="hidden sm:table-cell">Staff No</TableHead>
             <TableHead className="hidden md:table-cell">Subject</TableHead>
             <TableHead className="hidden lg:table-cell">Qualification</TableHead>
             <TableHead className="text-right hidden sm:table-cell">
@@ -96,6 +97,11 @@ export function TeacherTable({
                 </TableCell>
                 <TableCell className="font-medium">
                   {r.first_name} {r.last_name}
+                </TableCell>
+                <TableCell className="hidden sm:table-cell font-mono text-xs">
+                  {r.staff_no ?? (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
                   {r.subject_name ? (

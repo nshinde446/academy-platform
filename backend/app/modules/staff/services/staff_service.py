@@ -27,6 +27,88 @@ async def ensure_departments(session: AsyncSession, branch_id: uuid.UUID) -> Non
     await session.flush()
 
 
+TEACHERS_DEPARTMENT = "MSA-Teachers"
+
+
+async def sync_teachers_to_staff(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID | None = None,
+    ip_address: str | None = None,
+) -> dict:
+    """Ensure every active teacher has a linked Staff row under MSA-Teachers.
+
+    Idempotent: teachers already linked to a staff row are skipped. Details
+    (name/email/phone) are copied from the teacher; the staff row is linked back
+    via ``linked_teacher_id`` and gets the next code in the Teachers 9xxxx block.
+    Returns {created, skipped}. Used for the one-time backfill and re-runnable
+    from the roster; also called when a teacher is created."""
+    from app.modules.teacher.repositories import teacher_repository
+
+    await ensure_departments(session, branch_id)
+    depts = await staff_repository.list_departments(session, branch_id)
+    dept = next((d for d in depts if d.name == TEACHERS_DEPARTMENT), None)
+    if dept is None:
+        return {"created": 0, "skipped": 0}
+
+    teachers = await teacher_repository.list_active(session, branch_id)
+    # Teachers already linked to a live staff row — skip them.
+    linked = set(
+        (await session.execute(
+            select(Staff.linked_teacher_id).where(
+                Staff.branch_id == branch_id,
+                Staff.linked_teacher_id.is_not(None),
+                Staff.is_deleted == False,  # noqa: E712
+            )
+        )).scalars().all()
+    )
+
+    # Allocate codes incrementally from the current next, so a batch doesn't
+    # re-query or collide within the loop.
+    existing_codes = await staff_repository.emp_codes_in_department(
+        session, branch_id, dept.id
+    )
+    nxt = next_emp_code(existing_codes, dept)
+    next_n = int(nxt) if nxt is not None else None
+
+    created = 0
+    skipped = 0
+    for t in teachers:
+        if t.id in linked:
+            skipped += 1
+            continue
+        if next_n is None or next_n > dept.id_range_end:
+            break  # range exhausted; remaining teachers left for manual handling
+        await staff_repository.create(
+            session,
+            branch_id=branch_id,
+            department_id=dept.id,
+            emp_code=str(next_n),
+            is_legacy_code=False,
+            first_name=t.first_name,
+            last_name=t.last_name or "",
+            designation="Teacher",
+            linked_teacher_id=t.id,
+            email=t.email,
+            phone=t.phone,
+        )
+        next_n += 1
+        created += 1
+
+    if created and current_user_id is not None:
+        await audit_service.log_action(
+            session,
+            user_id=current_user_id,
+            action="SYNC",
+            table_name="staff",
+            record_id=uuid.uuid4(),
+            new_values={"synced_teachers": created},
+            ip_address=ip_address,
+            branch_id=branch_id,
+        )
+    return {"created": created, "skipped": skipped}
+
+
 def _code_in_range(emp_code: str, dept: Department) -> bool:
     """Whether a numeric emp_code sits inside the department's reserved range.
     Non-numeric codes are treated as out-of-range (legacy)."""

@@ -49,6 +49,18 @@ async def create_teacher(
         ip_address=ip_address,
         branch_id=data.branch_id,
     )
+    # Auto-mirror the teacher into the Staff roster (MSA-Teachers, 9xxxx code)
+    # so staff attendance/reports have them immediately. Idempotent and
+    # best-effort — a sync hiccup must never fail teacher creation. Lazy import
+    # avoids a teacher<->staff module import cycle.
+    try:
+        from app.modules.staff.services import staff_service
+
+        await staff_service.sync_teachers_to_staff(
+            session, data.branch_id, current_user_id, ip_address
+        )
+    except Exception:  # noqa: BLE001 — never block teacher creation on the mirror
+        pass
     return teacher
 
 
@@ -109,21 +121,42 @@ async def set_teacher_subjects(
     return await get_teacher_subjects(session, teacher_id, branch_id)
 
 
+async def _staff_no_map(
+    session: AsyncSession, branch_id: uuid.UUID, teacher_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    """{teacher_id: linked staff emp_code}. Lazy import keeps teacher decoupled
+    from staff at module load."""
+    from app.modules.staff.repositories import staff_repository
+
+    return await staff_repository.emp_code_by_linked_teacher(
+        session, branch_id, teacher_ids
+    )
+
+
 async def get_teacher(session: AsyncSession, teacher_id: uuid.UUID, branch_id: uuid.UUID):
     teacher = await teacher_repository.get_by_id(session, teacher_id)
     if not teacher:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
     if teacher.branch_id != branch_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+    teacher.staff_no = (await _staff_no_map(session, branch_id, [teacher.id])).get(teacher.id)
     return teacher
 
 
 async def list_teachers(session: AsyncSession, branch_id: uuid.UUID, offset: int = 0, limit: int = 50):
-    return await teacher_repository.list_by_branch(session, branch_id, offset, limit)
+    teachers = await teacher_repository.list_by_branch(session, branch_id, offset, limit)
+    codes = await _staff_no_map(session, branch_id, [t.id for t in teachers])
+    for t in teachers:
+        t.staff_no = codes.get(t.id)
+    return teachers
 
 
 async def list_teachers_with_stats(session: AsyncSession, branch_id: uuid.UUID):
-    return await teacher_repository.list_with_stats(session, branch_id)
+    rows = await teacher_repository.list_with_stats(session, branch_id)
+    codes = await _staff_no_map(session, branch_id, [r["id"] for r in rows])
+    for r in rows:
+        r["staff_no"] = codes.get(r["id"])
+    return rows
 
 
 async def list_teachers_for_subject(
