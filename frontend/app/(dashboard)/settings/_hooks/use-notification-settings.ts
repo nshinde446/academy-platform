@@ -5,6 +5,7 @@ import type {
   NotificationSettingsUpdate,
   NotificationTemplate,
   NotificationTemplateUpdate,
+  WhatsappBatch,
 } from "../_schemas/settings";
 
 export const notificationSettingsKeys = {
@@ -45,6 +46,45 @@ export function useUpdateNotificationSettings(branchId: string | undefined) {
           notificationSettingsKeys.detail(branchId),
           data,
         );
+      }
+    },
+  });
+}
+
+export const whatsappBatchKeys = {
+  all: ["whatsapp-batches"] as const,
+  list: (branchId: string) => [...whatsappBatchKeys.all, branchId] as const,
+};
+
+export function useWhatsappBatches(branchId: string | undefined) {
+  return useQuery<WhatsappBatch[]>({
+    queryKey: whatsappBatchKeys.list(branchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<WhatsappBatch[]>(
+        "/api/v1/notifications/whatsapp-batches",
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId,
+  });
+}
+
+export function useUpdateWhatsappBatches(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (batchIds: string[]) => {
+      const res = await apiClient.put<WhatsappBatch[]>(
+        "/api/v1/notifications/whatsapp-batches",
+        { batch_ids: batchIds },
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    onSuccess: (data) => {
+      if (branchId) {
+        queryClient.setQueryData(whatsappBatchKeys.list(branchId), data);
       }
     },
   });

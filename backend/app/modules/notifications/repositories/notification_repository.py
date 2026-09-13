@@ -1,15 +1,18 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select, or_
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.batch.models.batch_models import Batch
 from app.modules.notifications.models.notification_models import (
     NotificationEvent,
     NotificationQueue,
     NotificationSettings,
     NotificationTemplate,
+    NotificationWhatsappBatch,
 )
+from app.modules.student.models.student_models import Student, StudentBatchMapping
 
 
 async def create_template(
@@ -210,3 +213,108 @@ async def list_settings_enabled_for_digest(
         )
     )
     return list(result.scalars().all())
+
+
+# ── Per-batch WhatsApp enablement (pilot control) ──────────────────────────
+
+
+async def enabled_whatsapp_batch_ids(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """The batch_ids for a branch that have WhatsApp notifications switched ON.
+
+    An empty set is a valid, meaningful answer: notify nobody. Callers gate every
+    parent-message producer on this set intersected with the day's scheduled
+    batches."""
+    result = await session.execute(
+        select(NotificationWhatsappBatch.batch_id).where(
+            NotificationWhatsappBatch.branch_id == branch_id,
+            NotificationWhatsappBatch.is_deleted == False,
+        )
+    )
+    return set(result.scalars().all())
+
+
+async def set_enabled_whatsapp_batches(
+    session: AsyncSession, branch_id: uuid.UUID, batch_ids: set[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Make ``batch_ids`` the exact enabled set for the branch.
+
+    Soft-deletes live rows no longer wanted, and un-deletes or inserts the rest
+    (reusing a soft-deleted row keeps the (branch, batch) unique index happy).
+    Returns the resulting enabled set."""
+    existing = (await session.execute(
+        select(NotificationWhatsappBatch).where(
+            NotificationWhatsappBatch.branch_id == branch_id,
+        )
+    )).scalars().all()
+    by_batch = {row.batch_id: row for row in existing}
+
+    for batch_id, row in by_batch.items():
+        # Target state: a wanted batch is live (is_deleted False); an unwanted one
+        # is soft-deleted. Only touch rows whose state must flip.
+        target_deleted = batch_id not in batch_ids
+        if row.is_deleted != target_deleted:
+            row.is_deleted = target_deleted
+
+    for batch_id in batch_ids:
+        if batch_id not in by_batch:
+            session.add(
+                NotificationWhatsappBatch(branch_id=branch_id, batch_id=batch_id)
+            )
+
+    await session.flush()
+    return await enabled_whatsapp_batch_ids(session, branch_id)
+
+
+async def list_branch_batch_counts(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> list[tuple[uuid.UUID, str, str, int]]:
+    """The branch's live batches with their active-student headcount, name-sorted.
+
+    Feeds the per-batch WhatsApp selection UI (reach per batch). Counts distinct
+    active, non-deleted students, so a batch with none still appears with 0."""
+    result = await session.execute(
+        select(
+            Batch.id,
+            Batch.name,
+            Batch.code,
+            func.count(func.distinct(Student.id)),
+        )
+        .outerjoin(
+            StudentBatchMapping,
+            and_(
+                StudentBatchMapping.batch_id == Batch.id,
+                StudentBatchMapping.is_deleted == False,
+            ),
+        )
+        .outerjoin(
+            Student,
+            and_(
+                Student.id == StudentBatchMapping.student_id,
+                Student.is_deleted == False,
+                Student.status == "active",
+            ),
+        )
+        .where(Batch.branch_id == branch_id, Batch.is_deleted == False)
+        .group_by(Batch.id, Batch.name, Batch.code)
+        .order_by(Batch.name)
+    )
+    return [tuple(row) for row in result.all()]
+
+
+async def batch_ids_in_branch(
+    session: AsyncSession, branch_id: uuid.UUID, batch_ids: set[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Of ``batch_ids``, those that are live batches of this branch — for branch
+    isolation when saving the enabled set."""
+    if not batch_ids:
+        return set()
+    result = await session.execute(
+        select(Batch.id).where(
+            Batch.id.in_(batch_ids),
+            Batch.branch_id == branch_id,
+            Batch.is_deleted == False,
+        )
+    )
+    return set(result.scalars().all())

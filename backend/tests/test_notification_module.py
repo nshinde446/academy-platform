@@ -19,6 +19,7 @@ from app.modules.lectures.models.lecture_models import Lecture
 from app.modules.notifications.models.notification_models import (
     NotificationQueue,
     NotificationTemplate,
+    NotificationWhatsappBatch,
 )
 from app.modules.notifications.repositories import notification_repository
 from app.modules.notifications.services import notification_service
@@ -154,6 +155,10 @@ async def _build_lecture_day(db_session, seed_data):
         scheduled_start=datetime(2026, 6, 22, 4, 30, tzinfo=timezone.utc),
         scheduled_end=datetime(2026, 6, 22, 6, 30, tzinfo=timezone.utc),
         branch_id=branch.id, status="active", is_deleted=False,
+    ))
+    # WhatsApp notifications are opt-in per batch — switch the batch ON.
+    db_session.add(NotificationWhatsappBatch(
+        branch_id=branch.id, batch_id=batch.id, is_deleted=False,
     ))
     await db_session.commit()
     return branch, student

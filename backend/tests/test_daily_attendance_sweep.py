@@ -15,6 +15,9 @@ from app.modules.attendance.models.attendance_models import DailyAttendance
 from app.modules.attendance.services import daily_service
 from app.modules.events.models.event_models import AcademicEvent
 from app.modules.lectures.models.lecture_models import Lecture
+from app.modules.notifications.models.notification_models import (
+    NotificationWhatsappBatch,
+)
 from app.modules.student.models.student_models import StudentBatchMapping
 
 DAY = date(2026, 6, 22)
@@ -26,6 +29,17 @@ async def _map_student_to_batch(db_session, seed_data):
         batch_id=seed_data["batch"].id,
         branch_id=seed_data["branch_a"].id,
         status="active",
+        is_deleted=False,
+    ))
+    await db_session.flush()
+
+
+async def _enable_whatsapp_batch(db_session, seed_data):
+    """Switch WhatsApp notifications ON for the seed batch — parents are only
+    notified for batches in the enabled set (opt-in per batch)."""
+    db_session.add(NotificationWhatsappBatch(
+        branch_id=seed_data["branch_a"].id,
+        batch_id=seed_data["batch"].id,
         is_deleted=False,
     ))
     await db_session.flush()
@@ -58,6 +72,7 @@ async def test_sweep_marks_absent_and_notifies(db_session, seed_data):
     seed_data["student"].parent_mobile = "9876543210"
     await _map_student_to_batch(db_session, seed_data)
     await _schedule_lecture(db_session, seed_data)
+    await _enable_whatsapp_batch(db_session, seed_data)
 
     created = await _sweep(db_session, seed_data)
     assert len(created) == 1
@@ -70,6 +85,27 @@ async def test_sweep_marks_absent_and_notifies(db_session, seed_data):
     assert len(events) == 1
     assert events[0].student_id == seed_data["student"].id
     assert "9876543210" in (events[0].metadata_json or "")
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_sweep_marks_absent_but_does_not_notify_when_batch_disabled(
+    db_session, seed_data
+):
+    """No WhatsApp-enabled batch -> student is still marked ABSENT (data
+    correctness) but NO parent notification is emitted (opt-in gate)."""
+    seed_data["student"].parent_mobile = "9876543210"
+    await _map_student_to_batch(db_session, seed_data)
+    await _schedule_lecture(db_session, seed_data)
+    # deliberately do NOT enable the batch
+
+    created = await _sweep(db_session, seed_data)
+    assert len(created) == 1
+    assert created[0].day_status == "ABSENT"
+
+    events = (await db_session.execute(
+        select(AcademicEvent).where(AcademicEvent.event_type == "STUDENT_ABSENT")
+    )).scalars().all()
+    assert events == []
 
 
 @pytest.mark.usefixtures("seed_data")

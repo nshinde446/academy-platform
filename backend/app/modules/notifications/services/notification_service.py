@@ -574,6 +574,76 @@ async def update_notification_settings(
     }
 
 
+async def enabled_whatsapp_batch_ids(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """The batch_ids whose WhatsApp parent notifications are switched on for a
+    branch. Empty set => notify nobody. Producers gate on this."""
+    return await notification_repository.enabled_whatsapp_batch_ids(
+        session, branch_id
+    )
+
+
+async def list_whatsapp_batches(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> list[dict]:
+    """Every batch in the branch with its active-student count and whether its
+    WhatsApp notifications are enabled — the per-batch selection UI's data."""
+    enabled = await notification_repository.enabled_whatsapp_batch_ids(
+        session, branch_id
+    )
+    rows = await notification_repository.list_branch_batch_counts(session, branch_id)
+    return [
+        {
+            "batch_id": batch_id,
+            "name": name,
+            "code": code,
+            "student_count": student_count,
+            "enabled": batch_id in enabled,
+        }
+        for batch_id, name, code, student_count in rows
+    ]
+
+
+async def set_whatsapp_batches(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    batch_ids: list[uuid.UUID],
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> list[dict]:
+    """Replace the branch's enabled-batch set. Rejects any batch that isn't a
+    live batch of this branch (branch isolation)."""
+    wanted = set(batch_ids)
+    if wanted:
+        valid = await notification_repository.batch_ids_in_branch(
+            session, branch_id, wanted
+        )
+        invalid = wanted - valid
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Batches not in this branch: {sorted(str(b) for b in invalid)}",
+            )
+
+    await notification_repository.set_enabled_whatsapp_batches(
+        session, branch_id, wanted
+    )
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="UPDATE",
+        table_name="notification_whatsapp_batches",
+        record_id=branch_id,
+        new_values={"enabled_batch_ids": sorted(str(b) for b in wanted)},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+
+    return await list_whatsapp_batches(session, branch_id)
+
+
 def _format_template(t):
     condition = None
     if t.condition_json:

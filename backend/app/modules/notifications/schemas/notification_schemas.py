@@ -75,6 +75,23 @@ class SettingsResponse(BaseModel):
     whatsapp_enabled: bool
 
 
+class WhatsappBatchRow(BaseModel):
+    """One batch in the per-batch WhatsApp selection: its reach and whether it's
+    switched on."""
+
+    batch_id: uuid.UUID
+    name: str
+    code: str
+    student_count: int
+    enabled: bool
+
+
+class WhatsappBatchesUpdate(BaseModel):
+    """Replace the branch's enabled-batch set. Empty list = notify nobody."""
+
+    batch_ids: list[uuid.UUID]
+
+
 class QueueItemResponse(BaseModel):
     id: uuid.UUID
     template_id: uuid.UUID

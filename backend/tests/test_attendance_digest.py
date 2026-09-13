@@ -18,6 +18,9 @@ from app.modules.attendance.models.attendance_models import DailyAttendance
 from app.modules.attendance.services import daily_service
 from app.modules.events.models.event_models import AcademicEvent
 from app.modules.lectures.models.lecture_models import Lecture
+from app.modules.notifications.models.notification_models import (
+    NotificationWhatsappBatch,
+)
 from app.modules.notifications.repositories import notification_repository
 from app.modules.student.models.student_models import Student, StudentBatchMapping
 
@@ -62,6 +65,11 @@ async def _build_working_day(db_session, seed_data):
         last_out=datetime(2026, 6, 22, 6, 35, tzinfo=timezone.utc),
         day_status="PRESENT", signoff="COMPLETE", source="BIOMETRIC",
         status="active", is_deleted=False,
+    ))
+    # WhatsApp notifications are opt-in per batch — switch the batch ON so the
+    # digest/sweep may message its parents.
+    db_session.add(NotificationWhatsappBatch(
+        branch_id=branch.id, batch_id=batch.id, is_deleted=False,
     ))
     await db_session.commit()
     return branch, present, absent

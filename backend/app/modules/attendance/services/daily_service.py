@@ -41,6 +41,7 @@ from app.modules.events.models.event_models import AcademicEvent
 from app.modules.events.services import event_service
 from app.modules.lectures.models.lecture_models import Lecture
 from app.modules.lectures.repositories import lecture_repository
+from app.modules.notifications.services import notification_service
 from app.modules.student.models.student_models import (
     Student,
     StudentBatchMapping,
@@ -325,6 +326,45 @@ async def _scheduled_batch_ids(
     )).scalars().all())
 
 
+async def _enabled_notify_batch_ids(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    scheduled_batch_ids: list[uuid.UUID],
+) -> list[uuid.UUID]:
+    """Of the day's scheduled batches, those with WhatsApp parent notifications
+    switched on for the branch — the only batches whose parents may be messaged.
+
+    Empty result means notify nobody (the per-batch selection is opt-in; see
+    NotificationWhatsappBatch). Gates all three parent-message producers."""
+    enabled = await notification_service.enabled_whatsapp_batch_ids(
+        session, branch_id
+    )
+    return [b for b in scheduled_batch_ids if b in enabled]
+
+
+async def _whatsapp_notify_student_ids(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    scheduled_batch_ids: list[uuid.UUID],
+    student_ids: list[uuid.UUID],
+) -> set[uuid.UUID]:
+    """Of ``student_ids``, those in at least one WhatsApp-enabled scheduled batch
+    — the students whose parents may be notified."""
+    notify_batch_ids = await _enabled_notify_batch_ids(
+        session, branch_id, scheduled_batch_ids
+    )
+    if not notify_batch_ids or not student_ids:
+        return set()
+    result = await session.execute(
+        select(StudentBatchMapping.student_id).where(
+            StudentBatchMapping.student_id.in_(student_ids),
+            StudentBatchMapping.batch_id.in_(notify_batch_ids),
+            StudentBatchMapping.is_deleted == False,
+        )
+    )
+    return set(result.scalars().all())
+
+
 async def run_absent_sweep(
     session: AsyncSession,
     *,
@@ -377,6 +417,13 @@ async def run_absent_sweep(
         )
     )).scalars().all())
 
+    # Everyone scheduled is MARKED absent (attendance is a data-correctness
+    # record); only parents in a WhatsApp-enabled batch are NOTIFIED. A student
+    # in several batches is notified if ANY of their batches is enabled.
+    notify_student_ids = await _whatsapp_notify_student_ids(
+        session, branch_id, batch_ids, student_ids
+    ) if notify else set()
+
     created: list[DailyAttendance] = []
     for sid, first_name, last_name, parent_mobile in student_rows:
         if sid in already:
@@ -394,7 +441,7 @@ async def run_absent_sweep(
         session.add(row)
         created.append(row)
 
-        if notify:
+        if notify and sid in notify_student_ids:
             await event_service.emit_event(
                 session,
                 event_type="STUDENT_ABSENT",
@@ -442,6 +489,11 @@ async def run_daily_digest(
     batch_ids = await _scheduled_batch_ids(session, branch_id, start, end)
     if not batch_ids:
         return []  # no lectures today -> not a working day for anyone
+
+    # Only message parents in a WhatsApp-enabled batch (per-batch pilot selection).
+    batch_ids = await _enabled_notify_batch_ids(session, branch_id, batch_ids)
+    if not batch_ids:
+        return []  # no WhatsApp-enabled batch today -> notify nobody
 
     student_rows = (await session.execute(
         select(
@@ -687,7 +739,12 @@ async def run_lecture_reminders(
     if not subjects_by_batch:
         return []  # no lectures today
 
-    batch_ids = list(subjects_by_batch)
+    # Only remind parents in a WhatsApp-enabled batch (per-batch pilot selection).
+    batch_ids = await _enabled_notify_batch_ids(
+        session, branch_id, list(subjects_by_batch)
+    )
+    if not batch_ids:
+        return []  # no WhatsApp-enabled batch today -> notify nobody
     student_rows = (await session.execute(
         select(
             Student.id,

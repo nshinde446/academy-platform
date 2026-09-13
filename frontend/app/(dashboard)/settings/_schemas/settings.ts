@@ -14,6 +14,17 @@ export interface NotificationSettingsUpdate {
   whatsapp_enabled?: boolean;
 }
 
+// One batch in the per-batch WhatsApp selection under the master switch: its
+// reach (active-student count) and whether its parents are messaged. A batch is
+// only notified when the master switch is on AND it is enabled here.
+export interface WhatsappBatch {
+  batch_id: string;
+  name: string;
+  code: string;
+  student_count: number;
+  enabled: boolean;
+}
+
 // An editable message template (mirrors the backend NotificationTemplate).
 export interface NotificationTemplate {
   id: string;

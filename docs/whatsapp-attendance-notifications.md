@@ -50,6 +50,36 @@ While either is off, `send_notification` returns `SKIP` for WHATSAPP rows — th
 stay `PENDING`, **no Meta request is made and no charge is incurred**. Turn both
 on and the next drain flushes the backlog.
 
+On top of these two, a **per-batch selection** decides *which* batches' parents
+are messaged once both gates are on — see the next section.
+
+## Per-batch selection (pilot control)
+
+The master toggle is all-or-nothing for a branch; the per-batch selection lets an
+admin roll WhatsApp out to **one batch at a time** instead of the whole branch on
+day one. Under the master switch, a parent message is produced only when the
+student's batch is in the branch's **enabled set**.
+
+- **Model:** `notification_whatsapp_batches` (migration 0056) — one live row
+  (`is_deleted = false`) per enabled `(branch, batch)`. A partial unique index
+  keeps at most one live row per pair, so toggling a batch off then on reuses the
+  soft-deleted row instead of tripping the index.
+- **Opt-in, not opt-out.** An **empty set means notify nobody** — a branch can
+  never accidentally message every parent by turning the master switch on. To
+  reach parents you must explicitly enable at least one batch.
+- **Gates all three producers.** The absent alert, the daily digest, and the
+  lecture reminder each intersect the day's scheduled batches with the enabled
+  set before emitting events. Attendance itself is **not** gated: everyone
+  scheduled is still *marked* absent (data correctness); only *notifications* are
+  scoped. A student in several batches is notified if **any** of their batches is
+  enabled.
+- **UI:** **Settings → Batches to message**, shown only while the master switch
+  is on. Per-batch switches with each batch's active-student reach, plus
+  Select-all / Clear; changes are staged and saved as one set. Backed by
+  `GET|PUT /api/v1/notifications/whatsapp-batches?branch_id=…` (super/branch
+  admin), which rejects any batch not live in the branch (branch isolation) and
+  writes an audit row.
+
 ## Notification rules & editable templates
 
 - **Rules** are `NotificationTemplate` rows (event_type + optional
@@ -186,6 +216,9 @@ rather than being sent malformed.
 - [ ] Meta business verified, template **approved**.
 - [ ] `.env` has token + phone-number id; `WHATSAPP_ENABLED=true`.
 - [ ] WHATSAPP `NotificationTemplate` created for `STUDENT_ABSENT`.
+- [ ] **At least one batch enabled** at Settings → Batches to message — with an
+      empty set the master switch is on but nobody is messaged (start the pilot
+      with one batch).
 - [ ] Celery worker running **with beat** (`-B`) so the pipeline fires — note the
       worker currently runs without beat in prod (see the attendance-status
       memory); enabling beat also arms the nightly sweep, which is the intended
