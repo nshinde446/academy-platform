@@ -42,6 +42,10 @@ from app.modules.attendance.schemas.provisioning_schemas import (
     ProvisionPushRequest,
     ProvisionPushResponse,
     ReconcileResponse,
+    StaffProvisionDryRunRequest,
+    StaffProvisionPlanResponse,
+    StaffProvisionPushResponse,
+    StaffProvisionRequest,
 )
 from app.modules.attendance.services import provisioning_service
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
@@ -150,6 +154,39 @@ async def push(
     branch_id = _resolve_branch()
     result = await provisioning_service.enqueue_students(
         session, branch_id, body.dev_id, body.student_ids
+    )
+    await session.commit()
+    return result
+
+
+@router.post("/staff/dry-run", response_model=StaffProvisionPlanResponse)
+async def staff_dry_run(
+    body: StaffProvisionDryRunRequest,
+    _enabled: None = Depends(_require_enabled),
+    _user: dict = Depends(_ADMIN),
+    session: AsyncSession = Depends(get_db),
+):
+    """Render what a staff push WOULD do for an explicit staff set — no side effects."""
+    _require_known_device(body.dev_id)
+    branch_id = _resolve_branch()
+    return await provisioning_service.render_dry_run_staff(
+        session, branch_id, body.dev_id, body.staff_ids
+    )
+
+
+@router.post("/staff/push", response_model=StaffProvisionPushResponse)
+async def staff_push(
+    body: StaffProvisionRequest,
+    _enabled: None = Depends(_require_enabled),
+    _user: dict = Depends(_ADMIN),
+    session: AsyncSession = Depends(get_db),
+):
+    """Enqueue register commands for an explicit staff set (idempotent). Emission
+    to the terminal is the separate, capture-gated step — this only queues."""
+    _require_known_device(body.dev_id)
+    branch_id = _resolve_branch()
+    result = await provisioning_service.enqueue_staff(
+        session, branch_id, body.dev_id, body.staff_ids
     )
     await session.commit()
     return result

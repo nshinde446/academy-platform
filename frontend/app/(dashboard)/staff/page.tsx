@@ -23,6 +23,7 @@ import { StaffTable } from "./_components/staff-table";
 import { CreateStaffDialog } from "./_components/create-staff-dialog";
 import { EditStaffDialog } from "./_components/edit-staff-dialog";
 import { ImportStaffDialog } from "./_components/import-staff-dialog";
+import { PushToDeviceDialog } from "./_components/push-to-device-dialog";
 
 function filterStaff(rows: StaffResponse[], q: string): StaffResponse[] {
   if (!q) return rows;
@@ -169,14 +170,24 @@ export default function StaffPage() {
         </p>
       ) : (
         <>
-          {isManager && (
-            <SelectionBar
-              count={selectedIds.size}
-              noun="staff"
-              pending={bulkDeleteMutation.isPending}
-              onDelete={() => setBulkOpen(true)}
-              onClear={clearSelection}
-            />
+          {selectedIds.size > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              {isManager && (
+                <SelectionBar
+                  count={selectedIds.size}
+                  noun="staff"
+                  pending={bulkDeleteMutation.isPending}
+                  onDelete={() => setBulkOpen(true)}
+                  onClear={clearSelection}
+                />
+              )}
+              {branchId && (
+                <PushToDeviceDialog
+                  branchId={branchId}
+                  staffIds={[...selectedIds]}
+                />
+              )}
+            </div>
           )}
           <StaffTable
             rows={filtered}
