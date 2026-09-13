@@ -48,6 +48,25 @@ jobs:
           cd backend
           pip install -r requirements.txt
 
+      # Guards the concurrent-migration landmine: two migrations that both
+      # branch off the same revision leave the tree with multiple Alembic heads,
+      # which makes `alembic upgrade head` ambiguous and fails the PROD deploy's
+      # migrate step — not CI, because the test suite builds its schema from
+      # SQLAlchemy metadata, never the migration chain. This asserts a single
+      # head so that fork fails here (in seconds, before the test run) instead of
+      # at deploy. `alembic heads` only reads the version scripts, so no DB is
+      # needed. Fix a failure with a merge revision: `alembic merge heads`.
+      - name: Assert a single Alembic migration head
+        run: |
+          cd backend
+          echo "Current heads:"
+          python -m alembic heads
+          count=$(python -m alembic heads 2>/dev/null | grep -c '(head)')
+          if [ "$count" -ne 1 ]; then
+            echo "::error::Expected exactly 1 Alembic head, found $count. Parallel migrations branched off the same revision — reunite them with a merge revision (\`alembic merge heads\`)."
+            exit 1
+          fi
+
       - name: Run backend tests
         env:
           # Run the suite against the real Postgres service (above), not SQLite,
