@@ -38,7 +38,11 @@ from app.modules.attendance.schemas.provisioning_schemas import (
     ProvisionPushResponse,
     ReconcileResponse,
     ReconcileRow,
+    StaffPlannedCommand,
+    StaffProvisionPlanResponse,
+    StaffProvisionPushResponse,
 )
+from app.modules.staff.models.staff_models import Staff
 from app.modules.student.models.student_models import Student
 
 # Device name field is short (SmartOffice EmployeeName is nvarchar(50)); truncate
@@ -222,6 +226,129 @@ async def enqueue_students(
         await device_command_repo.enqueue(session, rows)
 
     return ProvisionPushResponse(
+        dev_id=dev_id,
+        enqueued=len(rows),
+        skipped=sum(1 for p in plans if p.action == "skipped"),
+        commands=plans,
+    )
+
+
+# ── Staff provisioning (twin of the student push) ───────────────────────────
+# Staff badge on the same terminals; the device userId is Staff.emp_code (a
+# numeric 9xxxx code), so the generic build_user_payload + device-command layer
+# are reused verbatim. Command rows carry student_id=None (nullable) — the
+# vendor_user_id + idempotency_key identify the enqueued registration.
+
+def staff_device_name(staff: Staff) -> str:
+    title = (staff.title or "").strip()
+    full = f"{title} {staff.first_name} {staff.last_name}".strip()
+    return " ".join(full.split())[:DEVICE_NAME_MAX]
+
+
+async def _staff_in_branch(
+    session: AsyncSession, branch_id: uuid.UUID, staff_ids: list[uuid.UUID]
+) -> list[Staff]:
+    if not staff_ids:
+        return []
+    result = await session.execute(
+        select(Staff).where(
+            Staff.id.in_(staff_ids),
+            Staff.branch_id == branch_id,
+            Staff.is_deleted == False,  # noqa: E712
+        )
+    )
+    return list(result.scalars().all())
+
+
+def _plan_for_staff(staff: Staff, on_device: set[str]) -> StaffPlannedCommand:
+    try:
+        payload = build_user_payload(staff.emp_code, staff_device_name(staff))
+    except PayloadError as exc:
+        return StaffPlannedCommand(staff_id=staff.id, action="skipped", reason=str(exc))
+    user_id = payload["users"][0]["userId"]
+    return StaffPlannedCommand(
+        staff_id=staff.id,
+        vendor_user_id=user_id,
+        name=payload["users"][0]["name"],
+        action="update" if user_id in on_device else "create",
+    )
+
+
+async def render_dry_run_staff(
+    session: AsyncSession, branch_id: uuid.UUID, dev_id: str,
+    staff_ids: list[uuid.UUID],
+) -> StaffProvisionPlanResponse:
+    """What a staff push WOULD do — diff against the device mirror, enqueue nothing."""
+    staff = await _staff_in_branch(session, branch_id, staff_ids)
+    mirror = await device_command_repo.list_device_users(session, branch_id, dev_id)
+    on_device = {u.vendor_user_id for u in mirror}
+    plans = [_plan_for_staff(s, on_device) for s in staff]
+    return StaffProvisionPlanResponse(
+        dev_id=dev_id,
+        to_create=sum(1 for p in plans if p.action == "create"),
+        to_update=sum(1 for p in plans if p.action == "update"),
+        no_change=sum(1 for p in plans if p.action == "no_change"),
+        skipped=sum(1 for p in plans if p.action == "skipped"),
+        commands=plans,
+    )
+
+
+async def enqueue_staff(
+    session: AsyncSession, branch_id: uuid.UUID, dev_id: str,
+    staff_ids: list[uuid.UUID],
+) -> StaffProvisionPushResponse:
+    """Enqueue a register command per staff member in an EXPLICIT set. Idempotent:
+    a staff id already in flight (pending/sent) for this device is skipped."""
+    staff = await _staff_in_branch(session, branch_id, staff_ids)
+
+    plans: list[StaffPlannedCommand] = []
+    buildable: list[tuple[Staff, dict]] = []
+    for member in staff:
+        try:
+            payload = build_user_payload(member.emp_code, staff_device_name(member))
+        except PayloadError as exc:
+            plans.append(
+                StaffPlannedCommand(staff_id=member.id, action="skipped", reason=str(exc))
+            )
+            continue
+        buildable.append((member, payload))
+
+    candidate_ids = [p["users"][0]["userId"] for _, p in buildable]
+    inflight = await device_command_repo.inflight_user_ids(session, dev_id, candidate_ids)
+
+    rows: list[dict] = []
+    for member, payload in buildable:
+        user_id = payload["users"][0]["userId"]
+        if user_id in inflight:
+            plans.append(
+                StaffPlannedCommand(
+                    staff_id=member.id, vendor_user_id=user_id,
+                    name=payload["users"][0]["name"], action="skipped",
+                    reason="already queued",
+                )
+            )
+            continue
+        rows.append({
+            "branch_id": branch_id,
+            "dev_id": dev_id,
+            "command": CMD_SET_USER_INFO,
+            "vendor_user_id": user_id,
+            "payload": payload,
+            "student_id": None,  # staff registration — not a student
+            "command_status": STATUS_PENDING,
+            "idempotency_key": _idempotency_key(dev_id, CMD_SET_USER_INFO, user_id),
+        })
+        plans.append(
+            StaffPlannedCommand(
+                staff_id=member.id, vendor_user_id=user_id,
+                name=payload["users"][0]["name"], action="create",
+            )
+        )
+
+    if rows:
+        await device_command_repo.enqueue(session, rows)
+
+    return StaffProvisionPushResponse(
         dev_id=dev_id,
         enqueued=len(rows),
         skipped=sum(1 for p in plans if p.action == "skipped"),

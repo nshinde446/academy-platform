@@ -31,6 +31,30 @@ class PlannedCommand(BaseModel):
     reason: str | None = None  # why skipped (e.g. missing rfid, non-numeric)
 
 
+class StaffProvisionRequest(BaseModel):
+    """Enqueue register (SET_USER_INFO) commands for an EXPLICIT staff set.
+
+    Staff twin of ProvisionPushRequest — always an explicit staff list + target
+    device (no blind bulk). The device userId is the staff ``emp_code`` (9xxxx)."""
+
+    dev_id: str
+    staff_ids: list[uuid.UUID]
+
+
+class StaffProvisionDryRunRequest(StaffProvisionRequest):
+    """Same inputs as a staff push, rendered without enqueuing anything."""
+
+
+class StaffPlannedCommand(BaseModel):
+    """One staff member's would-be / queued registration."""
+
+    staff_id: uuid.UUID
+    vendor_user_id: str | None = None
+    name: str | None = None
+    action: str  # create | update | no_change | skipped
+    reason: str | None = None
+
+
 class ProvisionPlanResponse(BaseModel):
     """Dry-run output: what a push WOULD do, no side effects."""
 
@@ -40,6 +64,26 @@ class ProvisionPlanResponse(BaseModel):
     no_change: int
     skipped: int
     commands: list[PlannedCommand]
+
+
+class StaffProvisionPlanResponse(BaseModel):
+    """Staff dry-run output."""
+
+    dev_id: str
+    to_create: int
+    to_update: int
+    no_change: int
+    skipped: int
+    commands: list[StaffPlannedCommand]
+
+
+class StaffProvisionPushResponse(BaseModel):
+    """Staff push output — what was enqueued (idempotent)."""
+
+    dev_id: str
+    enqueued: int
+    skipped: int
+    commands: list[StaffPlannedCommand]
 
 
 class ProvisionPushResponse(BaseModel):
