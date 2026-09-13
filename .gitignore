@@ -62,5 +62,9 @@ Capture.PNG
 gen_syllabus_part1.py
 misc/NEET.pdf
 
+# Local operator/credential notes — server IPs, key paths, backup pubkeys.
+# Never commit; keep on the operator's machine only.
+credentials.txt
+
 .vercel
 .env*.local
