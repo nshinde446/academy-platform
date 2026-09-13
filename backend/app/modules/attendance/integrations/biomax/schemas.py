@@ -91,14 +91,26 @@ class AffectedPunch(BaseModel):
     punch_timestamp: datetime
 
 
+class AffectedStaffPunch(BaseModel):
+    """A successfully-ingested staff punch — the staff twin of AffectedPunch."""
+
+    staff_id: uuid.UUID
+    punch_timestamp: datetime
+
+
 class IngestResult(BaseModel):
     """What the webhook / manual import endpoints return."""
 
     received: int
     inserted: int
+    # Device users that matched neither a student nor a staff member.
     skipped_no_student: int
     skipped_duplicate: int
+    # Staff punches inserted (staff share the same fleet as students).
+    staff_inserted: int = 0
     errors: list[str] = Field(default_factory=list)
     # Inserted (student, timestamp) pairs — lets the caller recompute exactly
     # the affected DailyAttendance rows (near-real-time), not the whole branch.
     affected: list[AffectedPunch] = Field(default_factory=list)
+    # Same, for staff — feeds staff_daily_service.rebuild.
+    affected_staff: list[AffectedStaffPunch] = Field(default_factory=list)

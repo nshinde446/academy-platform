@@ -59,6 +59,11 @@ class Settings(BaseSettings):
 
     ATTENDANCE_GRACE_PERIOD_MINUTES: int = 10
     ATTENDANCE_DUPLICATE_WINDOW_MINUTES: int = 5
+    # Timetable-driven attendance: a scan up to this many minutes BEFORE the
+    # first scheduled lecture counts as on-time (PRESENT). A scan outside the
+    # [first_start - early, last_end] window of the day's lectures is an
+    # EXCEPTION (on campus with nothing scheduled / wildly off-window).
+    ATTENDANCE_EARLY_WINDOW_MINUTES: int = 30
     # Day-attendance (biometric) — see docs/biometric-attendance-design.md.
     # Timezone is stored per branch (branch.timezone); this is only the
     # fallback for branches with no value set.
@@ -71,6 +76,16 @@ class Settings(BaseSettings):
     # the day's sign-in/sign-off (Reference B header: "07:00 - 15:00").
     ATTENDANCE_CAMPUS_OPEN_HOUR: int = 7
     ATTENDANCE_CAMPUS_CLOSE_HOUR: int = 15
+
+    # Staff attendance shift defaults (local wall-clock), used when a staff row
+    # has no per-person shift set. Late-IN is judged against START + grace; OT
+    # accrues past END; a day with work below the half-day threshold is HALF_DAY.
+    STAFF_SHIFT_START: str = "10:00"
+    STAFF_SHIFT_END: str = "20:00"
+    STAFF_HALF_DAY_MINUTES: int = 240
+    # Default weekly-off weekdays (Mon=0 … Sun=6) when a staff row sets none.
+    # Empty = no default weekly off (the client's staff work most Sundays).
+    STAFF_WEEKLY_OFF_DAYS: str = ""
 
     # Safety cap on Materials ingest — at most this many PDF pages get
     # sent to Gemini Vision per ingest, bounding worst-case API cost if

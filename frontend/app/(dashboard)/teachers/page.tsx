@@ -159,6 +159,13 @@ export default function TeachersPage() {
             >
               Productivity report
             </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              render={<Link href="/teachers/faculty-activity" />}
+            >
+              Faculty activity
+            </Button>
             {branchId && <ImportTeachersDialog branchId={branchId} />}
             <CreateTeacherDialog
               onSubmit={handleCreate}

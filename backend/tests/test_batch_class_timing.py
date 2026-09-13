@@ -109,3 +109,67 @@ async def test_recompute_preserves_manual_rows(db_session, seed_data):
         )
     )).first()
     assert row.source == "MANUAL" and row.day_status == "ABSENT"  # human edit kept
+
+
+# ── timetable-driven window (from today's rule) ──────────────────────────────
+
+from app.modules.lectures.models.lecture_models import Lecture
+
+
+async def _afternoon_lecture(db_session, seed_data):
+    """A 14:00–15:00 IST lecture (08:30–09:30 UTC) for the seed batch."""
+    db_session.add(Lecture(
+        teacher_id=seed_data["teacher"].id, batch_id=seed_data["batch"].id,
+        subject_id=seed_data["subject"].id, academic_year_id=seed_data["academic_year"].id,
+        scheduled_start=datetime(2026, 6, 22, 8, 30, tzinfo=timezone.utc),
+        scheduled_end=datetime(2026, 6, 22, 9, 30, tzinfo=timezone.utc),
+        branch_id=seed_data["branch_a"].id, lecture_status="scheduled",
+        status="active", is_deleted=False,
+    ))
+    await db_session.flush()
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_window_present_30min_prior(db_session, seed_data):
+    await _map_to_batch(db_session, seed_data)
+    await _afternoon_lecture(db_session, seed_data)
+    await _punch(db_session, seed_data, h=8, m=5)   # 13:35 IST, 25 min before start
+    row = await _rebuild(db_session, seed_data)
+    assert row.day_status == "PRESENT"
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_window_late_after_grace(db_session, seed_data):
+    await _map_to_batch(db_session, seed_data)
+    await _afternoon_lecture(db_session, seed_data)
+    await _punch(db_session, seed_data, h=8, m=45)  # 14:15 IST, >10 min after start
+    row = await _rebuild(db_session, seed_data)
+    assert row.day_status == "LATE"
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_window_exception_after_window_close(db_session, seed_data):
+    await _map_to_batch(db_session, seed_data)
+    await _afternoon_lecture(db_session, seed_data)
+    await _punch(db_session, seed_data, h=11, m=0)  # 16:30 IST, past the 15:00 end
+    row = await _rebuild(db_session, seed_data)
+    assert row.day_status == "EXCEPTION"
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_window_exception_before_window_open(db_session, seed_data):
+    await _map_to_batch(db_session, seed_data)
+    await _afternoon_lecture(db_session, seed_data)
+    await _punch(db_session, seed_data, h=7, m=0)   # 12:30 IST, before the 13:30 open
+    row = await _rebuild(db_session, seed_data)
+    assert row.day_status == "EXCEPTION"
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_window_single_punch_flags_missing_signoff(db_session, seed_data):
+    await _map_to_batch(db_session, seed_data)
+    await _afternoon_lecture(db_session, seed_data)
+    await _punch(db_session, seed_data, h=8, m=5)   # on time, single punch
+    row = await _rebuild(db_session, seed_data)
+    assert row.day_status == "PRESENT"
+    assert row.signoff == "MISSING"   # NO PUNCH-OUT warning
