@@ -16,6 +16,7 @@ import {
   useUpdateStaff,
   useDeleteStaff,
   useBulkDeleteStaff,
+  useSyncTeachers,
 } from "./_hooks/use-staff";
 import type { StaffCreate, StaffResponse, StaffUpdate } from "./_schemas/staff";
 import { StaffTable } from "./_components/staff-table";
@@ -56,6 +57,7 @@ export default function StaffPage() {
   const updateMutation = useUpdateStaff(branchId);
   const deleteMutation = useDeleteStaff(branchId);
   const bulkDeleteMutation = useBulkDeleteStaff(branchId);
+  const syncTeachersMutation = useSyncTeachers(branchId);
 
   const departments = departmentsQuery.data ?? [];
   const filtered = useMemo(
@@ -111,6 +113,15 @@ export default function StaffPage() {
               render={<Link href="/staff/reports" />}
             >
               Reports
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={syncTeachersMutation.isPending}
+              onClick={() => syncTeachersMutation.mutate()}
+              title="Create/refresh a staff record for every teacher (MSA-Teachers)"
+            >
+              {syncTeachersMutation.isPending ? "Syncing…" : "Sync teachers"}
             </Button>
             {branchId && <ImportStaffDialog branchId={branchId} />}
             <CreateStaffDialog

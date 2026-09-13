@@ -111,6 +111,23 @@ export function useDeleteStaff(branchId: string | undefined) {
   });
 }
 
+export function useSyncTeachers(branchId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.post<{ created: number; skipped: number }>(
+        "/api/v1/staff/sync-teachers",
+        {},
+        { params: { branch_id: branchId } }
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: staffKeys.all });
+    },
+  });
+}
+
 export function useBulkDeleteStaff(branchId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({

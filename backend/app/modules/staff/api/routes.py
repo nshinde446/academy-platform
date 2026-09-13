@@ -84,6 +84,21 @@ async def bulk_delete_staff(
     )
 
 
+@router.post("/sync-teachers")
+async def sync_teachers(
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Backfill/refresh linked Staff rows for every teacher (MSA-Teachers).
+    Idempotent — already-linked teachers are skipped. Literal path."""
+    return await staff_service.sync_teachers_to_staff(
+        session, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
 @router.post("/import", response_model=ImportSummary)
 async def import_staff(
     request: Request,

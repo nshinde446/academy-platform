@@ -91,6 +91,23 @@ async def emp_codes_in_department(
     return [r[0] for r in result.all()]
 
 
+async def emp_code_by_linked_teacher(
+    session: AsyncSession, branch_id: uuid.UUID, teacher_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    """{teacher_id: staff emp_code} for teachers linked to a live staff row.
+    Powers the 'Staff No' shown on the teachers list/profile/reports."""
+    if not teacher_ids:
+        return {}
+    rows = await session.execute(
+        select(Staff.linked_teacher_id, Staff.emp_code).where(
+            Staff.branch_id == branch_id,
+            Staff.linked_teacher_id.in_(teacher_ids),
+            Staff.is_deleted == False,  # noqa: E712
+        )
+    )
+    return {tid: code for tid, code in rows.all() if tid}
+
+
 async def update(session: AsyncSession, staff: Staff, **kwargs) -> Staff:
     for key, value in kwargs.items():
         setattr(staff, key, value)

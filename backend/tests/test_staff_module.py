@@ -28,10 +28,10 @@ async def test_departments_seeded_with_ranges(client: AsyncClient, seed_data):
         "MSA-Teachers", "MSA-Administration", "MSA-Accounts",
         "Security", "Cleaning Unit", "MSA-Marketing",
     }
-    assert (depts["MSA-Teachers"]["id_range_start"], depts["MSA-Teachers"]["id_range_end"]) == (1, 50)
-    assert (depts["MSA-Marketing"]["id_range_start"], depts["MSA-Marketing"]["id_range_end"]) == (101, 110)
-    # Empty department -> next code is the range start.
-    assert depts["Security"]["next_emp_code"] == "81"
+    assert (depts["MSA-Teachers"]["id_range_start"], depts["MSA-Teachers"]["id_range_end"]) == (91000, 91999)
+    assert (depts["MSA-Marketing"]["id_range_start"], depts["MSA-Marketing"]["id_range_end"]) == (96000, 96999)
+    # Empty department -> next code is the range start (9xxxx block).
+    assert depts["Security"]["next_emp_code"] == "94000"
     assert depts["Security"]["used"] == 0
 
 
@@ -45,19 +45,19 @@ async def test_emp_code_allocates_in_range_and_rolls_forward(client: AsyncClient
         "department_id": sec,
     })
     assert r1.status_code == 200, r1.text
-    assert r1.json()["emp_code"] == "81"
+    assert r1.json()["emp_code"] == "94000"
     assert r1.json()["is_legacy_code"] is False
 
     r2 = await client.post("/api/v1/staff", json={
         "branch_id": BRANCH_A_ID, "first_name": "Guard", "last_name": "Two",
         "department_id": sec,
     })
-    assert r2.json()["emp_code"] == "82"
+    assert r2.json()["emp_code"] == "94001"
 
     # Preview reflects the two used slots.
     depts = await _departments(client)
     assert depts["Security"]["used"] == 2
-    assert depts["Security"]["next_emp_code"] == "83"
+    assert depts["Security"]["next_emp_code"] == "94002"
 
 
 async def test_legacy_out_of_range_code_flagged_and_does_not_block_allocation(
@@ -65,9 +65,9 @@ async def test_legacy_out_of_range_code_flagged_and_does_not_block_allocation(
 ):
     await _login_admin(client)
     depts = await _departments(client)
-    accounts = depts["MSA-Accounts"]["id"]  # range 71-80
+    accounts = depts["MSA-Accounts"]["id"]  # range 93000-93999
 
-    # Import-style legacy code (2, outside 71-80).
+    # Import-style legacy code (2, outside 93000-93999).
     legacy = await client.post("/api/v1/staff", json={
         "branch_id": BRANCH_A_ID, "first_name": "Ram", "last_name": "Wable",
         "department_id": accounts, "emp_code": "2",
@@ -80,7 +80,7 @@ async def test_legacy_out_of_range_code_flagged_and_does_not_block_allocation(
         "branch_id": BRANCH_A_ID, "first_name": "New", "last_name": "Joiner",
         "department_id": accounts,
     })
-    assert auto.json()["emp_code"] == "71"
+    assert auto.json()["emp_code"] == "93000"
     assert auto.json()["is_legacy_code"] is False
 
 
@@ -127,3 +127,28 @@ async def test_link_teacher_and_list_and_delete(client: AsyncClient, seed_data):
     assert gone.status_code == 204
     listed = await client.get("/api/v1/staff", params={"branch_id": BRANCH_A_ID})
     assert sid not in [s["id"] for s in listed.json()]
+
+
+async def test_sync_teachers_creates_linked_staff_and_surfaces_staff_no(
+    client: AsyncClient, seed_data
+):
+    await _login_admin(client)
+    r = await client.post("/api/v1/staff/sync-teachers", params={"branch_id": BRANCH_A_ID})
+    assert r.status_code == 200, r.text
+    assert r.json()["created"] >= 1
+
+    # A staff row now exists for the seeded teacher: MSA-Teachers, 91xxx, linked.
+    staff = (await client.get("/api/v1/staff", params={"branch_id": BRANCH_A_ID})).json()
+    linked = [s for s in staff if s["linked_teacher_id"] == TEACHER_ID]
+    assert len(linked) == 1
+    assert linked[0]["emp_code"].startswith("91")
+    assert linked[0]["department_name"] == "MSA-Teachers"
+
+    # The teachers list/profile now surfaces that Staff No.
+    teachers = (await client.get("/api/v1/teachers", params={"branch_id": BRANCH_A_ID})).json()
+    trow = next(t for t in teachers if t["id"] == TEACHER_ID)
+    assert trow["staff_no"] == linked[0]["emp_code"]
+
+    # Idempotent: a second sync creates nothing new.
+    again = await client.post("/api/v1/staff/sync-teachers", params={"branch_id": BRANCH_A_ID})
+    assert again.json()["created"] == 0

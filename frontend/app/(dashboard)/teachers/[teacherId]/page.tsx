@@ -326,6 +326,11 @@ export default function TeacherDetailPage({
             </h2>
             {teacher && (
               <p className="text-sm text-muted-foreground mt-1">
+                {teacher.staff_no && (
+                  <span>
+                    Staff No <span className="font-mono">{teacher.staff_no}</span> ·{" "}
+                  </span>
+                )}
                 {teacher.qualification || "—"}
                 {teacher.email && <span> · {teacher.email}</span>}
                 {teacher.phone && <span> · {teacher.phone}</span>}

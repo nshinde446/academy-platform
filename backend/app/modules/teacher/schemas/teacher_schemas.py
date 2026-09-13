@@ -44,6 +44,8 @@ class TeacherResponse(BaseModel):
     phone: str | None = None
     qualification: str | None = None
     years_experience: int | None = None
+    # Linked staff employee code (9xxxx), shown as the teacher's Staff No.
+    staff_no: str | None = None
     status: str
     model_config = {"from_attributes": True}
 
@@ -60,6 +62,8 @@ class TeacherWithStats(BaseModel):
     years_experience: int | None = None
     subject_id: uuid.UUID | None = None
     subject_name: str | None = None
+    # Linked staff employee code (9xxxx), shown as the teacher's Staff No.
+    staff_no: str | None = None
     # Computed
     lectures_30d: int
     sub_rate_pct: float

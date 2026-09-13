@@ -5,16 +5,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database.base import BaseModel
 
-# Canonical departments + reserved emp-code ranges (client-confirmed for Matrix
-# Science Academy). Seeded per branch by migration 0056 and lazily for any
-# branch that has none yet (staff_service.ensure_departments). (name, start, end)
+# Canonical departments + reserved emp-code ranges. Staff codes live in the
+# 9xxxx block (all start with 9) so they never collide with student device ids;
+# the 2nd digit marks the department ("staff category"). Seeded per branch by
+# migration 0057, re-ranged by 0060, and ensured lazily for any branch that has
+# none yet (staff_service.ensure_departments). (name, start, end)
 DEPARTMENT_SEED: list[tuple[str, int, int]] = [
-    ("MSA-Teachers", 1, 50),
-    ("MSA-Administration", 51, 70),
-    ("MSA-Accounts", 71, 80),
-    ("Security", 81, 90),
-    ("Cleaning Unit", 91, 100),
-    ("MSA-Marketing", 101, 110),
+    ("MSA-Teachers", 91000, 91999),
+    ("MSA-Administration", 92000, 92999),
+    ("MSA-Accounts", 93000, 93999),
+    ("Security", 94000, 94999),
+    ("Cleaning Unit", 95000, 95999),
+    ("MSA-Marketing", 96000, 96999),
 ]
 
 
