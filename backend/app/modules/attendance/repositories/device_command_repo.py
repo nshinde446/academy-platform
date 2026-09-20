@@ -374,6 +374,26 @@ async def backed_up_users_for_students(
     return [(r[0], r[1]) for r in result.all()]
 
 
+async def all_faces_with_source(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> list[tuple[str, str | None, str]]:
+    """(vendor_user_id, name, source_dev_id) for every user with a FACE backed up
+    on ANY device in the branch — the pool a fleet face-sync fans out. One row per
+    (dev, uid); the caller dedups per uid to pick a source."""
+    result = await session.execute(
+        select(
+            DeviceUserBiometric.vendor_user_id,
+            DeviceUserBiometric.name,
+            DeviceUserBiometric.dev_id,
+        ).where(
+            DeviceUserBiometric.branch_id == branch_id,
+            DeviceUserBiometric.is_deleted == False,  # noqa: E712
+            DeviceUserBiometric.face_enc.isnot(None),
+        )
+    )
+    return [(r[0], r[1], r[2]) for r in result.all()]
+
+
 async def upsert_device_status(
     session: AsyncSession,
     *,
