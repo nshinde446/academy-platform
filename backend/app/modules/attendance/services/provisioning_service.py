@@ -841,6 +841,64 @@ async def enqueue_cross_device_restore(
     return len(rows)
 
 
+def _live_device_serials() -> list[str]:
+    raw = get_settings().BIOMAX_DEVICE_SERIALS or ""
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+async def sync_fleet_faces(
+    session: AsyncSession, branch_id: uuid.UUID, *, dry_run: bool = False
+) -> dict:
+    """Fan out every backed-up face to every live device that's missing it —
+    "enrol once, available everywhere" for the whole fleet.
+
+    For each user with a face backup on ANY device, enqueue a cross-device restore
+    onto each live terminal that doesn't already hold their face. Idempotent: a
+    user already face-enrolled on a target (device mirror ``has_face``) or with a
+    restore already in flight is skipped, so re-running never piles up duplicates.
+    Eventually-consistent (runs on a schedule); templates decrypt + inject at emit.
+    Covers students AND staff (keyed on the device userId, not the subject type).
+    ``dry_run`` counts what would be queued without enqueuing.
+    """
+    devices = _live_device_serials()
+    backups = await device_command_repo.all_faces_with_source(session, branch_id)
+
+    # uid -> a source device that holds its face; keep a name if any backup has one.
+    src_by_uid: dict[str, str] = {}
+    name_by_uid: dict[str, str | None] = {}
+    for uid, name, dev in backups:
+        src_by_uid.setdefault(uid, dev)
+        if name and uid not in name_by_uid:
+            name_by_uid[uid] = name
+
+    per_device: dict[str, int] = {}
+    for target in devices:
+        mirror = await device_command_repo.list_device_users(session, branch_id, target)
+        has_face = {u.vendor_user_id for u in mirror if getattr(u, "has_face", False)}
+        candidates = [
+            uid for uid, src in src_by_uid.items() if src != target and uid not in has_face
+        ]
+        inflight = await device_command_repo.inflight_user_ids(session, target, candidates)
+        to_push = [uid for uid in candidates if uid not in inflight]
+        if not dry_run and to_push:
+            rows = [
+                build_restore_command_row(
+                    branch_id, target, uid, name_by_uid.get(uid),
+                    source_dev_id=src_by_uid[uid],
+                )
+                for uid in to_push
+            ]
+            await device_command_repo.enqueue(session, rows)
+        per_device[target] = len(to_push)
+
+    return {
+        "dry_run": dry_run,
+        "faces_in_pool": len(src_by_uid),
+        "per_device_enqueued": per_device,
+        "total_enqueued": sum(per_device.values()),
+    }
+
+
 async def build_restore_emit_payload(
     session: AsyncSession, dev_id: str, command
 ) -> dict:
