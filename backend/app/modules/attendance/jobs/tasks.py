@@ -88,6 +88,48 @@ def nightly_absent_sweep():
     return asyncio.run(_run_nightly_sweep())
 
 
+# ── Per-lecture-end absent notify (120 min after a student's last class) ──────
+# Unlike the nightly sweep, this fires throughout the day: every branch is checked
+# each run, and the service only finalizes students whose LAST scheduled lecture
+# ended >= the delay ago (so morning batches notify in the afternoon, afternoon
+# batches in the evening). Idempotent + WhatsApp-gated per batch. Beat fires every
+# 15 min; the delay window makes the exact firing time non-critical.
+POST_LECTURE_DELAY_MIN = 120
+
+
+async def run_post_lecture_notify(
+    session: AsyncSession, now_utc: datetime
+) -> list[tuple[uuid.UUID, int]]:
+    """Finalize + notify absent for every branch whose students have a lecture
+    that ended >= POST_LECTURE_DELAY_MIN ago. Returns (branch_id, count) per branch."""
+    branches = (await session.execute(
+        select(Branch.id, Branch.timezone).where(Branch.is_deleted == False)
+    )).all()
+    out: list[tuple[uuid.UUID, int]] = []
+    for branch_id, tz_name in branches:
+        created = await daily_service.notify_absent_after_last_lecture(
+            session, branch_id=branch_id, now=now_utc,
+            delay_min=POST_LECTURE_DELAY_MIN, tz_name=tz_name,
+        )
+        if created:
+            out.append((branch_id, len(created)))
+    return out
+
+
+async def _run_post_lecture_notify(now_utc: datetime | None = None):
+    now = now_utc or datetime.now(timezone.utc)
+    async with async_session_factory() as session:
+        result = await run_post_lecture_notify(session, now)
+        await session.commit()
+    return [(str(b), n) for b, n in result]
+
+
+@celery_app.task(name="attendance.post_lecture_absent_notify")
+def post_lecture_absent_notify():
+    """Beat entrypoint — mark+notify absent 120 min after a student's last lecture."""
+    return asyncio.run(_run_post_lecture_notify())
+
+
 # ── Morning lecture reminders ───────────────────────────────────────────────
 # A "your lectures today" parent/student notification, emitted once each morning
 # per branch. Beat fires every 15 min; whichever firing lands in this local hour
