@@ -75,3 +75,15 @@ async def test_fleet_sync_skips_devices_that_already_have_the_face(
 
     res = await prov.sync_fleet_faces(db_session, BRANCH_A, dry_run=False)
     assert res["total_enqueued"] == 0
+
+
+async def test_live_device_serials_and_sync_run_without_monkeypatch(
+    db_session: AsyncSession, seed_data
+):
+    """Exercise the REAL _live_device_serials()/get_settings() path (the other
+    tests monkeypatch it, which once hid a missing get_settings import). With no
+    configured serials the fleet has no targets — it must run cleanly, not crash."""
+    assert isinstance(prov._live_device_serials(), list)
+    res = await prov.sync_fleet_faces(db_session, BRANCH_A, dry_run=True)
+    assert res["total_enqueued"] == 0
+    assert res["per_device_enqueued"] == {}

@@ -17,6 +17,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config.settings import get_settings
 from app.modules.attendance.integrations.biomax import biometrics
 
 from app.modules.attendance.models.provisioning_models import (
