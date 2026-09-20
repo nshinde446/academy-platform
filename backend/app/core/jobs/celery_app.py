@@ -40,6 +40,14 @@ celery_app.conf.update(
             "task": "attendance.nightly_absent_sweep",
             "schedule": crontab(minute="*/15"),
         },
+        # Per-lecture-end absent notify: mark+notify 120 min after a student's LAST
+        # scheduled lecture. Fires every 15 min; the service only finalizes students
+        # whose day of classes is done, and it's WhatsApp-gated per batch — so it's
+        # a no-op for branches/batches that haven't enabled WhatsApp.
+        "attendance-post-lecture-absent-notify": {
+            "task": "attendance.post_lecture_absent_notify",
+            "schedule": crontab(minute="*/15"),
+        },
         # eTimeOffice is cloud/pull — poll its rolling lookback every 10 min.
         # No-op when ETO_ENABLED is false, so it's safe to always schedule.
         "attendance-etimeoffice-poll": {
