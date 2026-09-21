@@ -169,7 +169,11 @@ services:
     # notification delivery pipeline. Single worker service, so embedded beat is
     # the one scheduler (no duplicate firings). WhatsApp sends stay gated behind
     # WHATSAPP_ENABLED + the per-branch/per-batch toggles + active templates.
-    command: ["celery", "-A", "app.core.jobs.celery_app.celery_app", "worker", "-B", "--loglevel=info", "--concurrency=2"]
+    # `--schedule` points beat's shelve DB at a writable path; the default
+    # (celerybeat-schedule in CWD /app) is read-only for the non-root app user, so
+    # beat crashed with "Permission denied". /tmp is writable; the schedule is just
+    # last-run bookkeeping (tasks are idempotent, so losing it on restart is fine).
+    command: ["celery", "-A", "app.core.jobs.celery_app.celery_app", "worker", "-B", "--schedule=/tmp/celerybeat-schedule", "--loglevel=info", "--concurrency=2"]
     # Override the image's inherited HEALTHCHECK. backend/Dockerfile defines a
     # `curl http://127.0.0.1:8000/health` probe for the web server; the worker
     # runs no HTTP server, so that probe can never pass and the container sat
