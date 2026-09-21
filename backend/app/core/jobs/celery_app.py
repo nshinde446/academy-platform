@@ -79,7 +79,14 @@ celery_app.conf.update(
         },
     },
     # Explicit import so the worker registers our tasks without autodiscover.
+    # ``app.main`` is imported first so the worker loads the *full* SQLAlchemy
+    # model registry (every router pulls in its models). Without it a task that
+    # touches a cross-module FK — e.g. emitting an AcademicEvent whose
+    # ``teacher_id`` references the teachers table — fails at flush with
+    # NoReferencedTableError, because the referenced model was never imported in
+    # the worker process. The web app gets this for free via router registration.
     imports=(
+        "app.main",
         "app.modules.attendance.jobs.tasks",
         "app.modules.notifications.jobs.tasks",
     ),

@@ -7,7 +7,6 @@ core takes an injected session so tests drive it against the test DB.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 from datetime import date, datetime, timezone
@@ -17,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import async_session_factory
 from app.core.jobs.celery_app import celery_app
+from app.core.jobs.run import run_task
 from app.modules.attendance.services import daily_service
 from app.modules.attendance.time_utils import get_tz
 from app.modules.auth.models.auth_models import Branch
@@ -85,7 +85,7 @@ async def _run_nightly_sweep(now_utc: datetime | None = None):
 @celery_app.task(name="attendance.nightly_absent_sweep")
 def nightly_absent_sweep():
     """Beat entrypoint — marks absent for branches at their local 23:30."""
-    return asyncio.run(_run_nightly_sweep())
+    return run_task(_run_nightly_sweep)
 
 
 # ── Per-lecture-end absent notify (120 min after a student's last class) ──────
@@ -127,7 +127,7 @@ async def _run_post_lecture_notify(now_utc: datetime | None = None):
 @celery_app.task(name="attendance.post_lecture_absent_notify")
 def post_lecture_absent_notify():
     """Beat entrypoint — mark+notify absent 120 min after a student's last lecture."""
-    return asyncio.run(_run_post_lecture_notify())
+    return run_task(_run_post_lecture_notify)
 
 
 # ── Morning lecture reminders ───────────────────────────────────────────────
@@ -191,7 +191,7 @@ async def _run_lecture_reminders(now_utc: datetime | None = None):
 @celery_app.task(name="notifications.lecture_reminders")
 def lecture_reminders():
     """Beat entrypoint — morning 'your lectures today' reminders per branch."""
-    return asyncio.run(_run_lecture_reminders())
+    return run_task(_run_lecture_reminders)
 
 
 async def _rebuild_one(student_id: uuid.UUID, branch_id: uuid.UUID, day: date):
@@ -205,8 +205,8 @@ async def _rebuild_one(student_id: uuid.UUID, branch_id: uuid.UUID, day: date):
 @celery_app.task(name="attendance.rebuild_student_day")
 def rebuild_student_day(student_id: str, branch_id: str, day_iso: str):
     """Near-real-time: recompute one student's day after a punch ingest."""
-    return asyncio.run(
-        _rebuild_one(uuid.UUID(student_id), uuid.UUID(branch_id), date.fromisoformat(day_iso))
+    return run_task(
+        lambda: _rebuild_one(uuid.UUID(student_id), uuid.UUID(branch_id), date.fromisoformat(day_iso))
     )
 
 
@@ -234,7 +234,7 @@ async def _run_eto_poll() -> dict:
 @celery_app.task(name="attendance.etimeoffice_poll")
 def etimeoffice_poll():
     """Beat entrypoint — pull recent eTimeOffice punches for the configured branch."""
-    return asyncio.run(_run_eto_poll())
+    return run_task(_run_eto_poll)
 
 
 # ── SmartOffice cloud poll ──────────────────────────────────────────────────
@@ -262,4 +262,4 @@ async def _run_smartoffice_poll() -> dict:
 @celery_app.task(name="attendance.smartoffice_poll")
 def smartoffice_poll():
     """Beat entrypoint — pull recent SmartOffice punches for the configured branch."""
-    return asyncio.run(_run_smartoffice_poll())
+    return run_task(_run_smartoffice_poll)
