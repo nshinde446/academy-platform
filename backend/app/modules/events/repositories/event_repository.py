@@ -55,21 +55,26 @@ async def list_events(
 
 
 async def get_unprocessed_events(
-    session: AsyncSession, consumer_name: str, limit: int = 100
+    session: AsyncSession, consumer_name: str, limit: int = 100,
+    event_types: list[str] | None = None,
 ) -> list[AcademicEvent]:
+    """Oldest unprocessed events for a consumer. ``event_types`` restricts to a
+    set of types — the notifications consumer passes only the types that have an
+    active template, so high-volume no-template events (e.g. ATTENDANCE_MARKED)
+    can never fill the batch and starve the ones that DO notify."""
     already_processed = select(ProcessedEvent.event_id).where(
         ProcessedEvent.consumer_name == consumer_name,
         ProcessedEvent.processing_status == "SUCCESS",
     ).scalar_subquery()
 
+    stmt = select(AcademicEvent).where(
+        AcademicEvent.is_deleted == False,
+        AcademicEvent.event_id.notin_(already_processed),
+    )
+    if event_types is not None:
+        stmt = stmt.where(AcademicEvent.event_type.in_(event_types))
     result = await session.execute(
-        select(AcademicEvent)
-        .where(
-            AcademicEvent.is_deleted == False,
-            AcademicEvent.event_id.notin_(already_processed),
-        )
-        .order_by(AcademicEvent.timestamp)
-        .limit(limit)
+        stmt.order_by(AcademicEvent.timestamp).limit(limit)
     )
     return list(result.scalars().all())
 

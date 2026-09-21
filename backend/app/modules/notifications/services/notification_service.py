@@ -198,8 +198,14 @@ async def consume_events(session: AsyncSession, limit: int = 100) -> dict:
     An event whose type has no active template simply enqueues nothing and is
     still marked processed, so it isn't re-examined forever.
     """
+    # Only consider events whose type has an active template — otherwise a flood
+    # of no-template events (e.g. ATTENDANCE_MARKED, one per punch) fills the
+    # oldest-first batch and starves the ones that actually notify (STUDENT_ABSENT).
+    notifiable = await notification_repository.active_template_event_types(session)
+    if not notifiable:
+        return {"consumed": 0, "enqueued": 0}
     events = await event_repository.get_unprocessed_events(
-        session, CONSUMER_NAME, limit=limit
+        session, CONSUMER_NAME, limit=limit, event_types=notifiable
     )
 
     consumed = 0
