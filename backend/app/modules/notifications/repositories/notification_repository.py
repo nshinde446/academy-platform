@@ -60,6 +60,20 @@ async def list_templates(
     return list(result.scalars().all())
 
 
+async def active_template_event_types(session: AsyncSession) -> list[str]:
+    """Distinct event types that have at least one active template — the only
+    events worth consuming for notification (everything else enqueues nothing)."""
+    result = await session.execute(
+        select(NotificationTemplate.event_type)
+        .where(
+            NotificationTemplate.is_active == True,  # noqa: E712
+            NotificationTemplate.is_deleted == False,  # noqa: E712
+        )
+        .distinct()
+    )
+    return [r[0] for r in result.all()]
+
+
 async def get_active_templates(
     session: AsyncSession, event_type: str, branch_id: uuid.UUID | None
 ) -> list[NotificationTemplate]:
