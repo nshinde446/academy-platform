@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import {
   Table,
@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { TableSkeleton } from "@/components/ui/skeleton";
+import { useBranchId } from "@/store/user-store";
+import { useBatches } from "../batches/_hooks/use-batches";
 import { useDeliveryLog } from "./_hooks/use-delivery-log";
 
 const CONTROL = "h-9 rounded-lg border border-input bg-background px-3 text-sm";
@@ -29,9 +31,40 @@ function fmtTime(iso: string | null): string {
 }
 
 export default function WhatsappLogPage() {
+  const { branchId } = useBranchId();
   const [statusFilter, setStatusFilter] = useState("");
-  const query = useDeliveryLog(statusFilter);
+  const [batchId, setBatchId] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [search, setSearch] = useState("");
+  // Debounce the free-text search so we don't refetch on every keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const batchesQuery = useBatches(branchId);
+  const batches = batchesQuery.data ?? [];
+
+  const query = useDeliveryLog({
+    deliveryStatus: statusFilter,
+    batchId,
+    dateFrom,
+    dateTo,
+    q: debouncedSearch,
+  });
   const rows = query.data ?? [];
+
+  const hasFilters =
+    !!statusFilter || !!batchId || !!dateFrom || !!dateTo || !!search;
+  const clearFilters = () => {
+    setStatusFilter("");
+    setBatchId("");
+    setDateFrom("");
+    setDateTo("");
+    setSearch("");
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -41,6 +74,51 @@ export default function WhatsappLogPage() {
       />
 
       <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Batch
+          <select
+            value={batchId}
+            onChange={(e) => setBatchId(e.target.value)}
+            className={CONTROL}
+          >
+            <option value="">All batches</option>
+            {batches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          From
+          <input
+            type="date"
+            value={dateFrom}
+            max={dateTo || undefined}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className={CONTROL}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          To
+          <input
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={(e) => setDateTo(e.target.value)}
+            className={CONTROL}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Search
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Student or number"
+            className={`${CONTROL} min-w-[12rem]`}
+          />
+        </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Status
           <select
@@ -54,6 +132,15 @@ export default function WhatsappLogPage() {
             <option value="PENDING">Pending</option>
           </select>
         </label>
+        {hasFilters && (
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="h-9 rounded-lg px-3 text-sm text-muted-foreground hover:text-foreground"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {query.isLoading ? (

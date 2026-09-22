@@ -46,6 +46,13 @@ class NotificationQueue(BaseModel):
     recipient: Mapped[str] = mapped_column(String(255), nullable=False)
     channel: Mapped[str] = mapped_column(String(20), nullable=False)
     payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The student this message is about, denormalised from the event so the
+    # delivery log can be filtered by batch (queue -> student_id -> batch
+    # memberships). NULL for channel rows with no student (or older rows the
+    # backfill couldn't parse). Indexed for the batch-filter join.
+    student_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, index=True, nullable=True
+    )
     delivery_status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="PENDING"
     )

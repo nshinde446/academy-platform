@@ -15,10 +15,27 @@ export interface DeliveryLogRow {
   created_at: string;
 }
 
-export function useDeliveryLog(deliveryStatus: string) {
+export interface DeliveryLogFilters {
+  deliveryStatus: string;
+  batchId: string;
+  dateFrom: string; // YYYY-MM-DD
+  dateTo: string; // YYYY-MM-DD
+  q: string;
+}
+
+export function useDeliveryLog(filters: DeliveryLogFilters) {
   const { branchId } = useBranchId();
+  const { deliveryStatus, batchId, dateFrom, dateTo, q } = filters;
   return useQuery<DeliveryLogRow[]>({
-    queryKey: ["whatsapp-delivery-log", branchId ?? "", deliveryStatus],
+    queryKey: [
+      "whatsapp-delivery-log",
+      branchId ?? "",
+      deliveryStatus,
+      batchId,
+      dateFrom,
+      dateTo,
+      q,
+    ],
     queryFn: async () => {
       const res = await apiClient.get<DeliveryLogRow[]>(
         "/api/v1/notifications/delivery-log",
@@ -26,6 +43,10 @@ export function useDeliveryLog(deliveryStatus: string) {
           params: {
             ...(branchId ? { branch_id: branchId } : {}),
             ...(deliveryStatus ? { delivery_status: deliveryStatus } : {}),
+            ...(batchId ? { batch_id: batchId } : {}),
+            ...(dateFrom ? { date_from: dateFrom } : {}),
+            ...(dateTo ? { date_to: dateTo } : {}),
+            ...(q.trim() ? { q: q.trim() } : {}),
             limit: 200,
           },
         },
