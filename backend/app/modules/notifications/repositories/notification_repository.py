@@ -146,6 +146,10 @@ async def list_queue(
     delivery_status: str | None = None,
     branch_id: uuid.UUID | None = None,
     channel: str | None = None,
+    batch_id: uuid.UUID | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+    q: str | None = None,
     offset: int = 0,
     limit: int = 50,
 ) -> list[NotificationQueue]:
@@ -157,7 +161,33 @@ async def list_queue(
     if branch_id is not None:
         stmt = stmt.where(NotificationQueue.branch_id == branch_id)
     if channel is not None:
-        stmt = stmt.where(NotificationQueue.channel == channel)
+        # Case-insensitive: rows are stored upper-cased ("WHATSAPP") while callers
+        # pass "whatsapp". A case-sensitive match silently returned zero rows and
+        # left the delivery-log page blank despite messages existing.
+        stmt = stmt.where(func.lower(NotificationQueue.channel) == channel.lower())
+    if batch_id is not None:
+        # queue -> student_id -> batch memberships. A subquery (not a join) so a
+        # student in several batches never duplicates their delivery-log row.
+        members = select(StudentBatchMapping.student_id).where(
+            StudentBatchMapping.batch_id == batch_id,
+            StudentBatchMapping.is_deleted == False,
+        )
+        stmt = stmt.where(NotificationQueue.student_id.in_(members))
+    if created_from is not None:
+        stmt = stmt.where(NotificationQueue.created_at >= created_from)
+    if created_to is not None:
+        stmt = stmt.where(NotificationQueue.created_at < created_to)
+    if q:
+        # Student name lives in the JSON payload; the recipient is a real column.
+        # Lower-casing the whole payload text gives a case-insensitive name match
+        # that works on both Postgres and the SQLite test DB.
+        like = f"%{q.lower()}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(NotificationQueue.payload_json).like(like),
+                func.lower(NotificationQueue.recipient).like(like),
+            )
+        )
     stmt = stmt.order_by(NotificationQueue.created_at.desc()).offset(offset).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())

@@ -23,6 +23,12 @@ vi.mock("@/app/(dashboard)/whatsapp-log/_hooks/use-delivery-log", () => ({
   useDeliveryLog: () => ({ data: deliveryRows, isLoading: false, isError: false }),
 }));
 
+// The filters bar populates its Batch dropdown from useBatches; stub it so the
+// page renders without a QueryClient in the test.
+vi.mock("@/app/(dashboard)/batches/_hooks/use-batches", () => ({
+  useBatches: () => ({ data: [], isLoading: false, isError: false }),
+}));
+
 describe("RBAC admin pages", () => {
   it("Accounts module is scaffolded as a placeholder", () => {
     render(<AccountsPage />);
