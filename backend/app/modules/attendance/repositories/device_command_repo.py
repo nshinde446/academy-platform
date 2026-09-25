@@ -78,6 +78,30 @@ async def confirmed_user_ids(
     return {row[0] for row in result.all() if row[0] is not None}
 
 
+async def confirmed_face_user_ids(
+    session: AsyncSession, dev_id: str, vendor_user_ids: list[str]
+) -> set[str]:
+    """Which of these userIds have a CONFIRMED *face* restore on the device — i.e.
+    a face template was pushed AND acked (payload carried ``restore_biometrics``).
+    Distinct from ``confirmed_user_ids`` (which also counts identity-only pushes):
+    the fleet face-sync must NOT treat an identity-only push as "already has a
+    face". Payload is checked in Python so the filter is engine-portable."""
+    if not vendor_user_ids:
+        return set()
+    result = await session.execute(
+        select(DeviceCommand.vendor_user_id, DeviceCommand.payload).where(
+            DeviceCommand.dev_id == dev_id,
+            DeviceCommand.vendor_user_id.in_(vendor_user_ids),
+            DeviceCommand.command_status == STATUS_CONFIRMED,
+            DeviceCommand.is_deleted == False,
+        )
+    )
+    return {
+        uid for uid, payload in result.all()
+        if uid is not None and isinstance(payload, dict) and payload.get("restore_biometrics")
+    }
+
+
 async def next_pending(session: AsyncSession, dev_id: str) -> DeviceCommand | None:
     """Oldest pending command for a device.
 
