@@ -483,6 +483,27 @@ async def latest_photo_biometric(
     return result.scalar_one_or_none()
 
 
+async def latest_photo_biometric_by_uid(
+    session: AsyncSession, branch_id: uuid.UUID, vendor_user_id: str
+) -> DeviceUserBiometric | None:
+    """Most recent backed-up row (any device) with a photo for a device userId —
+    used for staff/teacher avatars, which are keyed on emp_code, not student_id."""
+    if not vendor_user_id:
+        return None
+    result = await session.execute(
+        select(DeviceUserBiometric)
+        .where(
+            DeviceUserBiometric.branch_id == branch_id,
+            DeviceUserBiometric.vendor_user_id == vendor_user_id,
+            DeviceUserBiometric.is_deleted == False,  # noqa: E712
+            DeviceUserBiometric.photo_enc.isnot(None),
+        )
+        .order_by(DeviceUserBiometric.captured_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def upsert_biometric(
     session: AsyncSession,
     *,

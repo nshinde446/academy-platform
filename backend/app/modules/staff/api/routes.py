@@ -182,6 +182,33 @@ async def get_staff(
     return await staff_service.get_staff(session, staff_id, branch_id)
 
 
+@router.get("/{staff_id}/photo")
+async def staff_face_photo(
+    staff_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """The staff member's enrolled face photo (JPEG) from the biometric backup,
+    for the roster/profile avatar. Any signed-in user may view it (cookie auth, so
+    an ``<img>`` works). 404 when we have no photo for this staff."""
+    from fastapi import HTTPException, status
+
+    from app.modules.attendance.services import provisioning_service
+
+    staff = await staff_service.get_staff(session, staff_id, branch_id)
+    jpeg = await provisioning_service.face_photo_by_uid(
+        session, branch_id, staff.emp_code or ""
+    )
+    if jpeg is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No face photo.")
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
 @router.patch("/{staff_id}", response_model=StaffResponse)
 async def update_staff(
     staff_id: uuid.UUID,

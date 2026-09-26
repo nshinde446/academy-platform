@@ -969,6 +969,28 @@ async def student_face_photo(
         return None
 
 
+async def face_photo_by_uid(
+    session: AsyncSession, branch_id: uuid.UUID, vendor_user_id: str
+) -> bytes | None:
+    """Enrolled face photo (JPEG bytes) for a device userId (staff emp_code /
+    student rfid), decrypted from the biometric backup — or None. Powers the
+    staff/teacher roster avatars."""
+    if not biometrics.biometric_backup_enabled():
+        return None
+    row = await device_command_repo.latest_photo_biometric_by_uid(
+        session, branch_id, (vendor_user_id or "").strip()
+    )
+    if row is None or not row.photo_enc:
+        return None
+    b64 = biometrics.decrypt_template(row.photo_enc)
+    if not b64:
+        return None
+    try:
+        return base64.b64decode(b64)
+    except (ValueError, TypeError):
+        return None
+
+
 async def user_ids_for_refresh(
     session: AsyncSession, branch_id: uuid.UUID, dev_id: str, scope: str
 ) -> list[str]:
