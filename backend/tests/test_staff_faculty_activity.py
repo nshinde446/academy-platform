@@ -106,17 +106,38 @@ async def test_cumulative_summary(db_session: AsyncSession, seed_data):
         db_session, branch_id=BRANCH_A, start=DAY, end=DAY,
         teacher_ids=None, fmt="xlsx",
     )
-    ws = load_workbook(io.BytesIO(data), read_only=True).active
+    wb = load_workbook(io.BytesIO(data), read_only=True)
+    ws = wb["Productivity"]
     rows = list(ws.iter_rows(values_only=True))
-    # New schema: Sr No, Employee Code, Initials, Teacher, Subject,
-    # Present Days, Total Lectures, Total Hours.
+    # Document layout: Sr No | Employee Code | Initials | Teacher | Subject |
+    # Present Days | Total Lectures | Scheduled Hours | Delivered Hours.
     data_row = next(r for r in rows if r[1] == "6")  # emp_code in column 2
     assert data_row[0] == 1                          # Sr No
     assert data_row[2] == fac._initials(data_row[3])  # initials auto from name
     assert data_row[2] and data_row[2].isupper()      # non-empty, uppercase
     assert data_row[5] == 1                          # present days
     assert data_row[6] == 2                          # total lectures
-    assert data_row[7] == "1 Hours 45 Mins"          # total (effective) hours: 60+45
+    assert data_row[7] == "2 Hours 0 Mins"           # scheduled: two 1h lectures
+    assert data_row[8] == "1 Hours 45 Mins"          # delivered: 60 + 45 min
+    # The Charts sheet backs the two pie charts (Section 5).
+    assert "Charts" in wb.sheetnames
+
+
+async def test_summary_data_json_shape(db_session: AsyncSession, seed_data):
+    await _seed(db_session)
+    data = await fac.summary_data(
+        db_session, branch_id=BRANCH_A, start=DAY, end=DAY, teacher_ids=None,
+    )
+    row = next(r for r in data["rows"] if r["emp_code"] == "6")
+    assert row["initials"] == fac._initials(row["teacher_name"])
+    assert row["present_days"] == 1
+    assert row["total_lectures"] == 2
+    assert row["scheduled_minutes"] == 120
+    assert row["delivered_minutes"] == 105
+    # Teacher-wise pie: this teacher delivered 2 lectures.
+    assert {"label": row["initials"], "lectures": 2} in data["by_teacher"]
+    # Subject-wise pie totals across teachers = 2 lectures for this window.
+    assert sum(s["lectures"] for s in data["by_subject"]) == 2
 
 
 def test_initials_helper():

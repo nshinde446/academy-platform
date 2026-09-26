@@ -1,77 +1,33 @@
-// Mirrors backend Pydantic schemas in
-// app/modules/lectures/schemas/lecture_schemas.py (Productivity report).
+// Teacher Productivity Report (client document) — the cumulative summary table
+// (Section 3) + the two pie-chart aggregates (Section 5), over a date range
+// (Section 4). Replaces the earlier lecture-centric dashboard schema.
 
-export interface ProductivityReportTeacherRow {
-  teacher_id: string;
-  first_name: string;
-  last_name: string;
-  scheduled: number;
-  conducted: number;
-  completion_pct: number | null;
-  hours: number;
-  minutes: number;
-  on_time_count: number;
-  late_count: number;
-  punctuality_pct: number | null;
-  avg_delay_min: number;
-  topics_planned: number;
-  topics_covered: number;
+export interface ProductivitySummaryRow {
+  emp_code: string;
+  initials: string;
+  teacher_name: string;
+  subject: string;
+  present_days: number;
+  total_lectures: number;
+  scheduled_minutes: number;
+  delivered_minutes: number;
 }
 
-export interface ProductivityReportSubjectRow {
-  subject_id: string;
-  subject_name: string;
-  scheduled: number;
-  conducted: number;
-  completion_pct: number | null;
-  hours: number;
-  minutes: number;
-}
-
-export interface ProductivityReportBatchRow {
-  batch_id: string;
-  batch_name: string;
-  scheduled: number;
-  conducted: number;
-  completion_pct: number | null;
-  hours: number;
-  minutes: number;
-}
-
-export interface ProductivityReportTrendPoint {
-  iso_year: number;
-  iso_week: number;
+export interface ProductivityChartSlice {
   label: string;
-  scheduled: number;
-  conducted: number;
-  completion_pct: number | null;
-  punctuality_pct: number | null;
-  hours: number;
+  lectures: number;
 }
 
-export interface ProductivityReportSummary {
-  teachers: number;
-  total_scheduled: number;
-  total_conducted: number;
-  total_hours: number;
-  completion_pct: number | null;
-  punctuality_pct: number | null;
+export interface ProductivitySummaryResponse {
+  start: string;
+  end: string;
+  rows: ProductivitySummaryRow[];
+  by_subject: ProductivityChartSlice[];
+  by_teacher: ProductivityChartSlice[];
 }
 
-export interface ProductivityReportResponse {
-  from_date: string | null;
-  to_date: string | null;
-  summary: ProductivityReportSummary;
-  by_teacher: ProductivityReportTeacherRow[];
-  by_subject: ProductivityReportSubjectRow[];
-  by_batch: ProductivityReportBatchRow[];
-  trend: ProductivityReportTrendPoint[];
-}
-
-export interface ProductivityReportFilters {
+export interface ProductivityFilters {
   fromDate: string;
   toDate: string;
-  batchIds: string[];
-  subjectIds: string[];
   teacherIds: string[];
 }
