@@ -520,6 +520,108 @@ async def run_absent_sweep(
     return created
 
 
+async def notify_absent_after_last_lecture(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    now: datetime,
+    delay_min: int = 120,
+    tz_name: str | None = None,
+) -> list[DailyAttendance]:
+    """Per-lecture-timed absent notify: mark + notify absent for students whose
+    LAST scheduled lecture of the day (across ALL their batches) ended at least
+    ``delay_min`` minutes ago and who still have no punch today.
+
+    Anchored to the student's last lecture — not each lecture — so a student who
+    only attends an afternoon class is never falsely flagged after a morning one
+    (single campus scanner can't tell "skipped lecture 1" from "coming later").
+    Only students in a WhatsApp-enabled batch are notified; idempotent (a student
+    who already has a day row is skipped, so no double-mark / re-notify)."""
+    tz_name = tz_name or await branch_timezone(session, branch_id)
+    day = local_date_of(now, tz_name)
+    start, end = day_bounds(day, tz_name)
+    cutoff = now - timedelta(minutes=delay_min)  # last lecture must have ended by this
+
+    enabled = await notification_service.enabled_whatsapp_batch_ids(session, branch_id)
+    if not enabled:
+        return []
+
+    # Active students in an enabled batch (the notify candidates).
+    candidates = (await session.execute(
+        select(Student.id, Student.first_name, Student.last_name, Student.parent_mobile)
+        .join(StudentBatchMapping, StudentBatchMapping.student_id == Student.id)
+        .where(
+            StudentBatchMapping.batch_id.in_(enabled),
+            StudentBatchMapping.is_deleted == False,  # noqa: E712
+            Student.branch_id == branch_id,
+            Student.status == "active",
+            Student.is_deleted == False,  # noqa: E712
+        )
+        .distinct()
+    )).all()
+    if not candidates:
+        return []
+    cand_ids = [r[0] for r in candidates]
+
+    # Each candidate's last lecture end TODAY across ALL their batches (so a later
+    # class in any batch defers finalization).
+    last_end: dict[uuid.UUID, datetime] = {}
+    rows = (await session.execute(
+        select(StudentBatchMapping.student_id, func.max(Lecture.scheduled_end))
+        .join(Lecture, Lecture.batch_id == StudentBatchMapping.batch_id)
+        .where(
+            StudentBatchMapping.student_id.in_(cand_ids),
+            StudentBatchMapping.is_deleted == False,  # noqa: E712
+            Lecture.scheduled_start >= start,
+            Lecture.scheduled_start < end,
+            Lecture.is_deleted == False,  # noqa: E712
+            Lecture.lecture_status.notin_(["cancelled", "no_show"]),
+        )
+        .group_by(StudentBatchMapping.student_id)
+    )).all()
+    for sid, mx in rows:
+        if mx is not None:
+            last_end[sid] = mx if mx.tzinfo else mx.replace(tzinfo=timezone.utc)
+
+    # Students who already have a day row (present/late/absent) — skip.
+    already = set((await session.execute(
+        select(DailyAttendance.student_id).where(
+            DailyAttendance.student_id.in_(cand_ids),
+            DailyAttendance.attendance_date == day,
+            DailyAttendance.is_deleted == False,  # noqa: E712
+        )
+    )).scalars().all())
+
+    created: list[DailyAttendance] = []
+    for sid, first_name, last_name, parent_mobile in candidates:
+        if sid in already:
+            continue
+        end_of_day = last_end.get(sid)
+        if end_of_day is None or end_of_day > cutoff:
+            continue  # no lecture today, or their last class hasn't ended + delay
+        row = DailyAttendance(
+            student_id=sid, branch_id=branch_id, attendance_date=day,
+            first_in=None, last_out=None, day_status="ABSENT",
+            signoff="NA", source="SYSTEM",
+        )
+        session.add(row)
+        created.append(row)
+        await event_service.emit_event(
+            session,
+            event_type="STUDENT_ABSENT",
+            branch_id=branch_id,
+            student_id=sid,
+            metadata={
+                "attendance_date": day.isoformat(),
+                "student_name": f"{first_name} {last_name}".strip(),
+                "recipient": parent_mobile or "",
+            },
+        )
+
+    await session.flush()
+    return created
+
+
 # Parent-facing status label for the digest message.
 _STATUS_LABEL = {"PRESENT": "Present", "LATE": "Late", "ABSENT": "Absent"}
 

@@ -12,13 +12,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   NumCell,
-  RosterAvatar,
   ScoreCell,
 } from "@/components/roster/roster-primitives";
+import { FaceAvatar } from "@/components/roster/face-avatar";
 import type { TeacherResponse, TeacherWithStats } from "../_schemas/teacher";
 
 interface TeacherTableProps {
   rows: TeacherWithStats[];
+  branchId?: string;
   // Resolve Edit/Delete clicks back to the full TeacherResponse the
   // dialogs need.
   teachersById: Record<string, TeacherResponse>;
@@ -34,6 +35,7 @@ interface TeacherTableProps {
 
 export function TeacherTable({
   rows,
+  branchId,
   teachersById,
   onEdit,
   onDelete,
@@ -93,7 +95,15 @@ export function TeacherTable({
                   </TableCell>
                 )}
                 <TableCell>
-                  <RosterAvatar first={r.first_name} last={r.last_name} />
+                  <FaceAvatar
+                    src={
+                      branchId
+                        ? `/api/v1/teachers/${r.id}/photo?branch_id=${branchId}`
+                        : null
+                    }
+                    first={r.first_name}
+                    last={r.last_name}
+                  />
                 </TableCell>
                 <TableCell className="font-medium">
                   {r.first_name} {r.last_name}

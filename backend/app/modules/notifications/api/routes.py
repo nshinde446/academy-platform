@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -155,14 +156,22 @@ async def list_queue(
 async def delivery_log(
     branch_id: uuid.UUID | None = Query(None),
     delivery_status: str | None = Query(None),
+    batch_id: uuid.UUID | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    q: str | None = Query(None, max_length=100),
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
     session: AsyncSession = Depends(get_db),
 ):
     """WhatsApp absence-notification delivery log (§5): which parents received a
-    message, so the team can confirm coverage and re-send to anyone missed."""
+    message, so the team can confirm coverage and re-send to anyone missed.
+
+    Filterable by batch, a ``date_from``/``date_to`` range, and a free-text ``q``
+    over student name / parent number, in addition to delivery status."""
     return await notification_service.delivery_log(
         session, branch_id=branch_id, delivery_status=delivery_status,
+        batch_id=batch_id, date_from=date_from, date_to=date_to, q=q,
         offset=offset, limit=limit,
     )

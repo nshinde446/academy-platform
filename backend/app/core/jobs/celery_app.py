@@ -40,6 +40,14 @@ celery_app.conf.update(
             "task": "attendance.nightly_absent_sweep",
             "schedule": crontab(minute="*/15"),
         },
+        # Per-lecture-end absent notify: mark+notify 120 min after a student's LAST
+        # scheduled lecture. Fires every 15 min; the service only finalizes students
+        # whose day of classes is done, and it's WhatsApp-gated per batch — so it's
+        # a no-op for branches/batches that haven't enabled WhatsApp.
+        "attendance-post-lecture-absent-notify": {
+            "task": "attendance.post_lecture_absent_notify",
+            "schedule": crontab(minute="*/15"),
+        },
         # eTimeOffice is cloud/pull — poll its rolling lookback every 10 min.
         # No-op when ETO_ENABLED is false, so it's safe to always schedule.
         "attendance-etimeoffice-poll": {
@@ -71,7 +79,14 @@ celery_app.conf.update(
         },
     },
     # Explicit import so the worker registers our tasks without autodiscover.
+    # ``app.main`` is imported first so the worker loads the *full* SQLAlchemy
+    # model registry (every router pulls in its models). Without it a task that
+    # touches a cross-module FK — e.g. emitting an AcademicEvent whose
+    # ``teacher_id`` references the teachers table — fails at flush with
+    # NoReferencedTableError, because the referenced model was never imported in
+    # the worker process. The web app gets this for free via router registration.
     imports=(
+        "app.main",
         "app.modules.attendance.jobs.tasks",
         "app.modules.notifications.jobs.tasks",
     ),

@@ -7,7 +7,6 @@ core takes an injected session so tests drive it against the test DB.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 from datetime import date, datetime, timezone
@@ -17,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import async_session_factory
 from app.core.jobs.celery_app import celery_app
+from app.core.jobs.run import run_task
 from app.modules.attendance.services import daily_service
 from app.modules.attendance.time_utils import get_tz
 from app.modules.auth.models.auth_models import Branch
@@ -85,7 +85,49 @@ async def _run_nightly_sweep(now_utc: datetime | None = None):
 @celery_app.task(name="attendance.nightly_absent_sweep")
 def nightly_absent_sweep():
     """Beat entrypoint — marks absent for branches at their local 23:30."""
-    return asyncio.run(_run_nightly_sweep())
+    return run_task(_run_nightly_sweep)
+
+
+# ── Per-lecture-end absent notify (120 min after a student's last class) ──────
+# Unlike the nightly sweep, this fires throughout the day: every branch is checked
+# each run, and the service only finalizes students whose LAST scheduled lecture
+# ended >= the delay ago (so morning batches notify in the afternoon, afternoon
+# batches in the evening). Idempotent + WhatsApp-gated per batch. Beat fires every
+# 15 min; the delay window makes the exact firing time non-critical.
+POST_LECTURE_DELAY_MIN = 120
+
+
+async def run_post_lecture_notify(
+    session: AsyncSession, now_utc: datetime
+) -> list[tuple[uuid.UUID, int]]:
+    """Finalize + notify absent for every branch whose students have a lecture
+    that ended >= POST_LECTURE_DELAY_MIN ago. Returns (branch_id, count) per branch."""
+    branches = (await session.execute(
+        select(Branch.id, Branch.timezone).where(Branch.is_deleted == False)
+    )).all()
+    out: list[tuple[uuid.UUID, int]] = []
+    for branch_id, tz_name in branches:
+        created = await daily_service.notify_absent_after_last_lecture(
+            session, branch_id=branch_id, now=now_utc,
+            delay_min=POST_LECTURE_DELAY_MIN, tz_name=tz_name,
+        )
+        if created:
+            out.append((branch_id, len(created)))
+    return out
+
+
+async def _run_post_lecture_notify(now_utc: datetime | None = None):
+    now = now_utc or datetime.now(timezone.utc)
+    async with async_session_factory() as session:
+        result = await run_post_lecture_notify(session, now)
+        await session.commit()
+    return [(str(b), n) for b, n in result]
+
+
+@celery_app.task(name="attendance.post_lecture_absent_notify")
+def post_lecture_absent_notify():
+    """Beat entrypoint — mark+notify absent 120 min after a student's last lecture."""
+    return run_task(_run_post_lecture_notify)
 
 
 # ── Morning lecture reminders ───────────────────────────────────────────────
@@ -149,7 +191,7 @@ async def _run_lecture_reminders(now_utc: datetime | None = None):
 @celery_app.task(name="notifications.lecture_reminders")
 def lecture_reminders():
     """Beat entrypoint — morning 'your lectures today' reminders per branch."""
-    return asyncio.run(_run_lecture_reminders())
+    return run_task(_run_lecture_reminders)
 
 
 async def _rebuild_one(student_id: uuid.UUID, branch_id: uuid.UUID, day: date):
@@ -163,8 +205,8 @@ async def _rebuild_one(student_id: uuid.UUID, branch_id: uuid.UUID, day: date):
 @celery_app.task(name="attendance.rebuild_student_day")
 def rebuild_student_day(student_id: str, branch_id: str, day_iso: str):
     """Near-real-time: recompute one student's day after a punch ingest."""
-    return asyncio.run(
-        _rebuild_one(uuid.UUID(student_id), uuid.UUID(branch_id), date.fromisoformat(day_iso))
+    return run_task(
+        lambda: _rebuild_one(uuid.UUID(student_id), uuid.UUID(branch_id), date.fromisoformat(day_iso))
     )
 
 
@@ -192,7 +234,7 @@ async def _run_eto_poll() -> dict:
 @celery_app.task(name="attendance.etimeoffice_poll")
 def etimeoffice_poll():
     """Beat entrypoint — pull recent eTimeOffice punches for the configured branch."""
-    return asyncio.run(_run_eto_poll())
+    return run_task(_run_eto_poll)
 
 
 # ── SmartOffice cloud poll ──────────────────────────────────────────────────
@@ -220,4 +262,4 @@ async def _run_smartoffice_poll() -> dict:
 @celery_app.task(name="attendance.smartoffice_poll")
 def smartoffice_poll():
     """Beat entrypoint — pull recent SmartOffice punches for the configured branch."""
-    return asyncio.run(_run_smartoffice_poll())
+    return run_task(_run_smartoffice_poll)

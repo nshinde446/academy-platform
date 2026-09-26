@@ -2,7 +2,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -198,8 +198,14 @@ async def consume_events(session: AsyncSession, limit: int = 100) -> dict:
     An event whose type has no active template simply enqueues nothing and is
     still marked processed, so it isn't re-examined forever.
     """
+    # Only consider events whose type has an active template — otherwise a flood
+    # of no-template events (e.g. ATTENDANCE_MARKED, one per punch) fills the
+    # oldest-first batch and starves the ones that actually notify (STUDENT_ABSENT).
+    notifiable = await notification_repository.active_template_event_types(session)
+    if not notifiable:
+        return {"consumed": 0, "enqueued": 0}
     events = await event_repository.get_unprocessed_events(
-        session, CONSUMER_NAME, limit=limit
+        session, CONSUMER_NAME, limit=limit, event_types=notifiable
     )
 
     consumed = 0
@@ -269,6 +275,13 @@ async def process_event(
         body = render_template(template.body_template, event_data)
         recipient = event_data.get("recipient", "placeholder@example.com")
 
+        raw_student_id = event_data.get("student_id")
+        student_id = (
+            uuid.UUID(raw_student_id)
+            if isinstance(raw_student_id, str)
+            else raw_student_id
+        )
+
         queue_item = await notification_repository.enqueue_notification(
             session,
             template_id=template.id,
@@ -277,6 +290,7 @@ async def process_event(
             payload_json=json.dumps(event_data, default=str),
             delivery_status="PENDING",
             branch_id=branch_id,
+            student_id=student_id,
         )
 
         now = datetime.now(timezone.utc)
@@ -499,16 +513,39 @@ async def delivery_log(
     *,
     branch_id: uuid.UUID | None = None,
     delivery_status: str | None = None,
+    batch_id: uuid.UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    q: str | None = None,
     offset: int = 0,
     limit: int = 100,
 ) -> list[dict]:
     """WhatsApp absence-notification delivery log — who actually received a
-    message, so the team can confirm coverage and re-send to anyone missed."""
+    message, so the team can confirm coverage and re-send to anyone missed.
+
+    Filterable by batch (via the student's batch memberships), an inclusive
+    ``date_from``/``date_to`` range over when the message was created, and a
+    free-text ``q`` matched against student name and parent number."""
+    created_from = (
+        datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+        if date_from is not None
+        else None
+    )
+    # Exclusive upper bound one day past date_to so the whole to-day is included.
+    created_to = (
+        datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=timezone.utc)
+        if date_to is not None
+        else None
+    )
     items = await notification_repository.list_queue(
         session,
         delivery_status=delivery_status,
         branch_id=branch_id,
         channel="whatsapp",
+        batch_id=batch_id,
+        created_from=created_from,
+        created_to=created_to,
+        q=q,
         offset=offset,
         limit=limit,
     )

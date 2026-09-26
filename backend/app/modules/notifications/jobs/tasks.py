@@ -20,10 +20,9 @@ Run (worker registers the task via celery_app imports)::
 
 from __future__ import annotations
 
-import asyncio
-
 from app.core.database.session import async_session_factory
 from app.core.jobs.celery_app import celery_app
+from app.core.jobs.run import run_task
 from app.modules.notifications.services import notification_service
 
 
@@ -38,4 +37,4 @@ async def _run_pipeline() -> dict:
 @celery_app.task(name="notifications.process_pipeline")
 def process_notification_queue() -> dict:
     """Beat entrypoint — consume events then drain the notification queue."""
-    return asyncio.run(_run_pipeline())
+    return run_task(_run_pipeline)
