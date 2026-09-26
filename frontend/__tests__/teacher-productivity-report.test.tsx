@@ -128,7 +128,11 @@ describe("Teacher productivity report", () => {
     render(<ReportCharts report={report} />);
     expect(screen.getByText("Scheduled vs Conducted")).toBeInTheDocument();
     expect(screen.getByText("Week-wise trend")).toBeInTheDocument();
-    expect(screen.getByText("Physics")).toBeInTheDocument();
+    // The subject-wise pie and the subject-wise bar chart both list the subject.
+    expect(screen.getAllByText("Physics").length).toBeGreaterThan(0);
     expect(screen.getByText("11TH CET-1")).toBeInTheDocument();
+    // The two requirement pie charts.
+    expect(screen.getByText("Subject-wise Lectures")).toBeInTheDocument();
+    expect(screen.getByText("Teacher-wise Lectures")).toBeInTheDocument();
   });
 });
