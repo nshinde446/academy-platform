@@ -21,6 +21,7 @@ from app.modules.staff.schemas.staff_schemas import (
     DepartmentWithAllocation,
     ImportSummary,
     LinkTeacherRequest,
+    ProductivitySummaryResponse,
     StaffCreate,
     StaffDayRegisterRow,
     StaffResponse,
@@ -169,12 +170,31 @@ async def download_faculty_summary(
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
-    """Cumulative per-teacher summary (present days, work, lectures, delayed)."""
+    """Teacher Productivity summary (present days, lectures, scheduled + delivered
+    hours) with subject/teacher pie data — as Excel or PDF."""
     filename, data, mime = await staff_faculty_service.summary_report(
         session, branch_id=branch_id, start=start, end=end,
         teacher_ids=teacher_ids, fmt=fmt,
     )
     return _download(filename, data, mime)
+
+
+@router.get(
+    "/faculty-activity/summary-data", response_model=ProductivitySummaryResponse
+)
+async def faculty_summary_data(
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    teacher_ids: list[uuid.UUID] | None = Query(None),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """JSON for the Teacher Productivity page: the document summary table plus the
+    subject-wise and teacher-wise lecture counts for the two pie charts."""
+    return await staff_faculty_service.summary_data(
+        session, branch_id=branch_id, start=start, end=end, teacher_ids=teacher_ids,
+    )
 
 
 @router.get("/day-register", response_model=list[StaffDayRegisterRow])

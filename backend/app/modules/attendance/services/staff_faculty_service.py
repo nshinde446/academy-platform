@@ -135,16 +135,28 @@ async def _lecture_stats(
             row["subject"] = subj_names.get(row.pop("subject_id"), "")
             row["batch"] = batch_names.get(row.pop("batch_id"), "")
 
+    # Resolve every subject id we saw (not just the delayed ones) so the summary
+    # can label a teacher and drive the subject-wise pie.
+    if subj_counts:
+        missing = [sid for sid in subj_counts if not subj_names.get(sid)]
+        if missing:
+            for sid, name in (await session.execute(
+                select(Subject.id, Subject.name).where(Subject.id.in_(missing))
+            )).all():
+                subj_names[sid] = name
+
+    # Lecture counts keyed by subject NAME (per-course sibling subjects share a
+    # name — collapsing by name matches the rest of the app's subject handling).
+    subject_counts: dict[str, int] = {}
+    for sid, cnt in subj_counts.items():
+        name = subj_names.get(sid) or "—"
+        subject_counts[name] = subject_counts.get(name, 0) + cnt
+
     # The teacher's dominant subject over the range (top by lecture count).
     top_subject = ""
     if subj_counts:
         top_id = max(subj_counts, key=lambda k: subj_counts[k])
-        name = subj_names.get(top_id) or ""
-        if not name:
-            name = (await session.execute(
-                select(Subject.name).where(Subject.id == top_id)
-            )).scalar_one_or_none() or ""
-        top_subject = name
+        top_subject = subj_names.get(top_id) or ""
 
     return {
         "total_lectures": len(lectures),
@@ -154,6 +166,7 @@ async def _lecture_stats(
         "delay_min": delay_min,
         "delayed_detail": detail,
         "top_subject": top_subject,
+        "subject_counts": subject_counts,
     }
 
 
@@ -227,17 +240,22 @@ async def daily_report(
     return f"{base}.pdf", await ex.render_html_to_pdf(_daily_html(brand, data, gen)), PDF_MIME
 
 
-async def summary_report(
+async def summary_data(
     session: AsyncSession, *, branch_id: uuid.UUID, start: date, end: date,
-    teacher_ids: list[uuid.UUID] | None, fmt: str,
-) -> tuple[str, bytes, str]:
+    teacher_ids: list[uuid.UUID] | None,
+) -> dict:
+    """Teacher Productivity summary (client document Sections 3 & 5): one row per
+    teaching staff — emp_code, auto initials, teacher, subject, present days, total
+    lectures, scheduled + delivered lecture minutes — plus subject-wise and
+    teacher-wise (by initials) lecture counts for the two pie charts."""
     tz = await daily_service.branch_timezone(session, branch_id)
     staff_rows = await _teaching_staff(session, branch_id, teacher_ids)
     win_start, _ = day_bounds(start, tz)
     _, win_end = day_bounds(end, tz)
 
-    # Present-day count per staff over the range.
     rows: list[dict] = []
+    subject_totals: dict[str, int] = {}
+    teacher_totals: list[dict] = []
     for s in staff_rows:
         present_days = (await session.execute(
             select(StaffDailyAttendance).where(
@@ -249,7 +267,9 @@ async def summary_report(
                 StaffDailyAttendance.is_deleted == False,  # noqa: E712
             )
         )).scalars().all()
-        stats = await _lecture_stats(session, branch_id, s.linked_teacher_id, win_start, win_end, tz)
+        stats = await _lecture_stats(
+            session, branch_id, s.linked_teacher_id, win_start, win_end, tz
+        )
         teacher = (await session.execute(
             select(Teacher).where(Teacher.id == s.linked_teacher_id)
         )).scalar_one_or_none()
@@ -257,23 +277,56 @@ async def summary_report(
             f"{teacher.first_name} {teacher.last_name}".strip() if teacher
             else f"{s.first_name} {s.last_name}".strip()
         )
+        initials = _initials(teacher_name)
         rows.append({
             "emp_code": s.emp_code,
-            "initials": _initials(teacher_name),
+            "initials": initials,
             "teacher_name": teacher_name,
-            "subject": stats["top_subject"],
+            "subject": stats["top_subject"] or "—",
             "present_days": len(present_days),
             "total_lectures": stats["total_lectures"],
-            "total_hours": _hours_words(stats["effective_min"]),
+            "scheduled_minutes": stats["scheduled_min"],
+            "delivered_minutes": stats["effective_min"],
         })
+        for sname, cnt in stats["subject_counts"].items():
+            subject_totals[sname] = subject_totals.get(sname, 0) + cnt
+        if stats["total_lectures"] > 0:
+            teacher_totals.append(
+                {"initials": initials, "lectures": stats["total_lectures"]}
+            )
 
+    by_subject = [
+        {"label": k, "lectures": v}
+        for k, v in sorted(subject_totals.items(), key=lambda kv: kv[1], reverse=True)
+    ]
+    by_teacher = [
+        {"label": t["initials"], "lectures": t["lectures"]}
+        for t in sorted(teacher_totals, key=lambda r: r["lectures"], reverse=True)
+    ]
+    return {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "rows": rows,
+        "by_subject": by_subject,
+        "by_teacher": by_teacher,
+    }
+
+
+async def summary_report(
+    session: AsyncSession, *, branch_id: uuid.UUID, start: date, end: date,
+    teacher_ids: list[uuid.UUID] | None, fmt: str,
+) -> tuple[str, bytes, str]:
+    tz = await daily_service.branch_timezone(session, branch_id)
+    data = await summary_data(
+        session, branch_id=branch_id, start=start, end=end, teacher_ids=teacher_ids
+    )
     brand = get_settings().ACADEMY_BRAND_NAME
     gen = ex.generated_stamp(tz)
-    base = f"faculty-summary-{start}-{end}"
+    base = f"teacher-productivity-{start}-{end}"
     if fmt == "xlsx":
-        return f"{base}.xlsx", _summary_xlsx(brand, start, end, rows, gen), XLSX_MIME
+        return f"{base}.xlsx", _summary_xlsx(brand, start, end, data, gen), XLSX_MIME
     return f"{base}.pdf", await ex.render_html_to_pdf(
-        _summary_html(brand, start, end, rows, gen), landscape=True), PDF_MIME
+        _summary_html(brand, start, end, data, gen), landscape=True), PDF_MIME
 
 
 # ── Builders ────────────────────────────────────────────────────────────────
@@ -360,39 +413,95 @@ def _daily_xlsx(brand: str, d: dict, gen: str) -> bytes:
 
 _SUMMARY_HEADERS = [
     "Sr No", "Employee Code", "Initials", "Teacher", "Subject",
-    "Present Days", "Total Lectures", "Total Hours",
+    "Present Days", "Total Lectures", "Scheduled Hours", "Delivered Hours",
+]
+
+# Pie-slice palette, mirrored on the frontend charts.
+_PALETTE = [
+    "#2563eb", "#f59e0b", "#10b981", "#ef4444", "#8b5cf6", "#06b6d4",
+    "#ec4899", "#84cc16", "#f97316", "#14b8a6", "#a855f7", "#eab308",
 ]
 
 
-def _summary_html(brand: str, start: date, end: date, rows: list[dict], gen: str) -> str:
+def _pie_html(title: str, items: list[dict]) -> str:
+    """A conic-gradient pie + legend (count and %) — Chromium renders it in PDF."""
+    total = sum(it["lectures"] for it in items) or 1
+    stops: list[str] = []
+    legend: list[str] = []
+    acc = 0.0
+    for i, it in enumerate(items):
+        color = _PALETTE[i % len(_PALETTE)]
+        a = acc / total * 360
+        acc += it["lectures"]
+        b = acc / total * 360
+        stops.append(f"{color} {a:.2f}deg {b:.2f}deg")
+        pct = it["lectures"] / total * 100
+        legend.append(
+            f"<li><span class='sw' style='background:{color}'></span>"
+            f"{ex._esc(it['label'])} — {it['lectures']} ({pct:.0f}%)</li>"
+        )
+    grad = ", ".join(stops) or "#e5e7eb 0deg 360deg"
+    return (
+        f"<div class='pie-block'><h2 class='pie-title'>{ex._esc(title)}</h2>"
+        f"<div class='pie-row'>"
+        f"<div class='pie' style='background:conic-gradient({grad})'></div>"
+        f"<ul class='legend'>{''.join(legend)}</ul></div></div>"
+    )
+
+
+_PIE_CSS = (
+    "<style>"
+    ".pies{display:flex;gap:28px;flex-wrap:wrap;margin-top:8px}"
+    ".pie-block{min-width:280px}"
+    ".pie-title{font-size:12px;margin:0 0 6px}"
+    ".pie-row{display:flex;gap:14px;align-items:center}"
+    ".pie{width:130px;height:130px;border-radius:50%;flex:none}"
+    ".legend{list-style:none;margin:0;padding:0;font-size:10.5px}"
+    ".legend li{margin:2px 0;white-space:nowrap}"
+    ".sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}"
+    "</style>"
+)
+
+
+def _summary_html(brand: str, start: date, end: date, data: dict, gen: str) -> str:
+    rows = data["rows"]
     ths = "".join(f"<th>{ex._esc(h)}</th>" for h in _SUMMARY_HEADERS)
     body_rows = "".join(
         f"<tr><td class='c'>{i}</td><td class='c'>{ex._esc(r['emp_code'])}</td>"
         f"<td class='c'>{ex._esc(r['initials'])}</td><td>{ex._esc(r['teacher_name'])}</td>"
         f"<td>{ex._esc(r['subject'])}</td><td class='c'>{r['present_days']}</td>"
-        f"<td class='c'>{r['total_lectures']}</td><td class='c'>{ex._esc(r['total_hours'])}</td></tr>"
+        f"<td class='c'>{r['total_lectures']}</td>"
+        f"<td class='c'>{ex._esc(_hours_words(r['scheduled_minutes']))}</td>"
+        f"<td class='c'>{ex._esc(_hours_words(r['delivered_minutes']))}</td></tr>"
         for i, r in enumerate(rows, start=1)
     )
     empty = "" if rows else "<p class='sub'>No teaching staff linked for this period.</p>"
+    charts = (
+        f"<div class='pies'>{_pie_html('Subject-wise Lectures', data['by_subject'])}"
+        f"{_pie_html('Teacher-wise Lectures', data['by_teacher'])}</div>"
+        if rows else ""
+    )
     body = (
-        f"<h1>{ex._esc(brand)} — Daily Summary Report (Cumulative, Teachers)</h1>"
+        f"{_PIE_CSS}"
+        f"<h1>{ex._esc(brand)} — Teacher Productivity Report</h1>"
         f"<p class='sub'>{ex._period(start, end)}</p>"
-        f"<table><tr>{ths}</tr>{body_rows}</table>{empty}"
+        f"<table><tr>{ths}</tr>{body_rows}</table>{empty}{charts}"
     )
     return ex._doc(body, gen)
 
 
-def _summary_xlsx(brand: str, start: date, end: date, rows: list[dict], gen: str) -> bytes:
+def _summary_xlsx(brand: str, start: date, end: date, data: dict, gen: str) -> bytes:
     from openpyxl import Workbook
     from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
 
+    rows = data["rows"]
     wb = Workbook()
     ws = wb.active
-    ws.title = "Cumulative"
+    ws.title = "Productivity"
     ws["A1"] = brand
     ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"] = "Daily Summary Report (Cumulative, Teachers)"
+    ws["A2"] = "Teacher Productivity Report"
     ws["A3"] = ex._period(start, end)
     ws["A4"] = gen
     head = 5
@@ -407,7 +516,38 @@ def _summary_xlsx(brand: str, start: date, end: date, rows: list[dict], gen: str
         ws.cell(row=row, column=5, value=r["subject"])
         ws.cell(row=row, column=6, value=r["present_days"])
         ws.cell(row=row, column=7, value=r["total_lectures"])
-        ws.cell(row=row, column=8, value=r["total_hours"])
-    for c, w in enumerate((7, 14, 9, 24, 12, 12, 14, 16), start=1):
+        ws.cell(row=row, column=8, value=_hours_words(r["scheduled_minutes"]))
+        ws.cell(row=row, column=9, value=_hours_words(r["delivered_minutes"]))
+    for c, w in enumerate((7, 14, 9, 24, 12, 12, 14, 16, 16), start=1):
         ws.column_dimensions[get_column_letter(c)].width = w
+
+    # Two pie charts on a Charts sheet (Section 5).
+    cs = wb.create_sheet("Charts")
+    _xlsx_pie(cs, "Subject-wise Lectures", "Subject", data["by_subject"], 1)
+    _xlsx_pie(cs, "Teacher-wise Lectures", "Initials", data["by_teacher"], 5)
     return ex._xlsx_bytes(wb)
+
+
+def _xlsx_pie(ws, title: str, label_hdr: str, items: list[dict], col: int) -> None:
+    from openpyxl.chart import PieChart, Reference
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    ws.cell(row=1, column=col, value=label_hdr).font = Font(bold=True)
+    ws.cell(row=1, column=col + 1, value="Lectures").font = Font(bold=True)
+    for i, it in enumerate(items, start=2):
+        ws.cell(row=i, column=col, value=it["label"])
+        ws.cell(row=i, column=col + 1, value=it["lectures"])
+    ws.column_dimensions[get_column_letter(col)].width = 16
+    n = len(items)
+    if n == 0:
+        return
+    chart = PieChart()
+    chart.title = title
+    labels = Reference(ws, min_col=col, min_row=2, max_row=n + 1)
+    values = Reference(ws, min_col=col + 1, min_row=1, max_row=n + 1)
+    chart.add_data(values, titles_from_data=True)
+    chart.set_categories(labels)
+    chart.height = 8
+    chart.width = 12
+    ws.add_chart(chart, f"{get_column_letter(col)}{n + 4}")

@@ -104,3 +104,27 @@ class StaffDayRegisterRow(BaseModel):
     ot_minutes: int = 0
     status: str
     missed_signoff: bool = False
+
+
+class ProductivitySummaryRow(BaseModel):
+    emp_code: str
+    initials: str
+    teacher_name: str
+    subject: str
+    present_days: int
+    total_lectures: int
+    scheduled_minutes: int
+    delivered_minutes: int
+
+
+class ProductivityChartSlice(BaseModel):
+    label: str
+    lectures: int
+
+
+class ProductivitySummaryResponse(BaseModel):
+    start: str
+    end: str
+    rows: list[ProductivitySummaryRow]
+    by_subject: list[ProductivityChartSlice]
+    by_teacher: list[ProductivityChartSlice]
