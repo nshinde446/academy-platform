@@ -9,6 +9,17 @@ import type {
   ProductivityReportTeacherRow,
   ProductivityReportTrendPoint,
 } from "../_schemas/productivity-report";
+import { PieChart, withOthers, type PieSlice } from "./pie-chart";
+
+/** Auto-initials from a teacher's name — "Bhagvat Dhesale" -> "BD". */
+function initials(first: string, last: string): string {
+  return `${first} ${last}`
+    .split(/\s+/)
+    .map((p) => p.replace(/[^A-Za-z]/g, ""))
+    .filter(Boolean)
+    .map((p) => p[0]!.toUpperCase())
+    .join("");
+}
 
 type Metric = "conducted" | "hours" | "completion_pct";
 
@@ -253,8 +264,22 @@ function TrendChart({ trend }: { trend: ProductivityReportTrendPoint[] }) {
 }
 
 export function ReportCharts({ report }: { report: ProductivityReportResponse }) {
+  // Lecture split by subject and by teacher (initials), on the conducted count —
+  // the two pie charts from the requirement. Both follow the report's date range.
+  const subjectSlices: PieSlice[] = withOthers(
+    report.by_subject.map((s) => ({ label: s.subject_name, value: s.conducted })),
+  );
+  const teacherSlices: PieSlice[] = withOthers(
+    report.by_teacher.map((t) => ({
+      label: initials(t.first_name, t.last_name),
+      value: t.conducted,
+    })),
+  );
+
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <PieChart title="Subject-wise Lectures" slices={subjectSlices} />
+      <PieChart title="Teacher-wise Lectures" slices={teacherSlices} />
       <ScheduledVsActual rows={report.by_teacher} />
       <TrendChart trend={report.trend} />
       <DimChart
