@@ -25,7 +25,12 @@ from app.modules.attendance.models.attendance_models import (
     StaffRawPunchLog,
 )
 from app.modules.attendance.services.daily_service import branch_timezone
-from app.modules.attendance.time_utils import day_bounds, local_date_of, local_time_on
+from app.modules.attendance.time_utils import (
+    day_bounds,
+    get_tz,
+    local_date_of,
+    local_time_on,
+)
 from app.modules.lectures.models.lecture_models import Holiday
 from app.modules.staff.models.staff_models import Staff
 
@@ -218,3 +223,83 @@ async def rebuild(
             session, staff_id=staff_id, branch_id=branch_id, day=day, tz_name=tz_name
         )
     return len(cells)
+
+
+def _weekly_off_days(staff: Staff) -> set[int]:
+    raw = (
+        staff.weekly_off_days
+        if staff.weekly_off_days is not None
+        else get_settings().STAFF_WEEKLY_OFF_DAYS
+    )
+    return {int(p) for p in (raw or "").split(",") if p.strip().isdigit()}
+
+
+async def day_register(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    day: date,
+    department_id: uuid.UUID | None = None,
+) -> list[dict]:
+    """Per-staff attendance for a single local day — the staff twin of the
+    student Day Register. Returns one row per staff (emp_code, name, department,
+    IN/OUT, work/OT minutes, day_status), whether or not they punched. A staff
+    with no computed row for the day resolves to WO (weekly-off) or ABSENT."""
+    from app.modules.staff.models.staff_models import Department
+
+    tz_name = await branch_timezone(session, branch_id)
+    tz = get_tz(tz_name)
+
+    q = select(Staff).where(
+        Staff.branch_id == branch_id, Staff.is_deleted == False  # noqa: E712
+    )
+    if department_id is not None:
+        q = q.where(Staff.department_id == department_id)
+    staff = list((await session.execute(q.order_by(Staff.emp_code))).scalars().all())
+
+    dept_names = {
+        d.id: d.name
+        for d in (await session.execute(
+            select(Department).where(
+                Department.branch_id == branch_id,
+                Department.is_deleted == False,  # noqa: E712
+            )
+        )).scalars().all()
+    }
+
+    day_rows = (await session.execute(
+        select(StaffDailyAttendance).where(
+            StaffDailyAttendance.branch_id == branch_id,
+            StaffDailyAttendance.attendance_date == day,
+            StaffDailyAttendance.is_deleted == False,  # noqa: E712
+        )
+    )).scalars().all()
+    by_staff = {r.staff_id: r for r in day_rows}
+
+    def fmt_t(dt: datetime | None) -> str | None:
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(tz).strftime("%H:%M")
+
+    out: list[dict] = []
+    for s in staff:
+        r = by_staff.get(s.id)
+        if r is None:
+            status = "WO" if day.weekday() in _weekly_off_days(s) else "ABSENT"
+        else:
+            status = r.day_status
+        out.append({
+            "staff_id": s.id,
+            "emp_code": s.emp_code,
+            "name": " ".join(p for p in (s.title, s.first_name, s.last_name) if p),
+            "department": dept_names.get(s.department_id, "—"),
+            "in_time": fmt_t(r.first_in) if r else None,
+            "out_time": fmt_t(r.last_out) if r else None,
+            "work_minutes": (r.work_minutes or 0) if r else 0,
+            "ot_minutes": (r.ot_minutes or 0) if r else 0,
+            "status": status,
+            "missed_signoff": bool(r and r.signoff == "MISSING"),
+        })
+    return out

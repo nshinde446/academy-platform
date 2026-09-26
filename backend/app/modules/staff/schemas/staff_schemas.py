@@ -91,3 +91,16 @@ class ImportSummary(BaseModel):
     imported: int
     skipped: int
     errors: list[str] = []
+
+
+class StaffDayRegisterRow(BaseModel):
+    staff_id: uuid.UUID
+    emp_code: str
+    name: str
+    department: str
+    in_time: str | None = None
+    out_time: str | None = None
+    work_minutes: int = 0
+    ot_minutes: int = 0
+    status: str
+    missed_signoff: bool = False

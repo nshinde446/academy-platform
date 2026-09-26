@@ -56,4 +56,24 @@ describe("AttendanceNav", () => {
     );
     expect(screen.getByText("Device sync")).toBeInTheDocument();
   });
+
+  it("offers a Staff attendance view that picks 'staff'", () => {
+    const onChange = vi.fn();
+    render(<AttendanceNav view="overview" onChange={onChange} defaultersCount={0} />);
+    expect(screen.getByText("Staff attendance")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /Staff attendance/ }));
+    expect(onChange).toHaveBeenCalledWith("staff");
+  });
+
+  it("hides Staff attendance from a floor coordinator", () => {
+    render(
+      <AttendanceNav
+        view="overview"
+        onChange={() => {}}
+        defaultersCount={0}
+        isCoordinator
+      />,
+    );
+    expect(screen.queryByText("Staff attendance")).not.toBeInTheDocument();
+  });
 });

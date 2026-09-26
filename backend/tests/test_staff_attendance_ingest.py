@@ -134,3 +134,45 @@ async def test_half_day_when_work_below_threshold(db_session: AsyncSession, seed
     )).scalar_one()
     assert day.day_status == "HALF_DAY"
     assert day.work_minutes == 150
+
+
+async def test_day_register_lists_every_staff_with_status(
+    db_session: AsyncSession, seed_data
+):
+    """The staff Day Register returns one row per staff for the day — the puncher
+    with IN/OUT/work/LATE, and a non-puncher as ABSENT."""
+    from datetime import date
+
+    from app.modules.attendance.services import staff_daily_service
+
+    present = await _make_staff(db_session, "81")
+    # A second staff in the same dept who never punches -> ABSENT.
+    absent = Staff(
+        branch_id=BRANCH_A, emp_code="83", first_name="No", last_name="Show",
+        department_id=present.department_id,
+    )
+    db_session.add(absent)
+    await db_session.flush()
+
+    events = [
+        PunchEvent(vendor_user_id="81", punch_timestamp=_utc(2026, 8, 3, 4, 50),
+                   direction="IN", device_id="biomax"),
+        PunchEvent(vendor_user_id="81", punch_timestamp=_utc(2026, 8, 3, 13, 0),
+                   direction="OUT", device_id="biomax"),
+    ]
+    result = await ingest_punches(db_session, events, BRANCH_A)
+    await daily_service.rebuild_after_ingest(
+        db_session, branch_id=BRANCH_A, affected=[],
+        affected_staff=[(a.staff_id, a.punch_timestamp) for a in result.affected_staff],
+    )
+
+    rows = await staff_daily_service.day_register(
+        db_session, branch_id=BRANCH_A, day=date(2026, 8, 3),
+    )
+    by_code = {r["emp_code"]: r for r in rows}
+    assert by_code["81"]["status"] == "LATE"
+    assert by_code["81"]["in_time"] == "10:20"
+    assert by_code["81"]["out_time"] == "18:30"
+    assert by_code["81"]["work_minutes"] == 490
+    assert by_code["83"]["status"] == "ABSENT"
+    assert by_code["83"]["in_time"] is None

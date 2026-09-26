@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFi
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
-from app.modules.attendance.services import staff_faculty_service, staff_report_service
+from app.modules.attendance.services import (
+    staff_daily_service,
+    staff_faculty_service,
+    staff_report_service,
+)
 from app.modules.auth.permissions.rbac import (
     get_current_user,
     require_manager_or_audit,
@@ -18,6 +22,7 @@ from app.modules.staff.schemas.staff_schemas import (
     ImportSummary,
     LinkTeacherRequest,
     StaffCreate,
+    StaffDayRegisterRow,
     StaffResponse,
     StaffUpdate,
 )
@@ -170,6 +175,21 @@ async def download_faculty_summary(
         teacher_ids=teacher_ids, fmt=fmt,
     )
     return _download(filename, data, mime)
+
+
+@router.get("/day-register", response_model=list[StaffDayRegisterRow])
+async def staff_day_register(
+    branch_id: uuid.UUID = Query(...),
+    day: date = Query(...),
+    department_id: uuid.UUID | None = Query(None),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """One day's staff attendance roster — per-staff IN/OUT/work/status, so staff
+    attendance is tracked daily alongside the student day register."""
+    return await staff_daily_service.day_register(
+        session, branch_id=branch_id, day=day, department_id=department_id,
+    )
 
 
 @router.get("/{staff_id}", response_model=StaffResponse)
