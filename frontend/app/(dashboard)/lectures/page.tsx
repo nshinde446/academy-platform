@@ -75,6 +75,7 @@ import { SessionList } from "./_components/session-list";
 import { downloadScheduleCsv } from "./_lib/export-schedule";
 import { TimetableDialog } from "./_components/timetable-dialog";
 import { HolidaysDialog } from "./_components/holidays-dialog";
+import { LectureReportDialog } from "./_components/lecture-report-dialog";
 import { PendingActualsPanel } from "./_components/pending-actuals-panel";
 import { MakeupQueuePanel } from "./_components/makeup-queue-panel";
 import { CalendarWeekView } from "./_components/calendar-week-view";
@@ -247,7 +248,7 @@ function LecturesPageBody() {
 
   // Which "Manage" tool dialog is open (driven from the header overflow menu).
   const [tool, setTool] = useState<
-    "timetable" | "holidays" | "leave" | "copy" | null
+    "timetable" | "holidays" | "leave" | "copy" | "report" | null
   >(null);
 
   // Row selection for "copy selected to date" — explicit, no by-date guess.
@@ -636,6 +637,9 @@ function LecturesPageBody() {
           >
             Download CSV
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTool("report")}>
+            Lecture Report (Excel / PDF)
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -677,6 +681,18 @@ function LecturesPageBody() {
         hideTrigger
         open={tool === "copy"}
         onOpenChange={(o) => setTool(o ? "copy" : null)}
+      />
+      <LectureReportDialog
+        branchId={branchId}
+        open={tool === "report"}
+        onOpenChange={(o) => setTool(o ? "report" : null)}
+        fromDate={fromDate}
+        toDate={toDate}
+        teachers={teachers.map((t) => ({
+          id: t.id,
+          label: `${t.first_name} ${t.last_name}`,
+        }))}
+        batches={batches.map((b) => ({ id: b.id, label: `${b.name} (${b.code})` }))}
       />
     </div>
   );

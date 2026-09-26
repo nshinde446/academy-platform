@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +45,7 @@ from app.modules.lectures.schemas.lecture_schemas import (
 )
 from app.modules.lectures.services import (
     import_service,
+    lecture_report_service,
     lecture_service,
     productivity_export_service,
 )
@@ -297,6 +298,35 @@ async def export_productivity_report(
         report, fmt=fmt, brand=brand
     )
     filename = f"teacher_productivity.{fmt}"
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/report/export")
+async def export_lecture_report(
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    duration_style: str = Query("min", pattern="^(min|hhmm)$"),
+    fmt: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    teacher_id: uuid.UUID | None = Query(None),
+    batch_id: uuid.UUID | None = Query(None),
+    subject_id: uuid.UUID | None = Query(None),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Flat per-lecture Lecture Report over a date range — every lecture with
+    schedule-vs-actual (time-only columns), who delivered it, who recorded the
+    entry and when, Duration as minutes or HH:MM. Literal path — before
+    ``/{lecture_id}`` routes."""
+    filename, data, mime = await lecture_report_service.generate(
+        session, branch_id=branch_id, start=start, end=end, fmt=fmt,
+        duration_style=duration_style, teacher_id=teacher_id,
+        batch_id=batch_id, subject_id=subject_id,
+    )
     return Response(
         content=data,
         media_type=mime,
