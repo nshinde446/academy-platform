@@ -17,6 +17,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config.settings import get_settings
 from app.modules.attendance.integrations.biomax import biometrics
 
 from app.modules.attendance.models.provisioning_models import (
@@ -841,6 +842,73 @@ async def enqueue_cross_device_restore(
     return len(rows)
 
 
+def _live_device_serials() -> list[str]:
+    raw = get_settings().BIOMAX_DEVICE_SERIALS or ""
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+async def sync_fleet_faces(
+    session: AsyncSession, branch_id: uuid.UUID, *, dry_run: bool = False
+) -> dict:
+    """Fan out every backed-up face to every live device that's missing it —
+    "enrol once, available everywhere" for the whole fleet.
+
+    For each user with a face backup on ANY device, enqueue a cross-device restore
+    onto every OTHER live terminal we haven't already pushed them to. "Already
+    pushed" is judged by OUR command history — a CONFIRMED or in-flight restore for
+    that (device, userId) — NOT the device's ``has_face`` mirror, which lags behind
+    restores and enrolments and would make the sync re-push everyone every run. So
+    each face is pushed to each device exactly once; a newly-enrolled face (a fresh
+    server backup) fans out on the next run. Idempotent + safe to schedule.
+    Eventually-consistent; templates decrypt + inject at emit. Covers students AND
+    staff (keyed on the device userId). ``dry_run`` counts without enqueuing.
+    """
+    devices = _live_device_serials()
+    backups = await device_command_repo.all_faces_with_source(session, branch_id)
+
+    # uid -> a source device that holds its face; keep a name if any backup has one.
+    src_by_uid: dict[str, str] = {}
+    name_by_uid: dict[str, str | None] = {}
+    for uid, name, dev in backups:
+        src_by_uid.setdefault(uid, dev)
+        if name and uid not in name_by_uid:
+            name_by_uid[uid] = name
+
+    per_device: dict[str, int] = {}
+    for target in devices:
+        candidates = [uid for uid, src in src_by_uid.items() if src != target]
+        # "Device already has this face" = the enrolment mirror reports has_face
+        # (covers faces enrolled locally on the device) OR we have a CONFIRMED
+        # face-restore for it (covers faces we pushed, which the mirror lags on).
+        # Plus skip in-flight. Identity-only pushes are deliberately NOT counted,
+        # so a staff member who only got a name still receives their face.
+        mirror = await device_command_repo.list_device_users(session, branch_id, target)
+        has_face = {u.vendor_user_id for u in mirror if getattr(u, "has_face", False)}
+        face_restored = await device_command_repo.confirmed_face_user_ids(
+            session, target, candidates
+        )
+        inflight = await device_command_repo.inflight_user_ids(session, target, candidates)
+        done = has_face | face_restored | inflight
+        to_push = [uid for uid in candidates if uid not in done]
+        if not dry_run and to_push:
+            rows = [
+                build_restore_command_row(
+                    branch_id, target, uid, name_by_uid.get(uid),
+                    source_dev_id=src_by_uid[uid],
+                )
+                for uid in to_push
+            ]
+            await device_command_repo.enqueue(session, rows)
+        per_device[target] = len(to_push)
+
+    return {
+        "dry_run": dry_run,
+        "faces_in_pool": len(src_by_uid),
+        "per_device_enqueued": per_device,
+        "total_enqueued": sum(per_device.values()),
+    }
+
+
 async def build_restore_emit_payload(
     session: AsyncSession, dev_id: str, command
 ) -> dict:
@@ -889,6 +957,28 @@ async def student_face_photo(
     rfid = (student.rfid_number or "").strip() or None
     row = await device_command_repo.latest_photo_biometric(
         session, branch_id, student_id, rfid
+    )
+    if row is None or not row.photo_enc:
+        return None
+    b64 = biometrics.decrypt_template(row.photo_enc)
+    if not b64:
+        return None
+    try:
+        return base64.b64decode(b64)
+    except (ValueError, TypeError):
+        return None
+
+
+async def face_photo_by_uid(
+    session: AsyncSession, branch_id: uuid.UUID, vendor_user_id: str
+) -> bytes | None:
+    """Enrolled face photo (JPEG bytes) for a device userId (staff emp_code /
+    student rfid), decrypted from the biometric backup — or None. Powers the
+    staff/teacher roster avatars."""
+    if not biometrics.biometric_backup_enabled():
+        return None
+    row = await device_command_repo.latest_photo_biometric_by_uid(
+        session, branch_id, (vendor_user_id or "").strip()
     )
     if row is None or not row.photo_enc:
         return None

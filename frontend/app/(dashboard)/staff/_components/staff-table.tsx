@@ -10,10 +10,12 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FaceAvatar } from "@/components/roster/face-avatar";
 import type { StaffResponse } from "../_schemas/staff";
 
 interface StaffTableProps {
   rows: StaffResponse[];
+  branchId?: string;
   onEdit: (staff: StaffResponse) => void;
   onDelete?: (staff: StaffResponse) => void;
   selectedIds: Set<string>;
@@ -23,6 +25,7 @@ interface StaffTableProps {
 
 export function StaffTable({
   rows,
+  branchId,
   onEdit,
   onDelete,
   selectedIds,
@@ -72,7 +75,20 @@ export function StaffTable({
                 )}
               </TableCell>
               <TableCell>
-                {[s.title, s.first_name, s.last_name].filter(Boolean).join(" ")}
+                <span className="inline-flex items-center gap-2">
+                  <FaceAvatar
+                    src={
+                      branchId
+                        ? `/api/v1/staff/${s.id}/photo?branch_id=${branchId}`
+                        : null
+                    }
+                    first={s.first_name}
+                    last={s.last_name ?? ""}
+                  />
+                  {[s.title, s.first_name, s.last_name]
+                    .filter(Boolean)
+                    .join(" ")}
+                </span>
               </TableCell>
               <TableCell>{s.department_name ?? "—"}</TableCell>
               <TableCell>{s.designation ?? "—"}</TableCell>

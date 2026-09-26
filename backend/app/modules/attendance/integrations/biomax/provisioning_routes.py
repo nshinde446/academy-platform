@@ -377,6 +377,24 @@ async def restore_cross_device(
     return RestoreResponse(dev_id=dev_id, commands_enqueued=enqueued)
 
 
+@router.post("/sync-fleet-faces")
+async def sync_fleet_faces(
+    dry_run: bool = Query(True, description="count only; false actually enqueues"),
+    _enabled: None = Depends(_require_enabled),
+    _key: None = Depends(_require_biometric_key),
+    _user: dict = Depends(_ADMIN),
+    session: AsyncSession = Depends(get_db),
+):
+    """Fan out every backed-up face to every live terminal missing it — "enrol
+    once, available everywhere". Idempotent; enqueue-only (emission is the device's
+    normal poll). Defaults to dry-run so the count can be checked first."""
+    branch_id = _resolve_branch()
+    result = await provisioning_service.sync_fleet_faces(session, branch_id, dry_run=dry_run)
+    if not dry_run:
+        await session.commit()
+    return result
+
+
 @router.get("/commands", response_model=list[DeviceCommandResponse])
 async def list_commands(
     dev_id: str | None = Query(None),

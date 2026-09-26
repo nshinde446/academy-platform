@@ -163,11 +163,17 @@ services:
     # the backend healthcheck, and the post-deploy probes only hit
     # backend/frontend. Every background task has therefore never run.
     #
-    # Deliberately WITHOUT `-B`. Adding the beat scheduler also starts the
-    # nightly absent sweep, which writes attendance rows for real students —
-    # that is a production behaviour change that deserves its own decision, not
-    # a side effect of fixing a crash loop. See docs/git-and-deploy-workflow.md.
-    command: ["celery", "-A", "app.core.jobs.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    # Beat scheduler ON (`-B`) as of the WhatsApp attendance go-live (2026-09-21,
+    # explicit decision). This arms the periodic jobs: the per-lecture-end absent
+    # notify + nightly absent sweep (which now WRITE real attendance rows) and the
+    # notification delivery pipeline. Single worker service, so embedded beat is
+    # the one scheduler (no duplicate firings). WhatsApp sends stay gated behind
+    # WHATSAPP_ENABLED + the per-branch/per-batch toggles + active templates.
+    # `--schedule` points beat's shelve DB at a writable path; the default
+    # (celerybeat-schedule in CWD /app) is read-only for the non-root app user, so
+    # beat crashed with "Permission denied". /tmp is writable; the schedule is just
+    # last-run bookkeeping (tasks are idempotent, so losing it on restart is fine).
+    command: ["celery", "-A", "app.core.jobs.celery_app.celery_app", "worker", "-B", "--schedule=/tmp/celerybeat-schedule", "--loglevel=info", "--concurrency=2"]
     # Override the image's inherited HEALTHCHECK. backend/Dockerfile defines a
     # `curl http://127.0.0.1:8000/health` probe for the web server; the worker
     # runs no HTTP server, so that probe can never pass and the container sat
