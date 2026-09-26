@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
@@ -119,6 +119,40 @@ async def get_teacher(
     session: AsyncSession = Depends(get_db),
 ):
     return await teacher_service.get_teacher(session, teacher_id, branch_id)
+
+
+@router.get("/{teacher_id}/photo")
+async def get_teacher_photo(
+    teacher_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """The teacher's enrolled face photo (JPEG), resolved through the linked staff
+    row's emp_code (the biometric device userId). Any signed-in user may view it
+    (cookie auth, so an ``<img>`` works). 404 when the teacher has no linked staff
+    or no enrolled face."""
+    from fastapi import HTTPException, status
+
+    from app.modules.attendance.services import provisioning_service
+    from app.modules.staff.repositories import staff_repository
+
+    emp_map = await staff_repository.emp_code_by_linked_teacher(
+        session, branch_id, [teacher_id]
+    )
+    emp_code = emp_map.get(teacher_id)
+    jpeg = (
+        await provisioning_service.face_photo_by_uid(session, branch_id, emp_code)
+        if emp_code
+        else None
+    )
+    if jpeg is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No face photo.")
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
 
 
 @router.get("/{teacher_id}/subjects", response_model=TeacherSubjectsResponse)

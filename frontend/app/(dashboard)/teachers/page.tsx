@@ -210,6 +210,7 @@ export default function TeachersPage() {
           )}
           <TeacherTable
             rows={filtered}
+            branchId={branchId}
             teachersById={teachersById}
             onEdit={handleEdit}
             onDelete={isManager ? handleDeleteClick : undefined}
