@@ -191,6 +191,7 @@ export default function StaffPage() {
           )}
           <StaffTable
             rows={filtered}
+            branchId={branchId}
             onEdit={(s) => {
               setEditTarget(s);
               setEditOpen(true);

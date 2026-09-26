@@ -78,6 +78,30 @@ async def confirmed_user_ids(
     return {row[0] for row in result.all() if row[0] is not None}
 
 
+async def confirmed_face_user_ids(
+    session: AsyncSession, dev_id: str, vendor_user_ids: list[str]
+) -> set[str]:
+    """Which of these userIds have a CONFIRMED *face* restore on the device — i.e.
+    a face template was pushed AND acked (payload carried ``restore_biometrics``).
+    Distinct from ``confirmed_user_ids`` (which also counts identity-only pushes):
+    the fleet face-sync must NOT treat an identity-only push as "already has a
+    face". Payload is checked in Python so the filter is engine-portable."""
+    if not vendor_user_ids:
+        return set()
+    result = await session.execute(
+        select(DeviceCommand.vendor_user_id, DeviceCommand.payload).where(
+            DeviceCommand.dev_id == dev_id,
+            DeviceCommand.vendor_user_id.in_(vendor_user_ids),
+            DeviceCommand.command_status == STATUS_CONFIRMED,
+            DeviceCommand.is_deleted == False,
+        )
+    )
+    return {
+        uid for uid, payload in result.all()
+        if uid is not None and isinstance(payload, dict) and payload.get("restore_biometrics")
+    }
+
+
 async def next_pending(session: AsyncSession, dev_id: str) -> DeviceCommand | None:
     """Oldest pending command for a device.
 
@@ -452,6 +476,27 @@ async def latest_photo_biometric(
             DeviceUserBiometric.is_deleted == False,
             DeviceUserBiometric.photo_enc.isnot(None),
             or_(*clauses),
+        )
+        .order_by(DeviceUserBiometric.captured_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def latest_photo_biometric_by_uid(
+    session: AsyncSession, branch_id: uuid.UUID, vendor_user_id: str
+) -> DeviceUserBiometric | None:
+    """Most recent backed-up row (any device) with a photo for a device userId —
+    used for staff/teacher avatars, which are keyed on emp_code, not student_id."""
+    if not vendor_user_id:
+        return None
+    result = await session.execute(
+        select(DeviceUserBiometric)
+        .where(
+            DeviceUserBiometric.branch_id == branch_id,
+            DeviceUserBiometric.vendor_user_id == vendor_user_id,
+            DeviceUserBiometric.is_deleted == False,  # noqa: E712
+            DeviceUserBiometric.photo_enc.isnot(None),
         )
         .order_by(DeviceUserBiometric.captured_at.desc())
         .limit(1)
