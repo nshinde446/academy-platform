@@ -14,6 +14,22 @@ function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function iso(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** Start/end for a Daily / Weekly / Monthly preset, ending today. */
+function rangeForPreset(preset: "daily" | "weekly" | "monthly"): {
+  start: string;
+  end: string;
+} {
+  const end = new Date();
+  const start = new Date(end);
+  if (preset === "weekly") start.setDate(end.getDate() - 6);
+  else if (preset === "monthly") start.setDate(end.getDate() - 29);
+  return { start: iso(start), end: iso(end) };
+}
+
 async function downloadFile(path: string, params: URLSearchParams) {
   const res = await apiClient.get(`${path}?${params.toString()}`, {
     responseType: "blob",
@@ -41,7 +57,19 @@ export default function FacultyActivityPage() {
   const [day, setDay] = useState(isoToday());
   const [start, setStart] = useState(isoToday());
   const [end, setEnd] = useState(isoToday());
+  const [preset, setPreset] = useState<"daily" | "weekly" | "monthly" | "custom">(
+    "daily",
+  );
   const [fmt, setFmt] = useState("pdf");
+
+  function applyPreset(next: "daily" | "weekly" | "monthly" | "custom") {
+    setPreset(next);
+    if (next !== "custom") {
+      const r = rangeForPreset(next);
+      setStart(r.start);
+      setEnd(r.end);
+    }
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -134,14 +162,35 @@ export default function FacultyActivityPage() {
         <h2 className="mb-3 text-sm font-semibold">
           Cumulative Summary (all teachers)
         </h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4 lg:grid-cols-5">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="fa_preset">Range</Label>
+            <select
+              id="fa_preset"
+              value={preset}
+              onChange={(e) =>
+                applyPreset(
+                  e.target.value as "daily" | "weekly" | "monthly" | "custom",
+                )
+              }
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="daily">Daily (today)</option>
+              <option value="weekly">Weekly (7 days)</option>
+              <option value="monthly">Monthly (30 days)</option>
+              <option value="custom">Custom…</option>
+            </select>
+          </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="fa_start">From</Label>
             <Input
               id="fa_start"
               type="date"
               value={start}
-              onChange={(e) => setStart(e.target.value)}
+              onChange={(e) => {
+                setStart(e.target.value);
+                setPreset("custom");
+              }}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -150,7 +199,10 @@ export default function FacultyActivityPage() {
               id="fa_end"
               type="date"
               value={end}
-              onChange={(e) => setEnd(e.target.value)}
+              onChange={(e) => {
+                setEnd(e.target.value);
+                setPreset("custom");
+              }}
             />
           </div>
           <div className="flex flex-col gap-1.5">

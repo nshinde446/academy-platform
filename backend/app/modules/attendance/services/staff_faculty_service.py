@@ -42,6 +42,19 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower() or "report"
 
 
+def _initials(name: str) -> str:
+    """Auto-initials from a full name — "Bhagvat Dhesale" -> "BD". Letters only,
+    so titles/punctuation ("Mr.", "Anish A.") don't leak in."""
+    parts = [re.sub(r"[^A-Za-z]", "", p) for p in name.split()]
+    return "".join(p[0].upper() for p in parts if p)
+
+
+def _hours_words(minutes: int | None) -> str:
+    """Minutes -> "H Hours M Mins" (the summary's Total Hours column)."""
+    m = int(minutes or 0)
+    return f"{m // 60} Hours {m % 60} Mins"
+
+
 def _aware(dt: datetime | None) -> datetime | None:
     if dt is not None and dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
@@ -86,11 +99,15 @@ async def _lecture_stats(
     detail: list[dict] = []
     subj_names: dict[uuid.UUID, str] = {}
     batch_names: dict[uuid.UUID, str] = {}
+    # Lectures-per-subject, to label a teacher with the subject they teach most
+    # in this range (the summary report's "Subject" column).
+    subj_counts: dict[uuid.UUID, int] = {}
     for l in lectures:
         if l.actual_duration_min is not None:
             effective_min += l.actual_duration_min
         else:
             effective_min += _minutes(l.actual_start, l.actual_end)
+        subj_counts[l.subject_id] = subj_counts.get(l.subject_id, 0) + 1
         d = _minutes(l.scheduled_start, l.actual_start) if l.actual_start else 0
         delay_min += d
         if l.late_flag:
@@ -118,6 +135,17 @@ async def _lecture_stats(
             row["subject"] = subj_names.get(row.pop("subject_id"), "")
             row["batch"] = batch_names.get(row.pop("batch_id"), "")
 
+    # The teacher's dominant subject over the range (top by lecture count).
+    top_subject = ""
+    if subj_counts:
+        top_id = max(subj_counts, key=lambda k: subj_counts[k])
+        name = subj_names.get(top_id) or ""
+        if not name:
+            name = (await session.execute(
+                select(Subject.name).where(Subject.id == top_id)
+            )).scalar_one_or_none() or ""
+        top_subject = name
+
     return {
         "total_lectures": len(lectures),
         "delayed_lectures": delayed,
@@ -125,6 +153,7 @@ async def _lecture_stats(
         "effective_min": effective_min,
         "delay_min": delay_min,
         "delayed_detail": detail,
+        "top_subject": top_subject,
     }
 
 
@@ -220,21 +249,22 @@ async def summary_report(
                 StaffDailyAttendance.is_deleted == False,  # noqa: E712
             )
         )).scalars().all()
-        work_min = sum(d.work_minutes or 0 for d in present_days)
         stats = await _lecture_stats(session, branch_id, s.linked_teacher_id, win_start, win_end, tz)
         teacher = (await session.execute(
             select(Teacher).where(Teacher.id == s.linked_teacher_id)
         )).scalar_one_or_none()
+        teacher_name = (
+            f"{teacher.first_name} {teacher.last_name}".strip() if teacher
+            else f"{s.first_name} {s.last_name}".strip()
+        )
         rows.append({
             "emp_code": s.emp_code,
-            "teacher_name": (
-                f"{teacher.first_name} {teacher.last_name}".strip() if teacher
-                else f"{s.first_name} {s.last_name}".strip()
-            ),
+            "initials": _initials(teacher_name),
+            "teacher_name": teacher_name,
+            "subject": stats["top_subject"],
             "present_days": len(present_days),
-            "work": ex.fmt_minutes(work_min),
             "total_lectures": stats["total_lectures"],
-            "delayed_lectures": stats["delayed_lectures"],
+            "total_hours": _hours_words(stats["effective_min"]),
         })
 
     brand = get_settings().ACADEMY_BRAND_NAME
@@ -302,21 +332,46 @@ def _daily_xlsx(brand: str, d: dict, gen: str) -> bytes:
     for i, (k, v) in enumerate(pairs, start=6):
         ws.cell(row=i, column=1, value=k).font = Font(bold=True)
         ws.cell(row=i, column=2, value=v)
+
+    # Delayed Lectures detail table (mirrors the PDF) — batch, subject, times,
+    # minutes delayed. Placed a row below the summary pairs.
+    detail = d.get("delayed_detail") or []
+    if detail:
+        top = 6 + len(pairs) + 1
+        ws.cell(row=top, column=1, value="Delayed Lecture Details").font = Font(bold=True)
+        headers = ["Sr", "Batch", "Subject", "Scheduled", "Actual", "Delay"]
+        for c, h in enumerate(headers, start=1):
+            ws.cell(row=top + 1, column=c, value=h).font = Font(bold=True)
+        for i, r in enumerate(detail, start=1):
+            row = top + 1 + i
+            ws.cell(row=row, column=1, value=i)
+            ws.cell(row=row, column=2, value=r["batch"])
+            ws.cell(row=row, column=3, value=r["subject"])
+            ws.cell(row=row, column=4, value=r["scheduled"])
+            ws.cell(row=row, column=5, value=r["actual"])
+            ws.cell(row=row, column=6, value=ex.fmt_minutes(r["delay_min"]))
+
     ws.column_dimensions["A"].width = 26
-    ws.column_dimensions["B"].width = 16
+    ws.column_dimensions["B"].width = 20
+    for col in ("C", "D", "E", "F"):
+        ws.column_dimensions[col].width = 16
     return ex._xlsx_bytes(wb)
 
 
-_SUMMARY_HEADERS = ["Emp Code", "Teacher", "Present Days", "Total Work", "Total Lectures", "Delayed"]
+_SUMMARY_HEADERS = [
+    "Sr No", "Employee Code", "Initials", "Teacher", "Subject",
+    "Present Days", "Total Lectures", "Total Hours",
+]
 
 
 def _summary_html(brand: str, start: date, end: date, rows: list[dict], gen: str) -> str:
     ths = "".join(f"<th>{ex._esc(h)}</th>" for h in _SUMMARY_HEADERS)
     body_rows = "".join(
-        f"<tr><td class='c'>{ex._esc(r['emp_code'])}</td><td>{ex._esc(r['teacher_name'])}</td>"
-        f"<td class='c'>{r['present_days']}</td><td class='c'>{ex._esc(r['work'])}</td>"
-        f"<td class='c'>{r['total_lectures']}</td><td class='c'>{r['delayed_lectures']}</td></tr>"
-        for r in rows
+        f"<tr><td class='c'>{i}</td><td class='c'>{ex._esc(r['emp_code'])}</td>"
+        f"<td class='c'>{ex._esc(r['initials'])}</td><td>{ex._esc(r['teacher_name'])}</td>"
+        f"<td>{ex._esc(r['subject'])}</td><td class='c'>{r['present_days']}</td>"
+        f"<td class='c'>{r['total_lectures']}</td><td class='c'>{ex._esc(r['total_hours'])}</td></tr>"
+        for i, r in enumerate(rows, start=1)
     )
     empty = "" if rows else "<p class='sub'>No teaching staff linked for this period.</p>"
     body = (
@@ -343,13 +398,16 @@ def _summary_xlsx(brand: str, start: date, end: date, rows: list[dict], gen: str
     head = 5
     for c, h in enumerate(_SUMMARY_HEADERS, start=1):
         ws.cell(row=head, column=c, value=h).font = Font(bold=True)
-    for i, r in enumerate(rows, start=head + 1):
-        ws.cell(row=i, column=1, value=r["emp_code"])
-        ws.cell(row=i, column=2, value=r["teacher_name"])
-        ws.cell(row=i, column=3, value=r["present_days"])
-        ws.cell(row=i, column=4, value=r["work"])
-        ws.cell(row=i, column=5, value=r["total_lectures"])
-        ws.cell(row=i, column=6, value=r["delayed_lectures"])
-    for c, w in enumerate((10, 24, 14, 12, 14, 10), start=1):
+    for i, r in enumerate(rows, start=1):
+        row = head + i
+        ws.cell(row=row, column=1, value=i)
+        ws.cell(row=row, column=2, value=r["emp_code"])
+        ws.cell(row=row, column=3, value=r["initials"])
+        ws.cell(row=row, column=4, value=r["teacher_name"])
+        ws.cell(row=row, column=5, value=r["subject"])
+        ws.cell(row=row, column=6, value=r["present_days"])
+        ws.cell(row=row, column=7, value=r["total_lectures"])
+        ws.cell(row=row, column=8, value=r["total_hours"])
+    for c, w in enumerate((7, 14, 9, 24, 12, 12, 14, 16), start=1):
         ws.column_dimensions[get_column_letter(c)].width = w
     return ex._xlsx_bytes(wb)

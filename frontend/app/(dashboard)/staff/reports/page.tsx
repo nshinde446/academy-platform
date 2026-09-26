@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useUserStore } from "@/store/user-store";
 import apiClient from "@/services/api-client";
@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/layout/page-header";
-import { useDepartments } from "../_hooks/use-staff";
+import { useDepartments, useStaff } from "../_hooks/use-staff";
+import { ScopeMultiSelect, type ScopeOption } from "../_components/scope-multiselect";
 
 const REPORT_KINDS: { value: string; label: string }[] = [
   { value: "performance", label: "Performance (grid)" },
@@ -53,15 +54,41 @@ export default function StaffReportsPage() {
   const branchId = user?.branch_roles?.[0]?.branch_id;
   const departmentsQuery = useDepartments(branchId);
   const departments = departmentsQuery.data ?? [];
+  const staffQuery = useStaff(branchId);
+  const staff = useMemo(() => staffQuery.data ?? [], [staffQuery.data]);
 
   const [kind, setKind] = useState("performance");
   const [frequency, setFrequency] = useState("monthly");
-  const [deptId, setDeptId] = useState("");
+  const [deptIds, setDeptIds] = useState<Set<string>>(new Set());
+  const [staffIds, setStaffIds] = useState<Set<string>>(new Set());
   const [start, setStart] = useState(isoToday());
   const [end, setEnd] = useState(isoToday());
   const [fmt, setFmt] = useState("pdf");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // Specific staff win over a department filter, matching the API's precedence
+  // (staff_ids narrows before department_ids). When staff are chosen the
+  // department scope is moot, so we gray it out to keep the two honest.
+  const staffChosen = staffIds.size > 0;
+
+  const deptOptions: ScopeOption[] = departments.map((d) => ({
+    id: d.id,
+    label: d.name,
+  }));
+
+  // Employee picker is scoped to the chosen departments so it stays short; the
+  // full roster shows when no department is selected.
+  const staffOptions: ScopeOption[] = useMemo(() => {
+    const rows = deptIds.size
+      ? staff.filter((s) => deptIds.has(s.department_id))
+      : staff;
+    return rows.map((s) => ({
+      id: s.id,
+      label: `${s.first_name} ${s.last_name}`.trim(),
+      sublabel: `${s.emp_code}${s.department_name ? ` · ${s.department_name}` : ""}`,
+    }));
+  }, [staff, deptIds]);
 
   async function handleDownload() {
     if (!branchId) return;
@@ -76,7 +103,11 @@ export default function StaffReportsPage() {
         end,
         fmt,
       });
-      if (deptId) params.append("department_ids", deptId);
+      if (staffChosen) {
+        staffIds.forEach((id) => params.append("staff_ids", id));
+      } else {
+        deptIds.forEach((id) => params.append("department_ids", id));
+      }
       await downloadFile("/api/v1/staff/reports", params);
     } catch {
       setError("Download failed. Check the date range and try again.");
@@ -89,7 +120,7 @@ export default function StaffReportsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Staff Reports"
-        description="Daily / weekly / monthly attendance — department-wise or all staff, as PDF or Excel."
+        description="Daily / weekly / monthly attendance — all staff, chosen departments, or specific people, as PDF or Excel."
         actions={
           <Button variant="secondary" size="sm" render={<Link href="/staff" />}>
             Back to roster
@@ -129,21 +160,40 @@ export default function StaffReportsPage() {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="r_dept">Department</Label>
+          <Label htmlFor="r_fmt">Format</Label>
           <select
-            id="r_dept"
-            value={deptId}
-            onChange={(e) => setDeptId(e.target.value)}
+            id="r_fmt"
+            value={fmt}
+            onChange={(e) => setFmt(e.target.value)}
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
           >
-            <option value="">All departments</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
+            <option value="pdf">PDF</option>
+            <option value="xlsx">Excel</option>
           </select>
         </div>
+
+        <ScopeMultiSelect
+          label="Departments"
+          allLabel="All departments"
+          options={deptOptions}
+          selected={deptIds}
+          onChange={setDeptIds}
+          disabled={staffChosen}
+          disabledNote="Ignored while specific staff are selected — clear the staff picker to filter by department."
+          emptyNote="No departments yet."
+        />
+
+        <ScopeMultiSelect
+          label="Staff"
+          allLabel="All staff in scope"
+          options={staffOptions}
+          selected={staffIds}
+          onChange={setStaffIds}
+          searchable
+          emptyNote={
+            staffQuery.isLoading ? "Loading roster…" : "No staff in this scope."
+          }
+        />
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="r_start">From</Label>
@@ -163,25 +213,25 @@ export default function StaffReportsPage() {
             onChange={(e) => setEnd(e.target.value)}
           />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="r_fmt">Format</Label>
-          <select
-            id="r_fmt"
-            value={fmt}
-            onChange={(e) => setFmt(e.target.value)}
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="pdf">PDF</option>
-            <option value="xlsx">Excel</option>
-          </select>
-        </div>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <div>
+      <div className="flex items-center gap-3">
         <Button onClick={handleDownload} disabled={busy}>
           {busy ? "Generating…" : "Download report"}
         </Button>
+        {(deptIds.size > 0 || staffIds.size > 0) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setDeptIds(new Set());
+              setStaffIds(new Set());
+            }}
+          >
+            Reset scope
+          </Button>
+        )}
       </div>
 
       <p className="text-xs text-muted-foreground">
