@@ -195,10 +195,15 @@ async def staff_face_photo(
     from fastapi import HTTPException, status
 
     from app.modules.attendance.services import provisioning_service
+    from app.modules.staff.repositories import staff_repository
 
-    staff = await staff_service.get_staff(session, staff_id, branch_id)
-    jpeg = await provisioning_service.face_photo_by_uid(
-        session, branch_id, staff.emp_code or ""
+    staff = await staff_repository.get_by_id(session, staff_id)
+    jpeg = (
+        await provisioning_service.face_photo_by_uid(
+            session, branch_id, staff.emp_code or ""
+        )
+        if staff is not None and staff.branch_id == branch_id
+        else None
     )
     if jpeg is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No face photo.")
