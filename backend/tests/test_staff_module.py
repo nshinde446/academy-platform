@@ -129,6 +129,28 @@ async def test_link_teacher_and_list_and_delete(client: AsyncClient, seed_data):
     assert sid not in [s["id"] for s in listed.json()]
 
 
+async def test_staff_photo_returns_404_without_face_not_500(
+    client: AsyncClient, seed_data
+):
+    """The roster avatar endpoint must resolve the staff's emp_code and return a
+    clean 404 when there's no enrolled face — never a 500. (Regression: the route
+    once treated the get_staff dict as an ORM object -> AttributeError.)"""
+    await _login_admin(client)
+    depts = await _departments(client)
+    admin = depts["MSA-Administration"]["id"]
+
+    created = await client.post("/api/v1/staff", json={
+        "branch_id": BRANCH_A_ID, "first_name": "No", "last_name": "Face",
+        "department_id": admin,
+    })
+    sid = created.json()["id"]
+
+    resp = await client.get(
+        f"/api/v1/staff/{sid}/photo", params={"branch_id": BRANCH_A_ID}
+    )
+    assert resp.status_code == 404, resp.text
+
+
 async def test_sync_teachers_creates_linked_staff_and_surfaces_staff_no(
     client: AsyncClient, seed_data
 ):
