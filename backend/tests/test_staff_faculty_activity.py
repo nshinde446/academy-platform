@@ -81,6 +81,25 @@ async def test_daily_faculty_activity(db_session: AsyncSession, seed_data):
     assert c["Attendance Hours"] == "7:00"         # 420 min work
 
 
+async def test_daily_faculty_activity_lists_delayed_lectures(
+    db_session: AsyncSession, seed_data
+):
+    """The Excel export carries the Delayed Lectures detail table (Section 2)."""
+    await _seed(db_session)
+    _, data, _ = await fac.daily_report(
+        db_session, branch_id=BRANCH_A, teacher_id=TEACHER, day=DAY, fmt="xlsx",
+    )
+    ws = load_workbook(io.BytesIO(data), read_only=True).active
+    col_a = [r[0] for r in ws.iter_rows(values_only=True)]
+    assert "Delayed Lecture Details" in col_a
+    # The one delayed lecture (15-min delay) shows as a numbered detail row.
+    rows = list(ws.iter_rows(values_only=True))
+    hdr = next(i for i, r in enumerate(rows) if r[0] == "Delayed Lecture Details")
+    detail = rows[hdr + 2]  # title, header, then first data row
+    assert detail[0] == 1
+    assert detail[5] == "0:15"  # delay
+
+
 async def test_cumulative_summary(db_session: AsyncSession, seed_data):
     await _seed(db_session)
     fn, data, _ = await fac.summary_report(
@@ -89,7 +108,19 @@ async def test_cumulative_summary(db_session: AsyncSession, seed_data):
     )
     ws = load_workbook(io.BytesIO(data), read_only=True).active
     rows = list(ws.iter_rows(values_only=True))
-    data_row = next(r for r in rows if r[0] == "6")  # emp_code 6
-    assert data_row[2] == 1   # present days
-    assert data_row[4] == 2   # total lectures
-    assert data_row[5] == 1   # delayed
+    # New schema: Sr No, Employee Code, Initials, Teacher, Subject,
+    # Present Days, Total Lectures, Total Hours.
+    data_row = next(r for r in rows if r[1] == "6")  # emp_code in column 2
+    assert data_row[0] == 1                          # Sr No
+    assert data_row[2] == fac._initials(data_row[3])  # initials auto from name
+    assert data_row[2] and data_row[2].isupper()      # non-empty, uppercase
+    assert data_row[5] == 1                          # present days
+    assert data_row[6] == 2                          # total lectures
+    assert data_row[7] == "1 Hours 45 Mins"          # total (effective) hours: 60+45
+
+
+def test_initials_helper():
+    assert fac._initials("Bhagvat Dhesale") == "BD"
+    assert fac._initials("Mr. Anish A") == "MAA"
+    assert fac._initials("Madonna") == "M"
+    assert fac._initials("") == ""
