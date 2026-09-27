@@ -300,7 +300,8 @@ async def start_lecture(
 
     now = datetime.now(timezone.utc)
     lecture = await lecture_repository.update(
-        session, lecture, lecture_status="started", actual_start=now
+        session, lecture, lecture_status="started", actual_start=now,
+        updated_by=current_user_id,
     )
 
     await audit_service.log_action(
@@ -357,6 +358,7 @@ async def complete_lecture(
         actual_end=now,
         late_flag=late_flag,
         actual_duration_min=duration,
+        updated_by=current_user_id,
     )
 
     await audit_service.log_action(
@@ -400,7 +402,9 @@ async def cancel_lecture(
     _validate_transition(lecture.lecture_status, "cancelled")
 
     old_status = lecture.lecture_status
-    lecture = await lecture_repository.update(session, lecture, lecture_status="cancelled")
+    lecture = await lecture_repository.update(
+        session, lecture, lecture_status="cancelled", updated_by=current_user_id
+    )
 
     await audit_service.log_action(
         session,
@@ -453,6 +457,7 @@ async def reschedule_lecture(
         scheduled_end=data.scheduled_end,
         classroom_id=classroom_id,
         lecture_status="scheduled",
+        updated_by=current_user_id,
     )
 
     await audit_service.log_action(
@@ -568,6 +573,7 @@ async def update_actuals(
         lecture.topic_id = data.topic_id
     if data.notes is not None:
         lecture.notes = data.notes
+    lecture.updated_by = current_user_id
     await session.flush()
 
     await audit_service.log_action(
@@ -1491,6 +1497,7 @@ async def mark_substitute(
         actual_teacher_id=data.actual_teacher_id,
         change_reason=reason,
         change_notes=data.change_notes if data.actual_teacher_id else None,
+        updated_by=current_user_id,
     )
 
     await audit_service.log_action(
@@ -1570,6 +1577,7 @@ async def mark_no_show(
         lecture_status="no_show",
         no_show_reason=data.no_show_reason,
         notes=(data.notes if data.notes is not None else lecture.notes),
+        updated_by=current_user_id,
     )
 
     await audit_service.log_action(

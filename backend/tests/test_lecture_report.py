@@ -78,6 +78,40 @@ async def test_lecture_report_duration_hhmm(db_session: AsyncSession, seed_data)
     assert cells["Duration"] == "0:45"          # HH:MM
 
 
+async def test_mutation_stamps_updated_by_for_report(
+    db_session: AsyncSession, seed_data
+):
+    """A lecture lifecycle mutation records WHO made the entry in updated_by, so
+    the Lecture Report's 'Attendance Updated By' is populated for new entries
+    (not just rows seeded with an explicit updated_by)."""
+    from app.modules.lectures.services import lecture_service
+
+    lec = Lecture(
+        teacher_id=TEACHER, batch_id=BATCH, subject_id=SUBJECT, classroom_id=CLASSROOM,
+        scheduled_start=_utc(4, 0), scheduled_end=_utc(5, 0),
+        lecture_status="scheduled", delivery_mode="offline",
+        branch_id=BRANCH_A, academic_year_id=AY,
+    )
+    db_session.add(lec)
+    await db_session.flush()
+    assert lec.updated_by is None  # nothing stamped yet
+
+    # Starting the lecture is an "entry" made by the current user.
+    await lecture_service.start_lecture(db_session, lec.id, BRANCH_A, ADMIN)
+    await db_session.refresh(lec)
+    assert lec.updated_by == ADMIN
+
+    # …and it surfaces in the report's Attendance Updated By column.
+    _, data, _ = await lr.generate(
+        db_session, branch_id=BRANCH_A, start=DAY, end=DAY, fmt="xlsx",
+        duration_style="min",
+    )
+    rows = _sheet(data)
+    header = next(r for r in rows if r and r[0] == "Date")
+    cells = dict(zip(lr.HEADERS, rows[rows.index(header) + 1]))
+    assert cells["Attendance Updated By"]  # resolved to the admin's name
+
+
 async def test_lecture_report_teacher_filter_excludes_others(
     db_session: AsyncSession, seed_data
 ):
