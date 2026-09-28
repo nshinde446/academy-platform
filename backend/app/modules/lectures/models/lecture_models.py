@@ -83,6 +83,15 @@ class Lecture(BaseModel):
     # Set together with lecture_status='no_show'. Reason buckets:
     # TEACHER_NO_SHOW | STUDENT_NO_SHOW | EXTERNAL | OTHER
     no_show_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Who recorded the end-of-day actuals for this lecture, and when. Distinct
+    # from the generic updated_by/updated_at (which any later edit overwrites):
+    # these are set ONLY by the actuals-recording paths (EOD backfill + live
+    # Complete) and drive the Lecture Report's "Attendance Updated By" /
+    # "Timestamp" columns. NULL until actuals are recorded.
+    actuals_recorded_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    actuals_recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     branch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=False
     )

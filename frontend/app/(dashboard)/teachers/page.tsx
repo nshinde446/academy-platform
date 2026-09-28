@@ -31,6 +31,7 @@ import { TeacherEmptyState } from "./_components/teacher-empty-state";
 import { CreateTeacherDialog } from "./_components/create-teacher-dialog";
 import { EditTeacherDialog } from "./_components/edit-teacher-dialog";
 import { ImportTeachersDialog } from "./_components/import-teachers-dialog";
+import { LectureReportDialog } from "../lectures/_components/lecture-report-dialog";
 
 function filterTeachers(
   rows: TeacherWithStats[],
@@ -62,6 +63,7 @@ export default function TeachersPage() {
   );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [lectureReportOpen, setLectureReportOpen] = useState(false);
 
   const teachersQuery = useTeachers(branchId);
   const statsQuery = useTeachersWithStats(branchId);
@@ -166,6 +168,13 @@ export default function TeachersPage() {
             >
               Faculty activity
             </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setLectureReportOpen(true)}
+            >
+              Lecture report
+            </Button>
             {branchId && <ImportTeachersDialog branchId={branchId} />}
             <CreateTeacherDialog
               onSubmit={handleCreate}
@@ -254,6 +263,16 @@ export default function TeachersPage() {
         confirmLabel="Delete selected"
         destructive
         onConfirm={handleBulkDeleteConfirm}
+      />
+
+      <LectureReportDialog
+        branchId={branchId}
+        open={lectureReportOpen}
+        onOpenChange={setLectureReportOpen}
+        teachers={(teachersQuery.data ?? []).map((t) => ({
+          id: t.id,
+          label: `${t.first_name} ${t.last_name}`,
+        }))}
       />
     </div>
   );
