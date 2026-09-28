@@ -52,9 +52,24 @@ def _t(dt: datetime | None, tz: str) -> str:
 
 
 def _dt(dt: datetime | None, tz: str) -> str:
-    """Full timestamp in the branch tz (the entry-made column)."""
+    """Timestamp in the branch tz, formatted like the client sample —
+    "2-09-26 at 16:30" (D-MM-YY at HH:MM, 24-hour)."""
     dt = _aware(dt)
-    return dt.astimezone(get_tz(tz)).strftime("%d-%b-%Y %I:%M %p") if dt else ""
+    if dt is None:
+        return ""
+    local = dt.astimezone(get_tz(tz))
+    return f"{local.day}-{local:%m-%y} at {local:%H:%M}"
+
+
+def _recorded_by(l: Lecture) -> uuid.UUID | None:
+    """The user who signed off the end-of-day actuals, falling back to the
+    generic updated_by for lectures recorded before that field existed."""
+    return l.actuals_recorded_by or l.updated_by
+
+
+def _recorded_at(l: Lecture) -> datetime | None:
+    """When the actuals were signed off (fallback: generic updated_at)."""
+    return l.actuals_recorded_at or l.updated_at
 
 
 def _duration(l: Lecture, style: str) -> str:
@@ -99,7 +114,11 @@ async def _name_maps(
     subject_ids = {l.subject_id for l in lectures}
     topic_ids = {l.topic_id for l in lectures if l.topic_id}
     classroom_ids = {l.classroom_id for l in lectures if l.classroom_id}
-    user_ids = {l.updated_by for l in lectures if l.updated_by}
+    # "Attendance Updated By" = the actuals recorder; fall back to updated_by for
+    # rows recorded before that column existed. Resolve both id sets.
+    user_ids = {
+        _recorded_by(l) for l in lectures if _recorded_by(l)
+    }
 
     async def _pairs(model, ids, label):
         if not ids:
@@ -184,8 +203,8 @@ async def _rows(
             _t(l.actual_end, tz),
             _duration(l, duration_style),
             _title(l.lecture_status),
-            m["user"].get(l.updated_by, "") if l.updated_by else "",
-            _dt(l.updated_at, tz),
+            m["user"].get(_recorded_by(l), "") if _recorded_by(l) else "",
+            _dt(_recorded_at(l), tz),
             _late(l, tz),
             _title(l.no_show_reason) if l.no_show_reason else "",
             l.notes or "",

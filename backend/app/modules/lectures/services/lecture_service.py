@@ -359,6 +359,10 @@ async def complete_lecture(
         late_flag=late_flag,
         actual_duration_min=duration,
         updated_by=current_user_id,
+        # This IS the actuals sign-off — stamp who did it and when for the
+        # Lecture Report (distinct from generic updated_by, which later edits move).
+        actuals_recorded_by=current_user_id,
+        actuals_recorded_at=now,
     )
 
     await audit_service.log_action(
@@ -574,6 +578,12 @@ async def update_actuals(
     if data.notes is not None:
         lecture.notes = data.notes
     lecture.updated_by = current_user_id
+    # Record the end-of-day actuals sign-off (who + when) for the Lecture Report,
+    # but only when actual times were actually entered — a topic-only/planning
+    # update is not an attendance sign-off.
+    if actual_start is not None or actual_end is not None:
+        lecture.actuals_recorded_by = current_user_id
+        lecture.actuals_recorded_at = datetime.now(timezone.utc)
     await session.flush()
 
     await audit_service.log_action(
