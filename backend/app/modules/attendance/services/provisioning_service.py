@@ -866,11 +866,17 @@ async def sync_fleet_faces(
     devices = _live_device_serials()
     backups = await device_command_repo.all_faces_with_source(session, branch_id)
 
-    # uid -> a source device that holds its face; keep a name if any backup has one.
+    # uid -> the source device holding its BEST (largest) face template. When a user
+    # was enrolled on several terminals, some captures can be corrupt/partial (far
+    # smaller) — propagating one of those yields a "NO IMAGE"/unmatchable face. Pick
+    # the biggest so the whole fleet gets the good template.
+    best_size: dict[str, int] = {}
     src_by_uid: dict[str, str] = {}
     name_by_uid: dict[str, str | None] = {}
-    for uid, name, dev in backups:
-        src_by_uid.setdefault(uid, dev)
+    for uid, name, dev, size in backups:
+        if uid not in best_size or size > best_size[uid]:
+            best_size[uid] = size
+            src_by_uid[uid] = dev
         if name and uid not in name_by_uid:
             name_by_uid[uid] = name
 

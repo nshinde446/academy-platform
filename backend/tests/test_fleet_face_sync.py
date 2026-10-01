@@ -21,10 +21,10 @@ DEV_A = "DEVICE-A"
 DEV_B = "DEVICE-B"
 
 
-async def _face_backup(db: AsyncSession, dev_id: str, uid: str, name="Person"):
+async def _face_backup(db: AsyncSession, dev_id: str, uid: str, name="Person", face=b"enc"):
     db.add(DeviceUserBiometric(
         branch_id=BRANCH_A, dev_id=dev_id, vendor_user_id=uid, name=name,
-        face_enc=b"enc", captured_at=datetime.now(timezone.utc),
+        face_enc=face, captured_at=datetime.now(timezone.utc),
     ))
 
 
@@ -76,6 +76,30 @@ async def test_fleet_sync_skips_devices_that_already_have_the_face(
 
     res = await prov.sync_fleet_faces(db_session, BRANCH_A, dry_run=False)
     assert res["total_enqueued"] == 0
+
+
+async def test_fleet_sync_sources_the_largest_face_template(
+    db_session: AsyncSession, seed_data, monkeypatch
+):
+    """When a user has several face backups (enrolled on multiple terminals), the
+    sync must propagate the BIGGEST (valid) one, not a corrupt/partial capture —
+    pushing a tiny template yields a 'NO IMAGE'/unmatchable enrolment on the fleet.
+    (Regression: staff faces wouldn't match because a 2 KB bad template was being
+    fanned out instead of the 8 KB good one.)"""
+    monkeypatch.setattr(prov, "_live_device_serials", lambda: [DEV_A, DEV_B])
+    await _face_backup(db_session, DEV_A, "9200", face=b"x" * 8288)  # good template
+    await _face_backup(db_session, DEV_B, "9200", face=b"x" * 2104)  # corrupt/partial
+    await db_session.flush()
+
+    res = await prov.sync_fleet_faces(db_session, BRANCH_A, dry_run=False)
+    assert res["total_enqueued"] == 1  # only DEV_B is missing a (mirror) face
+    cmd = (await db_session.execute(
+        select(DeviceCommand).where(
+            DeviceCommand.dev_id == DEV_B, DeviceCommand.vendor_user_id == "9200"
+        )
+    )).scalar_one()
+    # Sourced from DEV_A (the 8 KB template), not DEV_B's own 2 KB one.
+    assert cmd.payload["restore_source_dev_id"] == DEV_A
 
 
 async def _confirmed_cmd(db, dev_id, uid, *, restore: bool, key: str):

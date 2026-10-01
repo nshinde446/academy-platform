@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.attendance.models.provisioning_models import (
@@ -400,22 +400,26 @@ async def backed_up_users_for_students(
 
 async def all_faces_with_source(
     session: AsyncSession, branch_id: uuid.UUID
-) -> list[tuple[str, str | None, str]]:
-    """(vendor_user_id, name, source_dev_id) for every user with a FACE backed up
-    on ANY device in the branch — the pool a fleet face-sync fans out. One row per
-    (dev, uid); the caller dedups per uid to pick a source."""
+) -> list[tuple[str, str | None, str, int]]:
+    """(vendor_user_id, name, source_dev_id, face_size) for every user with a FACE
+    backed up on ANY device in the branch — the pool a fleet face-sync fans out.
+    One row per (dev, uid); the caller dedups per uid to pick a source. ``face_size``
+    (encrypted byte length) lets the caller pick the BEST template when a user has
+    several — a corrupt/partial capture is much smaller than a valid one, and
+    propagating the small one yields a "NO IMAGE" / unmatchable enrolment."""
     result = await session.execute(
         select(
             DeviceUserBiometric.vendor_user_id,
             DeviceUserBiometric.name,
             DeviceUserBiometric.dev_id,
+            func.length(DeviceUserBiometric.face_enc),
         ).where(
             DeviceUserBiometric.branch_id == branch_id,
             DeviceUserBiometric.is_deleted == False,  # noqa: E712
             DeviceUserBiometric.face_enc.isnot(None),
         )
     )
-    return [(r[0], r[1], r[2]) for r in result.all()]
+    return [(r[0], r[1], r[2], r[3] or 0) for r in result.all()]
 
 
 async def upsert_device_status(
