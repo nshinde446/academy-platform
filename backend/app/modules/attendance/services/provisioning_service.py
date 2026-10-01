@@ -847,6 +847,13 @@ def _live_device_serials() -> list[str]:
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
+# How long a CONFIRMED face-restore is trusted as "already synced" before the
+# device's own has_face mirror takes over. Long enough to cover the lag between a
+# device acking a restore and next reporting its user table; short enough that a
+# restore the device acked but never actually stored gets retried next day.
+_FACE_RESTORE_TRUST_HOURS = 48
+
+
 async def sync_fleet_faces(
     session: AsyncSession, branch_id: uuid.UUID, *, dry_run: bool = False
 ) -> dict:
@@ -884,8 +891,12 @@ async def sync_fleet_faces(
         # so a staff member who only got a name still receives their face.
         mirror = await device_command_repo.list_device_users(session, branch_id, target)
         has_face = {u.vendor_user_id for u in mirror if getattr(u, "has_face", False)}
+        # Only trust a confirmed restore while it's FRESH: a device acks the push
+        # but the face can still fail to persist (partial injection loss). After
+        # the window, has_face (the device's own mirror) is the authority — if it
+        # still shows no face, re-push rather than trusting the stale ack forever.
         face_restored = await device_command_repo.confirmed_face_user_ids(
-            session, target, candidates
+            session, target, candidates, within_hours=_FACE_RESTORE_TRUST_HOURS
         )
         inflight = await device_command_repo.inflight_user_ids(session, target, candidates)
         done = has_face | face_restored | inflight

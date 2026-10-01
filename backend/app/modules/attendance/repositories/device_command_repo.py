@@ -7,7 +7,7 @@ supplies a branch (``docs/db_conventions.md``) and filters soft-deleted rows.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -79,22 +79,34 @@ async def confirmed_user_ids(
 
 
 async def confirmed_face_user_ids(
-    session: AsyncSession, dev_id: str, vendor_user_ids: list[str]
+    session: AsyncSession, dev_id: str, vendor_user_ids: list[str],
+    within_hours: int | None = None,
 ) -> set[str]:
     """Which of these userIds have a CONFIRMED *face* restore on the device — i.e.
     a face template was pushed AND acked (payload carried ``restore_biometrics``).
     Distinct from ``confirmed_user_ids`` (which also counts identity-only pushes):
     the fleet face-sync must NOT treat an identity-only push as "already has a
-    face". Payload is checked in Python so the filter is engine-portable."""
+    face". Payload is checked in Python so the filter is engine-portable.
+
+    ``within_hours`` restricts to restores confirmed in that recent window. The
+    fleet sync passes it so a confirmation is only trusted as "already synced"
+    while it's fresh — a device acks the SET_USER_INFO command but the face can
+    still fail to persist (partial injection loss). Once the window lapses and the
+    device's ``has_face`` mirror still shows no face, the sync re-pushes instead of
+    trusting the stale ack forever."""
     if not vendor_user_ids:
         return set()
+    conditions = [
+        DeviceCommand.dev_id == dev_id,
+        DeviceCommand.vendor_user_id.in_(vendor_user_ids),
+        DeviceCommand.command_status == STATUS_CONFIRMED,
+        DeviceCommand.is_deleted == False,
+    ]
+    if within_hours is not None:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=within_hours)
+        conditions.append(DeviceCommand.confirmed_at >= cutoff)
     result = await session.execute(
-        select(DeviceCommand.vendor_user_id, DeviceCommand.payload).where(
-            DeviceCommand.dev_id == dev_id,
-            DeviceCommand.vendor_user_id.in_(vendor_user_ids),
-            DeviceCommand.command_status == STATUS_CONFIRMED,
-            DeviceCommand.is_deleted == False,
-        )
+        select(DeviceCommand.vendor_user_id, DeviceCommand.payload).where(*conditions)
     )
     return {
         uid for uid, payload in result.all()

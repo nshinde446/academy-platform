@@ -2,7 +2,7 @@
 ("enrol once, available everywhere"). Idempotent, dry-run-able."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,7 +78,7 @@ async def test_fleet_sync_skips_devices_that_already_have_the_face(
     assert res["total_enqueued"] == 0
 
 
-async def _confirmed_cmd(db, dev_id, uid, *, restore: bool, key: str):
+async def _confirmed_cmd(db, dev_id, uid, *, restore: bool, key: str, confirmed_at=None):
     payload = {"users": [{"userId": uid}]}
     if restore:
         payload["restore_biometrics"] = True
@@ -86,6 +86,7 @@ async def _confirmed_cmd(db, dev_id, uid, *, restore: bool, key: str):
         branch_id=BRANCH_A, dev_id=dev_id, command=CMD_SET_USER_INFO,
         vendor_user_id=uid, payload=payload, command_status=STATUS_CONFIRMED,
         idempotency_key=key,
+        confirmed_at=confirmed_at or datetime.now(timezone.utc),
     ))
 
 
@@ -114,6 +115,27 @@ async def test_confirmed_face_restore_blocks_repush(
 
     res = await prov.sync_fleet_faces(db_session, BRANCH_A, dry_run=True)
     assert res["per_device_enqueued"][DEV_B] == 0  # already face-restored → skip
+
+
+async def test_stale_face_restore_repushes_when_face_absent(
+    db_session: AsyncSession, seed_data, monkeypatch
+):
+    """A face restore the device ACKED long ago but never actually stored (no
+    has_face mirror) must be re-pushed once the trust window lapses — otherwise a
+    partial-injection loss strands the face forever. (Regression: staff faces stuck
+    on one terminal because a stale confirmed-restore masked them as 'done'.)"""
+    monkeypatch.setattr(prov, "_live_device_serials", lambda: [DEV_A, DEV_B])
+    await _face_backup(db_session, DEV_A, "9103")
+    stale = datetime.now(timezone.utc) - timedelta(
+        hours=prov._FACE_RESTORE_TRUST_HOURS + 1
+    )
+    await _confirmed_cmd(
+        db_session, DEV_B, "9103", restore=True, key="face-9103", confirmed_at=stale
+    )
+    await db_session.flush()
+
+    res = await prov.sync_fleet_faces(db_session, BRANCH_A, dry_run=True)
+    assert res["per_device_enqueued"][DEV_B] == 1  # stale ack + no face → re-push
 
 
 async def test_live_device_serials_and_sync_run_without_monkeypatch(
