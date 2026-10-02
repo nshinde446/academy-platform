@@ -451,10 +451,16 @@ def _pie_html(title: str, items: list[dict]) -> str:
 
 _PIE_CSS = (
     "<style>"
-    ".pies{display:flex;gap:28px;flex-wrap:wrap;margin-top:8px}"
-    ".pie-block{min-width:280px}"
+    # Charts start on their own page so the long roster table above never
+    # pushes a pie across a page boundary (which clipped the circles into
+    # broken half-moons split over two pages).
+    ".pies{display:flex;gap:28px;flex-wrap:wrap;margin-top:8px;"
+    "break-before:page;page-break-before:always}"
+    # And keep each pie + its legend intact if it would otherwise split.
+    ".pie-block{min-width:280px;break-inside:avoid;page-break-inside:avoid}"
     ".pie-title{font-size:12px;margin:0 0 6px}"
-    ".pie-row{display:flex;gap:14px;align-items:center}"
+    ".pie-row{display:flex;gap:14px;align-items:flex-start;"
+    "break-inside:avoid;page-break-inside:avoid}"
     ".pie{width:130px;height:130px;border-radius:50%;flex:none}"
     ".legend{list-style:none;margin:0;padding:0;font-size:10.5px}"
     ".legend li{margin:2px 0;white-space:nowrap}"
