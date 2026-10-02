@@ -145,3 +145,27 @@ def test_initials_helper():
     assert fac._initials("Mr. Anish A") == "MAA"
     assert fac._initials("Madonna") == "M"
     assert fac._initials("") == ""
+
+
+def test_summary_pdf_charts_avoid_page_break():
+    """Regression: the productivity PDF must start the pie charts on their own
+    page and keep each pie intact, so a long roster table can't clip the circles
+    across a page boundary (the broken half-moon bug)."""
+    from datetime import date as _date
+    from app.modules.attendance.services import staff_faculty_service as f2
+
+    data = {
+        "rows": [{
+            "emp_code": "91001", "initials": "TU", "teacher_name": "Teacher User",
+            "subject": "Physics", "present_days": 1, "total_lectures": 3,
+            "scheduled_minutes": 180, "delivered_minutes": 170,
+        }],
+        "by_subject": [{"label": "Physics", "lectures": 3}],
+        "by_teacher": [{"label": "TU", "lectures": 3}],
+    }
+    html = f2._summary_html("Acad", _date(2026, 10, 1), _date(2026, 10, 1), data, "gen")
+    assert "break-before:page" in html            # charts on a fresh page
+    assert "page-break-before:always" in html     # legacy alias for Chromium
+    assert html.count("break-inside:avoid") >= 2  # each pie stays whole
+    # Charts come after the table in the document flow.
+    assert html.index("<table") < html.index("class='pies'")
