@@ -111,7 +111,10 @@ async def test_recompute_preserves_manual_rows(db_session, seed_data):
     assert row.source == "MANUAL" and row.day_status == "ABSENT"  # human edit kept
 
 
-# ── timetable-driven window (from today's rule) ──────────────────────────────
+# ── simple model: fixed class-start cutoff, no lecture window, no EXCEPTION ───
+# A single campus-entry scanner only proves a student came and roughly when, so
+# classification is Present/Late/Absent against the batch's class-start time —
+# it does NOT depend on the day's lecture timetable, and never yields EXCEPTION.
 
 from app.modules.lectures.models.lecture_models import Lecture
 
@@ -130,46 +133,44 @@ async def _afternoon_lecture(db_session, seed_data):
 
 
 @pytest.mark.usefixtures("seed_data")
-async def test_window_present_30min_prior(db_session, seed_data):
+async def test_early_arrival_is_present_no_lower_bound(db_session, seed_data):
+    """Arriving well before class start is PRESENT (the old window flagged this
+    as an EXCEPTION for being >30 min early)."""
+    seed_data["batch"].class_start_time = "14:00"
     await _map_to_batch(db_session, seed_data)
-    await _afternoon_lecture(db_session, seed_data)
-    await _punch(db_session, seed_data, h=8, m=5)   # 13:35 IST, 25 min before start
+    await _punch(db_session, seed_data, h=7, m=0)   # 12:30 IST, 90 min before class
     row = await _rebuild(db_session, seed_data)
     assert row.day_status == "PRESENT"
 
 
 @pytest.mark.usefixtures("seed_data")
-async def test_window_late_after_grace(db_session, seed_data):
-    await _map_to_batch(db_session, seed_data)
+async def test_scheduled_lecture_does_not_produce_exception(db_session, seed_data):
+    """A punch long after the last lecture ended is just LATE, never EXCEPTION —
+    the lecture timetable no longer drives classification."""
+    await _map_to_batch(db_session, seed_data)  # batch: no class_start -> 10:00 default
     await _afternoon_lecture(db_session, seed_data)
-    await _punch(db_session, seed_data, h=8, m=45)  # 14:15 IST, >10 min after start
+    await _punch(db_session, seed_data, h=11, m=0)  # 16:30 IST, past the 15:00 lecture end
     row = await _rebuild(db_session, seed_data)
     assert row.day_status == "LATE"
+    assert row.day_status != "EXCEPTION"
 
 
 @pytest.mark.usefixtures("seed_data")
-async def test_window_exception_after_window_close(db_session, seed_data):
+async def test_lecture_schedule_does_not_change_status(db_session, seed_data):
+    """Same punch classifies the same with or without a scheduled lecture."""
+    seed_data["batch"].class_start_time = "14:00"
     await _map_to_batch(db_session, seed_data)
     await _afternoon_lecture(db_session, seed_data)
-    await _punch(db_session, seed_data, h=11, m=0)  # 16:30 IST, past the 15:00 end
+    await _punch(db_session, seed_data, h=8, m=35)  # 14:05 IST, on time for 14:00
     row = await _rebuild(db_session, seed_data)
-    assert row.day_status == "EXCEPTION"
+    assert row.day_status == "PRESENT"  # unaffected by the 14:00–15:00 lecture
 
 
 @pytest.mark.usefixtures("seed_data")
-async def test_window_exception_before_window_open(db_session, seed_data):
+async def test_single_punch_flags_missing_signoff(db_session, seed_data):
+    seed_data["batch"].class_start_time = "14:00"
     await _map_to_batch(db_session, seed_data)
-    await _afternoon_lecture(db_session, seed_data)
-    await _punch(db_session, seed_data, h=7, m=0)   # 12:30 IST, before the 13:30 open
-    row = await _rebuild(db_session, seed_data)
-    assert row.day_status == "EXCEPTION"
-
-
-@pytest.mark.usefixtures("seed_data")
-async def test_window_single_punch_flags_missing_signoff(db_session, seed_data):
-    await _map_to_batch(db_session, seed_data)
-    await _afternoon_lecture(db_session, seed_data)
-    await _punch(db_session, seed_data, h=8, m=5)   # on time, single punch
+    await _punch(db_session, seed_data, h=8, m=35)   # 14:05 IST, on time, single punch
     row = await _rebuild(db_session, seed_data)
     assert row.day_status == "PRESENT"
     assert row.signoff == "MISSING"   # NO PUNCH-OUT warning

@@ -129,66 +129,18 @@ async def _student_class_start(
     return local_time_on(day, tz_name, h, m)
 
 
-async def _lecture_window_for_student(
-    session: AsyncSession, student_id: uuid.UUID, day: date, tz_name: str
-) -> tuple[datetime, datetime, datetime] | None:
-    """The day's scheduled-lecture attendance window for a student, or None when
-    nothing is scheduled. Returns (first_start, window_open, window_close) in UTC:
-
-    - first_start  = earliest lecture start (drives PRESENT vs LATE)
-    - window_open  = first_start minus the early window (30 min prior is on-time)
-    - window_close = latest lecture end (a scan past it, or before window_open, is
-      an EXCEPTION — on campus outside any scheduled class)
-
-    Lectures the batch didn't hold (cancelled / no_show) don't define a window."""
-    batch_ids = (await session.execute(
-        select(StudentBatchMapping.batch_id).where(
-            StudentBatchMapping.student_id == student_id,
-            StudentBatchMapping.is_deleted == False,  # noqa: E712
-        )
-    )).scalars().all()
-    if not batch_ids:
-        return None
-
-    start, end = day_bounds(day, tz_name)
-    rows = (await session.execute(
-        select(
-            func.min(Lecture.scheduled_start),
-            func.max(Lecture.scheduled_end),
-        ).where(
-            Lecture.batch_id.in_(batch_ids),
-            Lecture.scheduled_start >= start,
-            Lecture.scheduled_start < end,
-            Lecture.is_deleted == False,  # noqa: E712
-            Lecture.lecture_status.notin_(["cancelled", "no_show"]),
-        )
-    )).first()
-    if not rows or rows[0] is None:
-        return None
-
-    first_start, last_end = rows[0], rows[1]
-    if first_start.tzinfo is None:
-        first_start = first_start.replace(tzinfo=timezone.utc)
-    if last_end is None:
-        last_end = first_start
-    elif last_end.tzinfo is None:
-        last_end = last_end.replace(tzinfo=timezone.utc)
-
-    early = timedelta(minutes=get_settings().ATTENDANCE_EARLY_WINDOW_MINUTES)
-    return first_start, first_start - early, last_end
-
-
 def _classify(
     punches: list[RawPunchLog], day: date, tz_name: str,
     class_start: datetime | None = None,
-    window: tuple[datetime, datetime, datetime] | None = None,
 ) -> tuple[datetime | None, datetime | None, str, str, str]:
     """-> (first_in, last_out, day_status, signoff, source).
 
-    Timetable-driven when ``window`` (first_start, open, close) is given: a scan
-    within [open, first_start + grace] is PRESENT, later-but-inside-window is
-    LATE, outside the window is EXCEPTION. Falls back to the ``class_start`` cutoff
-    (batch start, else global) for days with no scheduled lecture."""
+    A single campus-entry scanner can only tell us *that* a student came and
+    roughly when — not which lecture they sat in. So the rule is deliberately
+    simple: any punch on or before ``class_start + grace`` is PRESENT, a later
+    first punch is LATE, no punch is ABSENT. Early arrivals are PRESENT (no
+    lower bound) and there is no upper bound — if they scanned, they were here.
+    ``class_start`` is the batch's class-start time, else the global default."""
     if not punches:
         return None, None, "ABSENT", "NA", "SYSTEM"
 
@@ -197,17 +149,8 @@ def _classify(
         first_in = first_in.replace(tzinfo=timezone.utc)
 
     grace = timedelta(minutes=get_settings().ATTENDANCE_GRACE_PERIOD_MINUTES)
-    if window is not None:
-        first_start, window_open, window_close = window
-        if first_in < window_open or first_in > window_close:
-            day_status = "EXCEPTION"
-        elif first_in <= first_start + grace:
-            day_status = "PRESENT"
-        else:
-            day_status = "LATE"
-    else:
-        cutoff = (class_start or class_start_on(day, tz_name)) + grace
-        day_status = "PRESENT" if first_in <= cutoff else "LATE"
+    cutoff = (class_start or class_start_on(day, tz_name)) + grace
+    day_status = "PRESENT" if first_in <= cutoff else "LATE"
 
     if len(punches) > 1:
         last_out = punches[-1].punch_timestamp
@@ -238,12 +181,11 @@ async def rebuild_daily(
 
     start, end = day_bounds(day, tz_name)
     punches = await _punches_for_day(session, student_id, branch_id, start, end)
-    # Prefer the day's scheduled-lecture window; fall back to the batch's fixed
-    # class start (else the global default) on days with no lecture scheduled.
-    window = await _lecture_window_for_student(session, student_id, day, tz_name)
+    # Present/Late is judged against the batch's fixed class-start time (else the
+    # global default) — not the day's lecture timetable. See _classify.
     class_start = await _student_class_start(session, student_id, day, tz_name)
     first_in, last_out, day_status, signoff, source = _classify(
-        punches, day, tz_name, class_start=class_start, window=window,
+        punches, day, tz_name, class_start=class_start,
     )
 
     if existing is None:
