@@ -326,7 +326,7 @@ async def preview_schedule(
                 raise ValueError("offline lectures require a classroom")
 
             if not await teacher_repository.teacher_teaches_subject(
-                session, teacher.id, subject.id
+                session, teacher.id, subject.id, batch.id
             ):
                 raise ValueError(
                     f"{teacher.first_name} {teacher.last_name} isn't assigned to "

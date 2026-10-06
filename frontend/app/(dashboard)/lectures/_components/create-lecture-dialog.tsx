@@ -98,9 +98,14 @@ export function CreateLectureDialog({
 
   const subjectsQuery = useSubjectsByCourse(branchId, selectedBatch?.course_id);
   const topicsQuery = useTopicsBySubject(branchId, subjectId || undefined);
-  // Subject→Teacher lock: only teachers assigned to the picked subject are
-  // offered. The backend still validates on save — this is just the UX half.
-  const teachersQuery = useTeachersBySubject(branchId, subjectId || undefined);
+  // Subject→Teacher lock: only teachers who can teach the picked subject for
+  // THIS batch are offered — core-subject teachers plus anyone set up to teach
+  // it as a secondary subject for this batch. Backend still validates on save.
+  const teachersQuery = useTeachersBySubject(
+    branchId,
+    subjectId || undefined,
+    batchId || undefined
+  );
 
   const subjects = subjectsQuery.data ?? [];
   const topics = topicsQuery.data ?? [];

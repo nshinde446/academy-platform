@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Integer, String, Uuid
+from sqlalchemy import Date, ForeignKey, Index, Integer, String, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database.base import BaseModel
@@ -63,6 +63,43 @@ class TeacherBatchMapping(BaseModel):
 
     teacher_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("teachers.id"), nullable=False
+    )
+    batch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("batches.id"), nullable=False
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
+    )
+
+
+class TeacherBatchSubjectMapping(BaseModel):
+    """A SECONDARY subject a teacher teaches for a SPECIFIC batch — on top of
+    their core subject(s) in ``TeacherSubjectMapping``, which are never touched.
+
+    This is what lets a core-Maths teacher be scheduled for IT in Batch D & E
+    only. The Subject→Teacher lock treats a (teacher, subject, batch) row here
+    exactly like a core-subject qualification, but scoped to that one batch.
+    """
+
+    __tablename__ = "teacher_batch_subject_mappings"
+    __table_args__ = (
+        # One live row per (teacher, subject, batch).
+        Index(
+            "uq_teacher_batch_subject",
+            "teacher_id",
+            "subject_id",
+            "batch_id",
+            unique=True,
+            postgresql_where=text("is_deleted = false"),
+            sqlite_where=text("is_deleted = 0"),
+        ),
+    )
+
+    teacher_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("teachers.id"), nullable=False
+    )
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("subjects.id"), nullable=False
     )
     batch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("batches.id"), nullable=False

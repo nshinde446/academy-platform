@@ -13,6 +13,8 @@ from app.modules.teacher.schemas.teacher_schemas import (
     BulkDeleteSummary,
     BulkTeacherDelete,
     ImportSummary,
+    SecondarySubjectAssign,
+    SecondarySubjectRow,
     TeacherCreate,
     TeacherResponse,
     TeacherSubjectsResponse,
@@ -79,16 +81,74 @@ async def list_subject_options(
 async def list_teachers_by_subject(
     branch_id: uuid.UUID = Query(...),
     subject_id: uuid.UUID = Query(...),
+    batch_id: uuid.UUID | None = Query(None),
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
-    """Teachers assigned to the given subject (Subject→Teacher lock).
+    """Teachers who may teach the given subject (Subject→Teacher lock).
 
     Registered before ``/{teacher_id}`` so the literal path wins over the
-    UUID path param. Drives the schedule form's teacher dropdown.
+    UUID path param. Drives the schedule form's teacher dropdown. When
+    ``batch_id`` is given, teachers with a secondary per-batch assignment for
+    that (subject, batch) are included too.
     """
     return await teacher_service.list_teachers_for_subject(
-        session, branch_id, subject_id
+        session, branch_id, subject_id, batch_id
+    )
+
+
+@router.get("/secondary-subjects", response_model=list[SecondarySubjectRow])
+async def list_secondary_subjects(
+    branch_id: uuid.UUID = Query(...),
+    teacher_id: uuid.UUID | None = Query(None),
+    batch_id: uuid.UUID | None = Query(None),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Secondary (per-batch) subject assignments, scoped by teacher or by batch.
+    Literal path — before ``/{teacher_id}``."""
+    if teacher_id is not None:
+        return await teacher_service.list_secondary_for_teacher(
+            session, branch_id, teacher_id
+        )
+    if batch_id is not None:
+        return await teacher_service.list_secondary_for_batch(
+            session, branch_id, batch_id
+        )
+    return []
+
+
+@router.post("/{teacher_id}/secondary-subjects", response_model=list[SecondarySubjectRow])
+async def assign_secondary_subjects(
+    teacher_id: uuid.UUID,
+    body: SecondarySubjectAssign,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Assign a secondary subject to this teacher for the given batches. The
+    teacher's core subject is untouched; the subject is auto-added to each
+    batch's course if missing."""
+    return await teacher_service.assign_secondary_subjects(
+        session, branch_id, teacher_id, body.subject_name, body.batch_ids,
+        current_user["user_id"], request.client.host if request.client else None,
+    )
+
+
+@router.delete("/secondary-subjects/{mapping_id}", status_code=204)
+async def remove_secondary_subject(
+    mapping_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Remove one secondary assignment (teacher stops teaching that subject for
+    that batch). Literal path — before ``/{teacher_id}``."""
+    await teacher_service.remove_secondary_subject(
+        session, branch_id, mapping_id, current_user["user_id"],
+        request.client.host if request.client else None,
     )
 
 

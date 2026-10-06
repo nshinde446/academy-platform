@@ -4,7 +4,9 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.academic.repositories import academic_repository
+from app.modules.academic.services import academic_service
 from app.modules.audit.services import audit_service
+from app.modules.batch.repositories import batch_repository
 from app.modules.teacher.repositories import teacher_repository
 from app.modules.teacher.schemas.teacher_schemas import TeacherCreate, TeacherUpdate
 
@@ -159,11 +161,113 @@ async def list_teachers_with_stats(session: AsyncSession, branch_id: uuid.UUID):
     return rows
 
 
+async def _secondary_rows_to_dicts(
+    session: AsyncSession, branch_id: uuid.UUID, rows: list
+) -> list[dict]:
+    """Enrich raw TeacherBatchSubjectMapping rows with subject/batch/teacher
+    names for the UI. N is small (a teacher's or batch's assignments)."""
+    out: list[dict] = []
+    for r in rows:
+        subj = await academic_repository.get_subject(session, r.subject_id)
+        batch = await batch_repository.get_by_id(session, r.batch_id)
+        teacher = await teacher_repository.get_by_id(session, r.teacher_id)
+        out.append({
+            "id": r.id,
+            "teacher_id": r.teacher_id,
+            "teacher_name": (
+                f"{teacher.first_name} {teacher.last_name}".strip() if teacher else ""
+            ),
+            "subject_id": r.subject_id,
+            "subject_name": subj.name if subj else "",
+            "batch_id": r.batch_id,
+            "batch_name": batch.name if batch else "",
+        })
+    return out
+
+
+async def assign_secondary_subjects(
+    session: AsyncSession, branch_id: uuid.UUID, teacher_id: uuid.UUID,
+    subject_name: str, batch_ids: list[uuid.UUID], current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> list[dict]:
+    """Assign a secondary subject (by name) to a teacher for one or more
+    batches. Ensures the subject exists on each batch's course (auto-add), then
+    upserts the (teacher, subject, batch) mapping. The teacher's core subject is
+    never touched."""
+    teacher = await teacher_repository.get_by_id(session, teacher_id)
+    if not teacher or teacher.is_deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Teacher not found")
+    if teacher.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+    if not subject_name.strip():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="subject is required")
+    if not batch_ids:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="pick at least one batch")
+
+    created: list = []
+    for batch_id in batch_ids:
+        batch = await batch_repository.get_by_id(session, batch_id)
+        if not batch or batch.is_deleted:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+        if batch.branch_id != branch_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+        subj = await academic_service.ensure_subject_on_course(
+            session, branch_id, batch.course_id, batch.start_academic_year_id,
+            subject_name.strip(),
+        )
+        row = await teacher_repository.add_secondary_subject(
+            session, teacher_id=teacher_id, subject_id=subj.id,
+            batch_id=batch_id, branch_id=branch_id,
+        )
+        created.append(row)
+
+    await audit_service.log_action(
+        session, user_id=current_user_id, action="CREATE",
+        table_name="teacher_batch_subject_mappings", record_id=teacher_id,
+        new_values={"subject": subject_name, "batch_ids": [str(b) for b in batch_ids]},
+        ip_address=ip_address, branch_id=branch_id,
+    )
+    return await _secondary_rows_to_dicts(session, branch_id, created)
+
+
+async def remove_secondary_subject(
+    session: AsyncSession, branch_id: uuid.UUID, mapping_id: uuid.UUID,
+    current_user_id: uuid.UUID, ip_address: str | None = None,
+) -> None:
+    ok = await teacher_repository.remove_secondary_subject(session, mapping_id, branch_id)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
+    await audit_service.log_action(
+        session, user_id=current_user_id, action="DELETE",
+        table_name="teacher_batch_subject_mappings", record_id=mapping_id,
+        old_values={"id": str(mapping_id)}, ip_address=ip_address, branch_id=branch_id,
+    )
+
+
+async def list_secondary_for_teacher(
+    session: AsyncSession, branch_id: uuid.UUID, teacher_id: uuid.UUID
+) -> list[dict]:
+    rows = await teacher_repository.list_secondary_for_teacher(session, teacher_id, branch_id)
+    return await _secondary_rows_to_dicts(session, branch_id, rows)
+
+
+async def list_secondary_for_batch(
+    session: AsyncSession, branch_id: uuid.UUID, batch_id: uuid.UUID
+) -> list[dict]:
+    rows = await teacher_repository.list_secondary_for_batch(session, batch_id, branch_id)
+    return await _secondary_rows_to_dicts(session, branch_id, rows)
+
+
 async def list_teachers_for_subject(
-    session: AsyncSession, branch_id: uuid.UUID, subject_id: uuid.UUID
+    session: AsyncSession, branch_id: uuid.UUID, subject_id: uuid.UUID,
+    batch_id: uuid.UUID | None = None,
 ):
-    """Teachers assigned to a subject — the schedule form's filtered dropdown."""
-    return await teacher_repository.list_for_subject(session, branch_id, subject_id)
+    """Teachers who may teach a subject — the schedule form's filtered dropdown.
+    When ``batch_id`` is given, teachers with a secondary per-batch assignment
+    for that (subject, batch) are included alongside the core-qualified ones."""
+    return await teacher_repository.list_for_subject(
+        session, branch_id, subject_id, batch_id
+    )
 
 
 async def update_teacher(

@@ -12,6 +12,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import type { BatchResponse, BatchUpdate } from "../_schemas/batch";
+import { SecondaryTeachers } from "./secondary-teachers";
 
 interface EditBatchDialogProps {
   batch: BatchResponse | null;
@@ -181,6 +182,12 @@ export function EditBatchDialog({
             </Button>
           </div>
         </form>
+
+        {batch && (
+          <div className="mt-4 border-t pt-4">
+            <SecondaryTeachers batchId={batch.id} />
+          </div>
+        )}
       </DialogPopup>
     </Dialog>
   );

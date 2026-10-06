@@ -149,6 +149,33 @@ async def create_subject(session: AsyncSession, data: dict, current_user_id: uui
     return subj
 
 
+async def ensure_subject_on_course(
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    course_id: uuid.UUID,
+    academic_year_id: uuid.UUID,
+    name: str,
+):
+    """Return the course's subject row named ``name``, creating it (with the
+    canonical code) if the course doesn't have it yet. Idempotent — matches on
+    name across the course's existing subjects regardless of academic year, so
+    we never create a duplicate sibling. Powers "auto-add on assign" for the
+    flexible teacher-subject feature."""
+    existing = await academic_repository.list_subjects(session, branch_id, course_id)
+    for s in existing:
+        if s.name.strip().lower() == name.strip().lower():
+            return s
+    return await academic_repository.create_subject(
+        session,
+        branch_id=branch_id,
+        academic_year_id=academic_year_id,
+        course_id=course_id,
+        name=name,
+        code=subject_seeding.subject_code(name),
+        status="active",
+    )
+
+
 async def seed_course_subjects(
     session: AsyncSession,
     branch_id: uuid.UUID,

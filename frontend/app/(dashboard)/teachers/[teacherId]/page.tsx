@@ -7,6 +7,7 @@ import apiClient from "@/services/api-client";
 import { useUserStore } from "@/store/user-store";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { SecondarySubjects } from "../_components/secondary-subjects";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -386,6 +387,8 @@ export default function TeacherDetailPage({
           </div>
         </CardContent>
       </Card>
+
+      <SecondarySubjects branchId={branchId} teacherId={teacherId} />
 
       <div className="flex flex-col gap-2">
         <h3 className="text-lg font-semibold">Lectures in range</h3>
