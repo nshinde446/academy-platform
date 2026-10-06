@@ -169,3 +169,51 @@ def test_summary_pdf_charts_avoid_page_break():
     assert html.count("break-inside:avoid") >= 2  # each pie stays whole
     # Charts come after the table in the document flow.
     assert html.index("<table") < html.index("class='pies'")
+
+
+async def test_daily_faculty_activity_ontime_table(db_session: AsyncSession, seed_data):
+    """The daily report carries an On-Time Lectures table (PDF1): the on-time
+    lecture appears with Lecture No. + 'On Time' status; the delayed one does not."""
+    await _seed(db_session)  # lec1 8:30 on time, lec2 9:45 late
+    _, data, _ = await fac.daily_report(
+        db_session, branch_id=BRANCH_A, teacher_id=TEACHER, day=DAY, fmt="xlsx",
+    )
+    ws = load_workbook(io.BytesIO(data), read_only=True).active
+    rows = list(ws.iter_rows(values_only=True))
+    col_a = [r[0] for r in rows]
+    assert "On-Time Lectures" in col_a
+    assert "Delayed Lecture Details" in col_a
+    # The on-time table: header then the single on-time lecture (No. 1, On Time).
+    hdr = next(i for i, r in enumerate(rows) if r[0] == "On-Time Lectures")
+    data_row = rows[hdr + 2]  # title, header, first data row
+    assert data_row[0] == 1                    # Lecture No.
+    assert data_row[5] == "On Time"            # Status
+    # Exactly one on-time row (the second lecture was late -> delayed table only).
+    ontime_rows = [r for r in rows[hdr + 2:] if r[5] == "On Time"]
+    assert len(ontime_rows) == 1
+
+
+async def test_daily_faculty_activity_no_ontime_message(db_session: AsyncSession, seed_data):
+    """When every lecture started late, the On-Time table shows the empty message."""
+    dept = Department(branch_id=BRANCH_A, name="MSA-Teachers", id_range_start=1, id_range_end=50)
+    db_session.add(dept)
+    await db_session.flush()
+    db_session.add(Staff(
+        branch_id=BRANCH_A, emp_code="7", first_name="X", last_name="Y",
+        department_id=dept.id, linked_teacher_id=TEACHER,
+    ))
+    db_session.add(Lecture(
+        teacher_id=TEACHER, batch_id=BATCH, subject_id=SUBJECT,
+        scheduled_start=_utc(8, 30), scheduled_end=_utc(9, 30),
+        actual_start=_utc(8, 45), actual_end=_utc(9, 30),  # 15 min late
+        actual_duration_min=45, late_flag=True, lecture_status="completed",
+        branch_id=BRANCH_A, academic_year_id=AY,
+    ))
+    await db_session.flush()
+    _, data, _ = await fac.daily_report(
+        db_session, branch_id=BRANCH_A, teacher_id=TEACHER, day=DAY, fmt="xlsx",
+    )
+    ws = load_workbook(io.BytesIO(data), read_only=True).active
+    col_a = [r[0] for r in ws.iter_rows(values_only=True)]
+    assert "On-Time Lectures" in col_a
+    assert "No on-time lectures." in col_a

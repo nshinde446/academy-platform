@@ -68,6 +68,15 @@ def _minutes(a: datetime | None, b: datetime | None) -> int:
     return max(0, int((b - a).total_seconds() // 60))
 
 
+def _late_strict(scheduled_start: datetime | None, actual_start: datetime | None) -> bool:
+    """A lecture is late when it started AFTER its scheduled time (no buffer);
+    seconds ignored. Started at or before scheduled = on time."""
+    s, a = _aware(scheduled_start), _aware(actual_start)
+    if s is None or a is None:
+        return False
+    return a.replace(second=0, microsecond=0) > s.replace(second=0, microsecond=0)
+
+
 async def _teacher_lectures_on(
     session: AsyncSession, branch_id: uuid.UUID, teacher_id: uuid.UUID,
     start: datetime, end: datetime,
@@ -97,12 +106,15 @@ async def _lecture_stats(
     delay_min = 0
     delayed = 0
     detail: list[dict] = []
+    ontime_detail: list[dict] = []
     subj_names: dict[uuid.UUID, str] = {}
     batch_names: dict[uuid.UUID, str] = {}
     # Lectures-per-subject, to label a teacher with the subject they teach most
     # in this range (the summary report's "Subject" column).
     subj_counts: dict[uuid.UUID, int] = {}
-    for l in lectures:
+    # Lecture No. = the lecture's position in the day's schedule (ordered by
+    # scheduled_start, which the query already is), 1-based.
+    for lecture_no, l in enumerate(lectures, start=1):
         if l.actual_duration_min is not None:
             effective_min += l.actual_duration_min
         else:
@@ -110,19 +122,28 @@ async def _lecture_stats(
         subj_counts[l.subject_id] = subj_counts.get(l.subject_id, 0) + 1
         d = _minutes(l.scheduled_start, l.actual_start) if l.actual_start else 0
         delay_min += d
-        if l.late_flag:
+        # Strict split (minute precision): started after scheduled = delayed,
+        # at or before = on time. A lecture with no actual start isn't in either
+        # table (it hasn't started). Each lecture appears in exactly one table.
+        if l.actual_start is None:
+            continue
+        subj_names.setdefault(l.subject_id, "")
+        batch_names.setdefault(l.batch_id, "")
+        row = {
+            "lecture_no": lecture_no,
+            "batch_id": l.batch_id, "subject_id": l.subject_id,
+            "scheduled": _fmt_t(l.scheduled_start, tz),
+            "actual": _fmt_t(l.actual_start, tz),
+            "delay_min": d,
+        }
+        if _late_strict(l.scheduled_start, l.actual_start):
             delayed += 1
-            subj_names.setdefault(l.subject_id, "")
-            batch_names.setdefault(l.batch_id, "")
-            detail.append({
-                "batch_id": l.batch_id, "subject_id": l.subject_id,
-                "scheduled": _fmt_t(l.scheduled_start, tz),
-                "actual": _fmt_t(l.actual_start, tz),
-                "delay_min": d,
-            })
+            detail.append(row)
+        else:
+            ontime_detail.append(row)
 
-    # Resolve names for the delayed-lecture detail table.
-    if detail:
+    # Resolve names for both detail tables.
+    if detail or ontime_detail:
         for sid, name in (await session.execute(
             select(Subject.id, Subject.name).where(Subject.id.in_(subj_names))
         )).all():
@@ -131,9 +152,9 @@ async def _lecture_stats(
             select(Batch.id, Batch.name).where(Batch.id.in_(batch_names))
         )).all():
             batch_names[bid] = name
-        for row in detail:
-            row["subject"] = subj_names.get(row.pop("subject_id"), "")
-            row["batch"] = batch_names.get(row.pop("batch_id"), "")
+        for row in (*detail, *ontime_detail):
+            row["subject"] = subj_names.get(row["subject_id"], "")
+            row["batch"] = batch_names.get(row["batch_id"], "")
 
     # Resolve every subject id we saw (not just the delayed ones) so the summary
     # can label a teacher and drive the subject-wise pie.
@@ -165,6 +186,7 @@ async def _lecture_stats(
         "effective_min": effective_min,
         "delay_min": delay_min,
         "delayed_detail": detail,
+        "ontime_detail": ontime_detail,
         "top_subject": top_subject,
         "subject_counts": subject_counts,
     }
@@ -332,18 +354,38 @@ async def summary_report(
 # ── Builders ────────────────────────────────────────────────────────────────
 
 def _daily_html(brand: str, d: dict, gen: str) -> str:
+    # Delayed Lectures — unchanged columns (PDF §7: keep exactly as today).
     detail = "".join(
         f"<tr><td>{ex._esc(r['batch'])}</td><td>{ex._esc(r['subject'])}</td>"
         f"<td class='c'>{ex._esc(r['scheduled'])}</td><td class='c'>{ex._esc(r['actual'])}</td>"
         f"<td class='c'>{ex.fmt_minutes(r['delay_min'])}</td></tr>"
         for r in d["delayed_detail"]
     )
-    detail_table = (
+    delayed_table = (
         f"<h1 style='font-size:13px'>Delayed Lectures</h1>"
         f"<table><tr><th>Batch</th><th>Subject</th><th>Scheduled</th><th>Actual</th>"
         f"<th>Delay</th></tr>{detail}</table>"
         if d["delayed_detail"] else ""
     )
+    # On-Time Lectures — NEW table below the delayed one.
+    ontime_rows = "".join(
+        f"<tr><td class='c'>{r['lecture_no']}</td><td>{ex._esc(r['batch'])}</td>"
+        f"<td>{ex._esc(r['subject'])}</td><td class='c'>{ex._esc(r['scheduled'])}</td>"
+        f"<td class='c'>{ex._esc(r['actual'])}</td>"
+        f"<td class='c' style='color:#1a7f37;font-weight:bold'>On Time</td></tr>"
+        for r in d.get("ontime_detail", [])
+    )
+    ontime_table = (
+        f"<h1 style='font-size:13px'>On-Time Lectures</h1>"
+        + (
+            f"<table><tr><th>Lecture No.</th><th>Batch</th><th>Subject</th>"
+            f"<th>Scheduled Time</th><th>Actual Start Time</th><th>Status</th></tr>"
+            f"{ontime_rows}</table>"
+            if ontime_rows
+            else "<p class='sub'>No on-time lectures.</p>"
+        )
+    )
+    detail_table = delayed_table + ontime_table
     body = (
         f"<h1>{ex._esc(brand)} — Daily Faculty Activity Report</h1>"
         f"<p class='sub'>{ex._esc(d['teacher_name'])} · Emp {ex._esc(d['emp_code'])} · {ex._esc(d['day'])}</p>"
@@ -388,21 +430,41 @@ def _daily_xlsx(brand: str, d: dict, gen: str) -> bytes:
 
     # Delayed Lectures detail table (mirrors the PDF) — batch, subject, times,
     # minutes delayed. Placed a row below the summary pairs.
+    cursor = 6 + len(pairs) + 1
     detail = d.get("delayed_detail") or []
     if detail:
-        top = 6 + len(pairs) + 1
-        ws.cell(row=top, column=1, value="Delayed Lecture Details").font = Font(bold=True)
+        ws.cell(row=cursor, column=1, value="Delayed Lecture Details").font = Font(bold=True)
         headers = ["Sr", "Batch", "Subject", "Scheduled", "Actual", "Delay"]
         for c, h in enumerate(headers, start=1):
-            ws.cell(row=top + 1, column=c, value=h).font = Font(bold=True)
+            ws.cell(row=cursor + 1, column=c, value=h).font = Font(bold=True)
         for i, r in enumerate(detail, start=1):
-            row = top + 1 + i
+            row = cursor + 1 + i
             ws.cell(row=row, column=1, value=i)
             ws.cell(row=row, column=2, value=r["batch"])
             ws.cell(row=row, column=3, value=r["subject"])
             ws.cell(row=row, column=4, value=r["scheduled"])
             ws.cell(row=row, column=5, value=r["actual"])
             ws.cell(row=row, column=6, value=ex.fmt_minutes(r["delay_min"]))
+        cursor = cursor + 2 + len(detail)  # one blank row before the next table
+
+    # On-Time Lectures table (NEW) — below the delayed one, always shown.
+    ontime = d.get("ontime_detail") or []
+    ws.cell(row=cursor, column=1, value="On-Time Lectures").font = Font(bold=True)
+    if ontime:
+        oheaders = ["Lecture No.", "Batch", "Subject", "Scheduled Time",
+                    "Actual Start Time", "Status"]
+        for c, h in enumerate(oheaders, start=1):
+            ws.cell(row=cursor + 1, column=c, value=h).font = Font(bold=True)
+        for i, r in enumerate(ontime, start=1):
+            row = cursor + 1 + i
+            ws.cell(row=row, column=1, value=r["lecture_no"])
+            ws.cell(row=row, column=2, value=r["batch"])
+            ws.cell(row=row, column=3, value=r["subject"])
+            ws.cell(row=row, column=4, value=r["scheduled"])
+            ws.cell(row=row, column=5, value=r["actual"])
+            ws.cell(row=row, column=6, value="On Time")
+    else:
+        ws.cell(row=cursor + 1, column=1, value="No on-time lectures.")
 
     ws.column_dimensions["A"].width = 26
     ws.column_dimensions["B"].width = 20
