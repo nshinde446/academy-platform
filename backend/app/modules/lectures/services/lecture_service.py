@@ -26,9 +26,10 @@ from app.modules.lectures.schemas.lecture_schemas import (
     LectureSubstitute,
 )
 
-# A lecture is "late" when it actually started more than this many minutes
-# after its scheduled start (PDF §3 late-start rule).
-LATE_THRESHOLD_MIN = 10
+# Strict late detection (2026-10): a lecture is "late" the moment it starts
+# AFTER its scheduled time — no buffer. Started at or before scheduled = on time.
+# Kept as a named 0 so the intent is explicit and greppable.
+LATE_THRESHOLD_MIN = 0
 
 
 async def _branch_zoneinfo(session: AsyncSession, branch_id: uuid.UUID) -> ZoneInfo:
@@ -67,7 +68,10 @@ def _derive_actuals(
     a_start = _aware(actual_start)
     ss = _aware(scheduled_start)
     if a_start is not None and ss is not None:
-        late_flag = a_start > ss + timedelta(minutes=LATE_THRESHOLD_MIN)
+        # Compare minutes only — seconds are ignored (10:00:45 counts as 10:00).
+        a_min = a_start.replace(second=0, microsecond=0)
+        s_min = ss.replace(second=0, microsecond=0)
+        late_flag = a_min > s_min + timedelta(minutes=LATE_THRESHOLD_MIN)
     a_end = _aware(actual_end)
     if a_start is not None and a_end is not None:
         duration = max(int((a_end - a_start).total_seconds() // 60), 0)

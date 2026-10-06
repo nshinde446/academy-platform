@@ -2,7 +2,7 @@ import re
 import uuid
 from datetime import date
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 # "HH:MM" 24-hour, e.g. 09:00, 14:30. Empty/None allowed (falls back to the
 # global class-start).
@@ -15,6 +15,17 @@ def _validate_hhmm(v: str | None) -> str | None:
     if not _HHMM.match(v):
         raise ValueError("time must be HH:MM (24-hour), e.g. 14:30")
     return v
+
+
+def _validate_timing(self):
+    """End time must be after start time (lexicographic on HH:MM works)."""
+    if (
+        self.class_start_time
+        and self.class_end_time
+        and self.class_end_time <= self.class_start_time
+    ):
+        raise ValueError("class_end_time must be after class_start_time")
+    return self
 
 
 class BatchCreate(BaseModel):
@@ -30,6 +41,7 @@ class BatchCreate(BaseModel):
 
     _v_start = field_validator("class_start_time")(_validate_hhmm)
     _v_end = field_validator("class_end_time")(_validate_hhmm)
+    _v_timing = model_validator(mode="after")(_validate_timing)
 
 
 class BatchUpdate(BaseModel):
@@ -42,6 +54,7 @@ class BatchUpdate(BaseModel):
 
     _v_start = field_validator("class_start_time")(_validate_hhmm)
     _v_end = field_validator("class_end_time")(_validate_hhmm)
+    _v_timing = model_validator(mode="after")(_validate_timing)
 
 
 class BatchResponse(BaseModel):

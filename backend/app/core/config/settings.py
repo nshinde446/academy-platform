@@ -57,7 +57,9 @@ class Settings(BaseSettings):
     # are the expensive part of the quota.
     SENTRY_TRACES_SAMPLE_RATE: float = 0.0
 
-    ATTENDANCE_GRACE_PERIOD_MINUTES: int = 10
+    # Strict student attendance (2026-10): no grace. Arriving at or before the
+    # batch's Start Time = PRESENT; even one minute after = LATE.
+    ATTENDANCE_GRACE_PERIOD_MINUTES: int = 0
     ATTENDANCE_DUPLICATE_WINDOW_MINUTES: int = 5
     # Timetable-driven attendance: a scan up to this many minutes BEFORE the
     # first scheduled lecture counts as on-time (PRESENT). A scan outside the

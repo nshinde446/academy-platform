@@ -175,7 +175,7 @@ export function EndOfDayDialog({
                   ariaLabel="Actual start"
                   value={actualStart}
                   onChange={setActualStart}
-                  step={5}
+                  precise
                   required
                 />
               </div>
@@ -186,7 +186,7 @@ export function EndOfDayDialog({
                   ariaLabel="Actual end"
                   value={actualEnd}
                   onChange={setActualEnd}
-                  step={5}
+                  precise
                 />
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-xs text-muted-foreground">Duration:</span>

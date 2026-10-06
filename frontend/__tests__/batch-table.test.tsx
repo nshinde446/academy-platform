@@ -183,7 +183,11 @@ describe("BatchTable", () => {
       />
     );
 
-    const editButtons = screen.getAllByRole("button", { name: /^edit$/i });
+    // Batches with no timing set show "Set timing"; otherwise "Edit" — both open
+    // the edit dialog.
+    const editButtons = screen.getAllByRole("button", {
+      name: /^(edit|set timing)$/i,
+    });
     await user.click(editButtons[0]);
 
     expect(mockEdit).toHaveBeenCalledWith(MOCK_BATCHES[0]);

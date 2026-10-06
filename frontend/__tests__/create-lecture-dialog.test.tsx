@@ -197,14 +197,13 @@ describe("CreateLectureDialog", () => {
     });
     await user.selectOptions(screen.getByLabelText(/^teacher \*/i), "t1");
 
-    // Start is a split date + typeable time select now (no minute spinner).
+    // Start is a split date + native per-minute time input now (any minute).
     fireEvent.change(screen.getByLabelText("Scheduled start date"), {
       target: { value: "2026-05-20" },
     });
-    await user.selectOptions(
-      screen.getByLabelText("Scheduled start time"),
-      "10:00"
-    );
+    fireEvent.change(screen.getByLabelText("Scheduled start time"), {
+      target: { value: "10:02" },
+    });
     // End set in one tap via a duration preset (start + 1h).
     await user.click(screen.getByRole("button", { name: "1h" }));
 
