@@ -25,6 +25,24 @@ class TeacherSubjectsResponse(BaseModel):
     subjects: list[str]
 
 
+class SecondarySubjectAssign(BaseModel):
+    """Assign a secondary subject (by name) to a teacher for one or more
+    batches. The subject is auto-created on each batch's course if missing."""
+
+    subject_name: str
+    batch_ids: list[uuid.UUID]
+
+
+class SecondarySubjectRow(BaseModel):
+    id: uuid.UUID
+    teacher_id: uuid.UUID
+    teacher_name: str
+    subject_id: uuid.UUID
+    subject_name: str
+    batch_id: uuid.UUID
+    batch_name: str
+
+
 class TeacherUpdate(BaseModel):
     first_name: str | None = None
     last_name: str | None = None

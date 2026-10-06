@@ -78,12 +78,17 @@ async def _validate_teacher_subject(
     session: AsyncSession,
     teacher_id: uuid.UUID,
     subject_id: uuid.UUID,
+    batch_id: uuid.UUID | None = None,
 ) -> None:
     """Subject→Teacher lock (PDF §2): reject when the teacher isn't assigned to
     the subject. UI dropdown filtering is convenience; this is the guarantee —
-    it fires even for direct API callers that bypass the form."""
+    it fires even for direct API callers that bypass the form.
+
+    When ``batch_id`` is given, a per-batch secondary assignment also satisfies
+    the lock (a core-Maths teacher set up to teach IT for this batch passes) —
+    scheduling treats it like any other lecture, with no warning or flag."""
     if not await teacher_repository.teacher_teaches_subject(
-        session, teacher_id, subject_id
+        session, teacher_id, subject_id, batch_id
     ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -199,7 +204,9 @@ async def schedule_lecture(
         data.scheduled_start, data.scheduled_end,
     )
 
-    await _validate_teacher_subject(session, data.teacher_id, data.subject_id)
+    await _validate_teacher_subject(
+        session, data.teacher_id, data.subject_id, data.batch_id
+    )
 
     # Teacher availability (S5): a teacher on leave can't be scheduled.
     if await teacher_repository.teacher_on_leave(
@@ -961,7 +968,7 @@ async def list_eligible_substitutes(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
 
     qualified = await teacher_repository.list_for_subject(
-        session, branch_id, lecture.subject_id
+        session, branch_id, lecture.subject_id, lecture.batch_id
     )
     qualified_ids = {t.id for t in qualified}
     candidates = (
@@ -1187,7 +1194,7 @@ async def set_batch_timetable(
         # Subject→Teacher lock applies the moment both are pinned.
         if slot.subject_id is not None and slot.teacher_id is not None:
             await _validate_teacher_subject(
-                session, slot.teacher_id, slot.subject_id
+                session, slot.teacher_id, slot.subject_id, batch_id
             )
 
     await lecture_repository.delete_batch_schedule(session, batch_id)
@@ -1317,7 +1324,7 @@ async def generate_from_timetable(
 
             try:
                 await _validate_teacher_subject(
-                    session, slot.teacher_id, slot.subject_id
+                    session, slot.teacher_id, slot.subject_id, slot.batch_id
                 )
                 await _check_conflicts(
                     session,
@@ -1463,7 +1470,7 @@ async def mark_substitute(
     if data.actual_teacher_id is not None:
         if not data.allow_cross_subject:
             await _validate_teacher_subject(
-                session, data.actual_teacher_id, lecture.subject_id
+                session, data.actual_teacher_id, lecture.subject_id, lecture.batch_id
             )
         if await teacher_repository.teacher_on_leave(
             session, data.actual_teacher_id, _aware(lecture.scheduled_start).date()
@@ -1682,8 +1689,13 @@ async def create_lecture_session(
             detail="actual_end must be after actual_start",
         )
 
-    # Subject→Teacher lock — whoever delivered this session must teach it.
-    await _validate_teacher_subject(session, data.teacher_id, data.subject_id)
+    # Subject→Teacher lock — whoever delivered this session must teach it. A
+    # single-batch session honours per-batch secondary assignments; a merged
+    # multi-batch session falls back to core-subject qualification.
+    _session_batch = data.batch_ids[0] if len(data.batch_ids) == 1 else None
+    await _validate_teacher_subject(
+        session, data.teacher_id, data.subject_id, _session_batch
+    )
 
     # Validate every batch belongs to this branch and pick an academic year.
     academic_year_id: uuid.UUID | None = None

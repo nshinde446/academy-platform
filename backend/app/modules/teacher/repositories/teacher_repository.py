@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.teacher.models.teacher_models import (
     Teacher,
+    TeacherBatchSubjectMapping,
     TeacherLeave,
     TeacherSubjectMapping,
 )
@@ -283,24 +284,45 @@ async def teacher_teaches_subject(
     session: AsyncSession,
     teacher_id: uuid.UUID,
     subject_id: uuid.UUID,
+    batch_id: uuid.UUID | None = None,
 ) -> bool:
-    """Whether an active TeacherSubjectMapping links this teacher to this
-    subject. The single source of truth for the Subject→Teacher lock — both
-    the schedule form's dropdown filter and the backend write-path validation
-    resolve through here."""
-    result = await session.execute(
+    """Whether this teacher may teach this subject — the single source of truth
+    for the Subject→Teacher lock (both the schedule form's dropdown filter and
+    the backend write-path validation resolve here).
+
+    True when the teacher has the subject as a **core** subject
+    (``TeacherSubjectMapping``), OR — when ``batch_id`` is given — has a
+    **secondary** per-batch assignment (``TeacherBatchSubjectMapping``) for that
+    (subject, batch). With ``batch_id=None`` the behaviour is exactly as before:
+    core subjects only."""
+    same_name = _same_name_subject_ids(subject_id)
+    core = await session.execute(
         select(TeacherSubjectMapping.id)
         .where(
             TeacherSubjectMapping.teacher_id == teacher_id,
             # Match across same-named sibling subject rows (per-course
             # duplicates) so the lock isn't defeated by which "Chemistry" id
             # the schedule slot happened to pick.
-            TeacherSubjectMapping.subject_id.in_(_same_name_subject_ids(subject_id)),
+            TeacherSubjectMapping.subject_id.in_(same_name),
             TeacherSubjectMapping.is_deleted == False,  # noqa: E712
         )
         .limit(1)
     )
-    return result.scalar_one_or_none() is not None
+    if core.scalar_one_or_none() is not None:
+        return True
+    if batch_id is None:
+        return False
+    secondary = await session.execute(
+        select(TeacherBatchSubjectMapping.id)
+        .where(
+            TeacherBatchSubjectMapping.teacher_id == teacher_id,
+            TeacherBatchSubjectMapping.batch_id == batch_id,
+            TeacherBatchSubjectMapping.subject_id.in_(same_name),
+            TeacherBatchSubjectMapping.is_deleted == False,  # noqa: E712
+        )
+        .limit(1)
+    )
+    return secondary.scalar_one_or_none() is not None
 
 
 async def list_subject_ids_for_teacher(
@@ -354,31 +376,121 @@ async def list_for_subject(
     session: AsyncSession,
     branch_id: uuid.UUID,
     subject_id: uuid.UUID,
+    batch_id: uuid.UUID | None = None,
 ) -> list[Teacher]:
-    """Active teachers in the branch assigned to teach ``subject_id``.
+    """Active teachers in the branch who may teach ``subject_id``.
 
     Powers the schedule form's teacher dropdown so a wrong-subject teacher is
     never even offered (the backend still validates on save — UI filtering is
-    convenience, not the guarantee)."""
+    convenience, not the guarantee). Returns the **core-qualified** teachers,
+    plus — when ``batch_id`` is given — teachers with a **secondary** per-batch
+    assignment for that (subject, batch)."""
+    same_name = _same_name_subject_ids(subject_id, branch_id)
+    teacher_ids: set[uuid.UUID] = set(
+        (await session.execute(
+            select(TeacherSubjectMapping.teacher_id).where(
+                TeacherSubjectMapping.subject_id.in_(same_name),
+                TeacherSubjectMapping.is_deleted == False,  # noqa: E712
+            )
+        )).scalars().all()
+    )
+    if batch_id is not None:
+        teacher_ids |= set(
+            (await session.execute(
+                select(TeacherBatchSubjectMapping.teacher_id).where(
+                    TeacherBatchSubjectMapping.subject_id.in_(same_name),
+                    TeacherBatchSubjectMapping.batch_id == batch_id,
+                    TeacherBatchSubjectMapping.is_deleted == False,  # noqa: E712
+                )
+            )).scalars().all()
+        )
+    if not teacher_ids:
+        return []
     result = await session.execute(
         select(Teacher)
-        .join(
-            TeacherSubjectMapping,
-            TeacherSubjectMapping.teacher_id == Teacher.id,
-        )
         .where(
             Teacher.branch_id == branch_id,
             Teacher.is_deleted == False,  # noqa: E712
-            # Offer every teacher qualified for any same-named subject row in
-            # the branch, not just the one duplicate id the slot selected.
-            TeacherSubjectMapping.subject_id.in_(
-                _same_name_subject_ids(subject_id, branch_id)
-            ),
-            TeacherSubjectMapping.is_deleted == False,  # noqa: E712
+            Teacher.id.in_(teacher_ids),
         )
         .order_by(Teacher.first_name, Teacher.last_name)
     )
     return list(result.scalars().unique().all())
+
+
+# ── Secondary (per-batch) subject assignments ────────────────────────────────
+
+
+async def add_secondary_subject(
+    session: AsyncSession,
+    *,
+    teacher_id: uuid.UUID,
+    subject_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    branch_id: uuid.UUID,
+) -> TeacherBatchSubjectMapping:
+    """Upsert a (teacher, subject, batch) secondary assignment. Reactivates a
+    soft-deleted row rather than creating a duplicate."""
+    existing = (await session.execute(
+        select(TeacherBatchSubjectMapping).where(
+            TeacherBatchSubjectMapping.teacher_id == teacher_id,
+            TeacherBatchSubjectMapping.subject_id == subject_id,
+            TeacherBatchSubjectMapping.batch_id == batch_id,
+        )
+    )).scalar_one_or_none()
+    if existing is not None:
+        existing.is_deleted = False
+        existing.branch_id = branch_id
+        await session.flush()
+        return existing
+    row = TeacherBatchSubjectMapping(
+        teacher_id=teacher_id, subject_id=subject_id,
+        batch_id=batch_id, branch_id=branch_id,
+    )
+    session.add(row)
+    await session.flush()
+    return row
+
+
+async def remove_secondary_subject(
+    session: AsyncSession, mapping_id: uuid.UUID, branch_id: uuid.UUID
+) -> bool:
+    row = (await session.execute(
+        select(TeacherBatchSubjectMapping).where(
+            TeacherBatchSubjectMapping.id == mapping_id,
+            TeacherBatchSubjectMapping.branch_id == branch_id,
+            TeacherBatchSubjectMapping.is_deleted == False,  # noqa: E712
+        )
+    )).scalar_one_or_none()
+    if row is None:
+        return False
+    row.is_deleted = True
+    await session.flush()
+    return True
+
+
+async def list_secondary_for_teacher(
+    session: AsyncSession, teacher_id: uuid.UUID, branch_id: uuid.UUID
+) -> list[TeacherBatchSubjectMapping]:
+    return list((await session.execute(
+        select(TeacherBatchSubjectMapping).where(
+            TeacherBatchSubjectMapping.teacher_id == teacher_id,
+            TeacherBatchSubjectMapping.branch_id == branch_id,
+            TeacherBatchSubjectMapping.is_deleted == False,  # noqa: E712
+        )
+    )).scalars().all())
+
+
+async def list_secondary_for_batch(
+    session: AsyncSession, batch_id: uuid.UUID, branch_id: uuid.UUID
+) -> list[TeacherBatchSubjectMapping]:
+    return list((await session.execute(
+        select(TeacherBatchSubjectMapping).where(
+            TeacherBatchSubjectMapping.batch_id == batch_id,
+            TeacherBatchSubjectMapping.branch_id == branch_id,
+            TeacherBatchSubjectMapping.is_deleted == False,  # noqa: E712
+        )
+    )).scalars().all())
 
 
 async def list_active(

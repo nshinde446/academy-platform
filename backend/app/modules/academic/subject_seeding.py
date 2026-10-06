@@ -66,7 +66,23 @@ SUBJECT_CODES: dict[str, str] = {
     "Zoology": "ZOO",
     "Science": "SCI",
     "Mental Ability": "MA",
+    # Non-exam subjects (2026-10): languages + IT/SST/History, teachable as a
+    # core or (per the flexible-assignment feature) a per-batch secondary subject.
+    "Marathi": "MAR",
+    "Hindi": "HIN",
+    "English": "ENG",
+    "IT": "IT",
+    "SST": "SST",
+    "History": "HIS",
 }
+
+# The subject names an admin can add to any course from the Manage-subjects
+# catalog (one-click), on top of free-text add. The academy's ten teachable
+# subjects: PCMB + the six added 2026-10. Order is how the picker shows them.
+ADDABLE_SUBJECTS: list[str] = [
+    "Physics", "Chemistry", "Mathematics", "Biology",
+    "Marathi", "Hindi", "English", "IT", "SST", "History",
+]
 
 # Human-facing syllabus choices for the "Seed from syllabus" picker, in the
 # order the UI should show them. Only keys with a subject set are offered.

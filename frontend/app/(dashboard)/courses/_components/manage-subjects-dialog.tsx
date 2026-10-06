@@ -15,6 +15,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { useAcademicYears } from "@/app/(dashboard)/academic-years/_hooks/use-academic-years";
+import { useSubjectCatalog } from "@/app/(dashboard)/teachers/_hooks/use-secondary-subjects";
 import type { CourseResponse } from "../_schemas/course";
 import type { SubjectResponse } from "../_schemas/subject";
 import {
@@ -68,6 +69,10 @@ export function ManageSubjectsDialog({
   const [deleteTarget, setDeleteTarget] = useState<SubjectResponse | null>(null);
 
   const subjects = subjectsQuery.data ?? [];
+  const catalog = useSubjectCatalog(branchId).data ?? [];
+  // Catalog names not already on this course (one-click adds).
+  const present = new Set(subjects.map((s) => s.name.trim().toLowerCase()));
+  const catalogToAdd = catalog.filter((n) => !present.has(n.trim().toLowerCase()));
   const newestYear = useMemo(() => {
     const years = yearsQuery.data ?? [];
     if (years.length === 0) return undefined;
@@ -97,6 +102,30 @@ export function ManageSubjectsDialog({
     } catch (err) {
       toast.error(
         "Could not seed subjects",
+        apiErrorMessage(err) || "Please try again."
+      );
+    }
+  }
+
+  async function addNamed(name: string, code?: string) {
+    if (!course || !branchId) return;
+    if (!newestYear) {
+      toast.error(
+        "No academic year",
+        "Create an academic year for this branch first."
+      );
+      return;
+    }
+    try {
+      await createMutation.mutateAsync({
+        course_id: course.id,
+        academic_year_id: newestYear.id,
+        name,
+        code: code || name.slice(0, 3).toUpperCase(),
+      });
+    } catch (err) {
+      toast.error(
+        "Could not add subject",
         apiErrorMessage(err) || "Please try again."
       );
     }
@@ -202,6 +231,27 @@ export function ManageSubjectsDialog({
                 </Button>
               </div>
             </div>
+
+            {/* Quick-add from the academy's subject catalog */}
+            {catalogToAdd.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <Label>Quick add</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {catalogToAdd.map((name) => (
+                    <Button
+                      key={name}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => addNamed(name)}
+                      disabled={createMutation.isPending}
+                    >
+                      + {name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Add one subject */}
             <div className="flex flex-col gap-1.5">

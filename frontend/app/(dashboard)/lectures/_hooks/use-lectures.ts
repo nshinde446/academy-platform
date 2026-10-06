@@ -396,14 +396,23 @@ export function useTeachers(branchId: string | undefined) {
 
 export function useTeachersBySubject(
   branchId: string | undefined,
-  subjectId: string | undefined
+  subjectId: string | undefined,
+  batchId?: string
 ) {
   return useQuery<TeacherSummary[]>({
-    queryKey: teacherKeys.bySubject(branchId!, subjectId!),
+    // batchId is part of the key so switching batch re-fetches (a teacher may be
+    // offered for a subject only in the batch they're set up to teach it in).
+    queryKey: [...teacherKeys.bySubject(branchId!, subjectId!), batchId ?? "all"],
     queryFn: async () => {
       const res = await apiClient.get<TeacherSummary[]>(
         "/api/v1/teachers/by-subject",
-        { params: { branch_id: branchId, subject_id: subjectId } }
+        {
+          params: {
+            branch_id: branchId,
+            subject_id: subjectId,
+            ...(batchId ? { batch_id: batchId } : {}),
+          },
+        }
       );
       return res.data;
     },

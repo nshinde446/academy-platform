@@ -161,6 +161,15 @@ async def list_syllabi(
     return subject_seeding.AVAILABLE_SYLLABI
 
 
+@router.get("/subjects/catalog", response_model=list[str])
+async def subject_catalog(
+    _current_user: dict = Depends(get_current_user),
+):
+    """The academy's teachable subject names (PCMB + the six languages/IT/etc.),
+    offered as one-click adds in the Manage-subjects dialog."""
+    return subject_seeding.ADDABLE_SUBJECTS
+
+
 @router.post("/subjects/seed", response_model=SubjectSeedResponse)
 async def seed_subjects(
     body: SubjectSeedRequest,
