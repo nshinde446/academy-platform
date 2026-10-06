@@ -38,6 +38,11 @@ const post = apiClient.post as ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.clearAllMocks();
   get.mockImplementation((url: string) => {
+    if (url.includes("/subjects/catalog")) {
+      return Promise.resolve({
+        data: ["Physics", "Chemistry", "Mathematics", "Biology", "IT"],
+      });
+    }
     if (url.includes("/subjects")) {
       return Promise.resolve({
         data: [
