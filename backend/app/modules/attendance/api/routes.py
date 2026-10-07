@@ -396,22 +396,55 @@ async def manual_mark_day(
     )
 
 
-@router.post("/daily/recompute")
+@router.post("/daily/recompute", status_code=202)
 async def recompute_daily(
     branch_id: uuid.UUID = Query(...),
     start: date = Query(...),
     end: date = Query(...),
     current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
-    session: AsyncSession = Depends(get_db),
 ):
-    """Recompute PRESENT/LATE for every student-day in the range from punches —
-    run after setting per-batch class times so historical afternoon-batch days
-    stop reading as wrongly LATE. Idempotent; MANUAL rows are preserved."""
-    recomputed = await daily_service.recompute_range(
-        session, branch_id=branch_id, start=start, end=end,
+    """Enqueue a background recompute of PRESENT/LATE for every student-day in the
+    range from punches — run after a classification-rule or per-batch class-time
+    change so historical days reflect the corrected cutoff. Idempotent; MANUAL rows
+    are preserved.
+
+    Runs as a Celery task (a full range is far longer than the ~30s HTTP gateway
+    allows). Returns 202 with a ``task_id``; poll ``GET /daily/recompute/{task_id}``
+    for progress and the final recomputed count."""
+    from app.modules.attendance.jobs import tasks as attendance_tasks
+
+    async_result = attendance_tasks.recompute_range.delay(
+        str(branch_id), start.isoformat(), end.isoformat(),
     )
-    await session.commit()
-    return {"recomputed": recomputed}
+    return {
+        "task_id": async_result.id,
+        "state": "PENDING",
+        "branch_id": str(branch_id),
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "poll": f"/api/v1/attendance/daily/recompute/{async_result.id}",
+    }
+
+
+@router.get("/daily/recompute/{task_id}")
+async def recompute_status(
+    task_id: str,
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+):
+    """Progress of an enqueued range recompute. ``state`` is the Celery state
+    (PENDING → STARTED → SUCCESS/FAILURE); on SUCCESS ``result`` carries the
+    recomputed count and the range."""
+    from celery.result import AsyncResult
+
+    from app.core.jobs.celery_app import celery_app
+
+    res = AsyncResult(task_id, app=celery_app)
+    out: dict = {"task_id": task_id, "state": res.state}
+    if res.successful():
+        out["result"] = res.result
+    elif res.failed():
+        out["error"] = str(res.result)
+    return out
 
 
 @router.post("/daily/notify")

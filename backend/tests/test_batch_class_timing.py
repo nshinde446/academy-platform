@@ -12,9 +12,10 @@ import pytest
 
 from app.modules.attendance.models.attendance_models import DailyAttendance, RawPunchLog
 from app.modules.attendance.services import daily_service
-from app.modules.student.models.student_models import StudentBatchMapping
+from app.modules.student.models.student_models import Student, StudentBatchMapping
 
 DAY = date(2026, 6, 22)
+DAY2 = date(2026, 6, 23)
 
 
 def _utc(h, m):
@@ -110,6 +111,60 @@ async def test_recompute_preserves_manual_rows(db_session, seed_data):
         )
     )).first()
     assert row.source == "MANUAL" and row.day_status == "ABSENT"  # human edit kept
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_recompute_batched_multi_student_multi_day(db_session, seed_data):
+    """The batched recompute must judge each student against their OWN batch
+    start across every day in the range — no cross-contamination between the
+    per-day punch buckets or the per-student class-start map."""
+    b = seed_data["branch_a"].id
+    s1 = seed_data["student"]
+    s2 = Student(
+        branch_id=b, academic_year_id=seed_data["academic_year"].id,
+        first_name="Two", last_name="Afternoon", enrollment_number="STU002",
+        status="active", is_deleted=False,
+    )
+    db_session.add(s2)
+    await db_session.flush()
+
+    seed_data["batch"].class_start_time = "10:00"     # morning  -> s1
+    seed_data["batch_b"].class_start_time = "14:00"   # afternoon -> s2
+    db_session.add_all([
+        StudentBatchMapping(student_id=s1.id, batch_id=seed_data["batch"].id,
+                            branch_id=b, status="active", is_deleted=False),
+        StudentBatchMapping(student_id=s2.id, batch_id=seed_data["batch_b"].id,
+                            branch_id=b, status="active", is_deleted=False),
+    ])
+    await db_session.flush()
+
+    # s1 punches 10:00 IST (04:30 UTC); s2 punches 14:00 IST (08:30 UTC) — each
+    # on time for their own batch. Seed stale LATE rows so recompute must flip them.
+    for dd, day in ((22, DAY), (23, DAY2)):
+        for sid, (h, m) in ((s1.id, (4, 30)), (s2.id, (8, 30))):
+            db_session.add(RawPunchLog(
+                device_id="d", student_id=sid, branch_id=b,
+                punch_timestamp=datetime(2026, 6, dd, h, m, tzinfo=timezone.utc),
+            ))
+            db_session.add(DailyAttendance(
+                student_id=sid, branch_id=b, attendance_date=day,
+                day_status="LATE", signoff="MISSING", source="BIOMETRIC",
+            ))
+    await db_session.flush()
+
+    n = await daily_service.recompute_range(db_session, branch_id=b, start=DAY, end=DAY2)
+    assert n == 4
+
+    rows = (await db_session.execute(
+        DailyAttendance.__table__.select().where(DailyAttendance.branch_id == b)
+    )).all()
+    status = {(r.student_id, r.attendance_date): r.day_status for r in rows}
+    # If s2's afternoon punch were judged against the 10:00 morning cutoff it
+    # would read LATE — all four must be PRESENT.
+    assert status[(s1.id, DAY)] == "PRESENT"
+    assert status[(s1.id, DAY2)] == "PRESENT"
+    assert status[(s2.id, DAY)] == "PRESENT"
+    assert status[(s2.id, DAY2)] == "PRESENT"
 
 
 # ── simple model: fixed class-start cutoff, no lecture window, no EXCEPTION ───

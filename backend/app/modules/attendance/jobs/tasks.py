@@ -210,6 +210,39 @@ def rebuild_student_day(student_id: str, branch_id: str, day_iso: str):
     )
 
 
+# ── Range recompute (background) ─────────────────────────────────────────────
+# A full-range recompute (e.g. 30 days after a classification-rule change) is far
+# too long for an HTTP request — the prod gateway cuts requests at ~30s. It runs
+# here instead: the endpoint enqueues this task and polls its state. The service
+# call is batched (no per-row N+1), so even a month finishes in one task run.
+
+
+async def _run_recompute_range(branch_id: uuid.UUID, start: date, end: date) -> int:
+    async with async_session_factory() as session:
+        n = await daily_service.recompute_range(
+            session, branch_id=branch_id, start=start, end=end
+        )
+        await session.commit()
+    return n
+
+
+@celery_app.task(name="attendance.recompute_range")
+def recompute_range(branch_id: str, start_iso: str, end_iso: str) -> dict:
+    """Recompute PRESENT/LATE for every student-day in [start, end] from punches.
+    Returns {recomputed, branch_id, start, end} — the task result the status
+    endpoint reads back."""
+    n = run_task(
+        lambda: _run_recompute_range(
+            uuid.UUID(branch_id),
+            date.fromisoformat(start_iso),
+            date.fromisoformat(end_iso),
+        )
+    )
+    return {
+        "recomputed": n, "branch_id": branch_id, "start": start_iso, "end": end_iso,
+    }
+
+
 # ── eTimeOffice cloud poll ──────────────────────────────────────────────────
 # eTimeOffice is pull-based (their cloud holds the punches), so unlike BioMax
 # (which pushes) we poll it on a schedule. The job re-pulls a short lookback
