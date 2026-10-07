@@ -11,8 +11,10 @@ from app.modules.audit.services import audit_service
 from app.modules.batch.repositories import batch_repository
 from app.modules.events.services import event_service
 from app.modules.student.models.student_models import Student, StudentBatchMapping
+from app.modules.academic.models.academic_models import Course
 from app.modules.tests.models.test_models import (
     StudentMark,
+    TestBatch,
     TestImportReview,
     TestSubject,
 )
@@ -23,6 +25,7 @@ VALID_DIFFICULTIES = {"EASY", "MEDIUM", "HARD"}
 VALID_BLOOMS = {"REMEMBER", "UNDERSTAND", "APPLY", "ANALYZE", "EVALUATE", "CREATE"}
 VALID_TEST_STATUSES = {"DRAFT", "SCHEDULED", "ACTIVE", "COMPLETED", "CANCELLED"}
 VALID_PAPER_TYPES = {"DPP", "CPP", "TEST"}
+VALID_QUESTION_TYPES = {"MCQ_ONLY", "MCQ_NUMERICAL", "NA"}
 # Bound a single auto-pick so a runaway request can't scan the whole bank.
 MAX_AUTO_PICK = 200
 PASS_PERCENTAGE = 33.0
@@ -318,6 +321,51 @@ def _format_question(question):
 
 # ─── Test Service ─────────────────────────────────────────────────────────────
 
+async def _resolve_batches(session: AsyncSession, data: dict) -> list:
+    """The test's batches. Accepts `batch_ids` (multi, Test Portal) or the legacy
+    single `batch_id` (composer / OMR); the first is the primary. 404 if any is
+    unknown, 422 if none given."""
+    batch_ids = data.get("batch_ids") or (
+        [data["batch_id"]] if data.get("batch_id") else []
+    )
+    batch_ids = list(dict.fromkeys(batch_ids))  # de-dup, keep order
+    if not batch_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one batch is required",
+        )
+    batches = []
+    for bid in batch_ids:
+        batch = await batch_repository.get_by_id(session, bid)
+        if not batch:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Batch not found: {bid}"
+            )
+        batches.append(batch)
+    return batches
+
+
+async def _any_jee_batch(session: AsyncSession, batches: list) -> bool:
+    """Whether any selected batch is a JEE batch — identified from the batch name
+    or its course code/name (there is no explicit exam-type field). Drives whether
+    Question Type (MCQ / MCQ+Numerical) is allowed on the test."""
+    course_ids = {b.course_id for b in batches}
+    courses: dict = {}
+    if course_ids:
+        for c in (await session.execute(
+            select(Course).where(Course.id.in_(course_ids))
+        )).scalars():
+            courses[c.id] = c
+    for b in batches:
+        c = courses.get(b.course_id)
+        haystack = " ".join(
+            x for x in (b.name, getattr(c, "name", None), getattr(c, "code", None)) if x
+        ).lower()
+        if "jee" in haystack:
+            return True
+    return False
+
+
 async def create_test(
     session: AsyncSession,
     data: dict,
@@ -331,45 +379,76 @@ async def create_test(
             detail=f"Invalid paper_type '{paper_type}'. Allowed: {sorted(VALID_PAPER_TYPES)}",
         )
 
-    batch = await batch_repository.get_by_id(session, data["batch_id"])
-    if not batch:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+    batches = await _resolve_batches(session, data)
+    primary = batches[0]
 
-    # A test covers one or more subjects. Accept `subject_ids` (multi) or the
-    # legacy single `subject_id`; the primary subject_id is the first, kept for
-    # backward compatibility (paper composer / ranking / history).
-    subject_ids = data.get("subject_ids") or (
-        [data["subject_id"]] if data.get("subject_id") else []
-    )
-    if not subject_ids:
+    # Question Type (JEE only). A non-NA value is rejected unless a JEE batch is
+    # selected, mirroring the form hiding the control for CET/NEET batches.
+    question_type = (data.get("question_type") or "NA").upper()
+    if question_type not in VALID_QUESTION_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid question_type '{question_type}'. Allowed: {sorted(VALID_QUESTION_TYPES)}",
+        )
+    if question_type != "NA" and not await _any_jee_batch(session, batches):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Question Type applies only to JEE batches.",
+        )
+
+    # Subjects: `subjects` ({subject_id, total_marks} — per-subject flow),
+    # `subject_ids` (multi, no per-subject marks), or legacy single `subject_id`.
+    # The primary subject_id is the first, kept for the composer / ranking / history.
+    if data.get("subjects"):
+        subject_pairs = [(s["subject_id"], s.get("total_marks")) for s in data["subjects"]]
+    else:
+        subject_ids = data.get("subject_ids") or (
+            [data["subject_id"]] if data.get("subject_id") else []
+        )
+        subject_pairs = [(sid, None) for sid in subject_ids]
+    # De-duplicate by subject_id while preserving order (first marks value wins).
+    seen: set = set()
+    subject_pairs = [
+        (sid, marks) for sid, marks in subject_pairs
+        if not (sid in seen or seen.add(sid))
+    ]
+    if not subject_pairs:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="At least one subject is required",
         )
-    # De-duplicate while preserving order.
-    subject_ids = list(dict.fromkeys(subject_ids))
 
     test = await test_repository.create_test(
         session,
         name=data["name"],
         description=data.get("description"),
         paper_type=paper_type,
-        batch_id=data["batch_id"],
-        subject_id=subject_ids[0],
+        batch_id=primary.id,
+        subject_id=subject_pairs[0][0],
         scheduled_at=data.get("scheduled_at"),
         duration_minutes=data.get("duration_minutes", 60),
         total_marks=data.get("total_marks", 100.0),
+        question_type=question_type,
         omr_type=data.get("omr_type"),
         test_status="DRAFT",
-        branch_id=batch.branch_id,
-        academic_year_id=batch.start_academic_year_id,
+        branch_id=primary.branch_id,
+        academic_year_id=primary.start_academic_year_id,
         source_lecture_id=data.get("source_lecture_id"),
     )
-    for sid in subject_ids:
+    for sid, marks in subject_pairs:
         session.add(TestSubject(
-            test_id=test.id, subject_id=sid, branch_id=batch.branch_id,
+            test_id=test.id, subject_id=sid, branch_id=primary.branch_id,
+            total_marks=marks,
+        ))
+    for batch in batches:
+        session.add(TestBatch(
+            test_id=test.id, batch_id=batch.id, branch_id=primary.branch_id,
         ))
     await session.flush()
+
+    # Transient attributes so the create response echoes what was scheduled.
+    test.subject_ids = [sid for sid, _ in subject_pairs]
+    test.batch_ids = [b.id for b in batches]
 
     await audit_service.log_action(
         session,
@@ -379,7 +458,7 @@ async def create_test(
         record_id=test.id,
         new_values={"name": data["name"]},
         ip_address=ip_address,
-        branch_id=batch.branch_id,
+        branch_id=primary.branch_id,
     )
     return test
 

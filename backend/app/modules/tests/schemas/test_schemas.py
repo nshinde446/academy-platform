@@ -61,20 +61,35 @@ class QuestionBulkResult(BaseModel):
     skipped: list[uuid.UUID] = []
 
 
+class TestSubjectInput(BaseModel):
+    """A subject on a test plus its per-subject total marks (per-subject flow)."""
+
+    subject_id: uuid.UUID
+    total_marks: float
+
+
 class TestCreate(BaseModel):
     name: str
     description: str | None = None
     paper_type: str = "TEST"  # DPP | CPP | TEST
-    batch_id: uuid.UUID
-    # A test covers one or more subjects (full multi-subject). Either field may
-    # be given: `subject_ids` for the Test Portal multi-subject flow, or the
-    # legacy single `subject_id` (paper composer). The primary subject_id is set
-    # to the first of subject_ids when only that is provided.
+    # A test covers one or many batches. `batch_ids` is the per-subject Test
+    # Portal flow (multi-batch); the legacy single `batch_id` (paper composer /
+    # OMR) still works. The primary batch_id is the first of batch_ids.
+    batch_id: uuid.UUID | None = None
+    batch_ids: list[uuid.UUID] | None = None
+    # A test covers one or more subjects (full multi-subject). Three accepted
+    # shapes: `subjects` ({subject_id, total_marks} — per-subject flow),
+    # `subject_ids` (multi, no per-subject marks), or the legacy single
+    # `subject_id` (paper composer). The primary subject_id is the first.
     subject_id: uuid.UUID | None = None
     subject_ids: list[uuid.UUID] | None = None
+    subjects: list[TestSubjectInput] | None = None
     scheduled_at: datetime | None = None
     duration_minutes: int = 60
     total_marks: float = 100.0
+    # JEE question style: MCQ_ONLY | MCQ_NUMERICAL | NA. Only a JEE batch may set
+    # a non-NA value; validated server-side against the selected batches.
+    question_type: str = "NA"
     # OMR sheet layout the ZipGrade CSV is scanned against ("50Q" | "100Q").
     omr_type: str | None = None
     # Optional link back to the lecture this paper was generated from
@@ -88,11 +103,13 @@ class TestResponse(BaseModel):
     description: str | None = None
     paper_type: str
     batch_id: uuid.UUID
+    batch_ids: list[uuid.UUID] = []
     subject_id: uuid.UUID
     subject_ids: list[uuid.UUID] = []
     scheduled_at: datetime | None = None
     duration_minutes: int
     total_marks: float
+    question_type: str = "NA"
     omr_type: str | None = None
     answer_key_file: str | None = None
     test_status: str
