@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from pydantic import BaseModel
 
@@ -104,6 +105,18 @@ class StaffDayRegisterRow(BaseModel):
     ot_minutes: int = 0
     status: str
     missed_signoff: bool = False
+    # Manual-entry audit trail (PDF3). entry_type: BIOMETRIC | MANUAL | None (no
+    # entry yet). marked_by: "Name (Role)" for a manual entry, else None.
+    entry_type: str | None = None
+    marked_by: str | None = None
+    marked_at: str | None = None
+
+
+class StaffManualMarkRequest(BaseModel):
+    staff_id: uuid.UUID
+    day: date
+    in_time: str   # "HH:MM" (24h), branch-local
+    out_time: str | None = None
 
 
 class ProductivitySummaryRow(BaseModel):

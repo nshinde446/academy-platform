@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.settings import get_settings
 from app.modules.attendance.models.attendance_models import StaffDailyAttendance
-from app.modules.attendance.services import daily_service
+from app.modules.attendance.services import daily_service, staff_daily_service
 from app.modules.attendance.services import staff_export_service as ex
 from app.modules.attendance.services.staff_daily_service import _parse_hhmm
 from app.modules.attendance.time_utils import get_tz, local_time_on
@@ -256,6 +256,12 @@ async def generate(
     if kind not in LIST_KINDS:
         raise HTTPException(status_code=400, detail=f"unknown report kind '{kind}'")
 
+    # Audit trail (PDF3): resolve the manual-entry authors once so every list
+    # report carries "Entry Type" + "Marked By". Biometric rows stay untagged.
+    marked_by_labels = await staff_daily_service._marked_by_labels(
+        session, {r.override_by for r in rows.values() if r.source == "MANUAL" and r.override_by}
+    )
+
     out_rows: list[dict] = []
     for s in staff:
         name = f"{s.first_name} {s.last_name}".strip()
@@ -264,6 +270,7 @@ async def generate(
             r = rows.get((s.id, d))
             if not _match(kind, r, s, d, tz):
                 continue
+            is_manual = bool(r and r.source == "MANUAL")
             out_rows.append({
                 "date": d.isoformat(), "emp_code": s.emp_code, "name": name,
                 "department": dept,
@@ -272,6 +279,11 @@ async def generate(
                 "work": ex.fmt_minutes(r.work_minutes) if r else "0:00",
                 "ot": ex.fmt_minutes(r.ot_minutes) if r else "0:00",
                 "status": r.day_status if r else "ABSENT",
+                "entry_type": (r.source if r and r.source else "") if r else "",
+                "marked_by": (
+                    marked_by_labels.get(r.override_by, "Not available")
+                    if is_manual else ""
+                ),
             })
 
     title = f"{freq_label} · {LIST_KINDS[kind]}"

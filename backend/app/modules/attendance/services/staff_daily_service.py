@@ -67,6 +67,82 @@ async def _get_row(
     )).scalar_one_or_none()
 
 
+async def manual_mark(
+    session: AsyncSession,
+    *,
+    staff_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    day: date,
+    in_time: str,
+    out_time: str | None,
+    user_id: uuid.UUID,
+) -> StaffDailyAttendance:
+    """Manager enters a staff member's attendance by hand (In Time, optional Out
+    Time) when the biometric device didn't capture it. Writes a MANUAL row
+    stamped with who made the entry and when (``override_by`` / ``override_at``),
+    so the audit tag can show "Manually Marked by: …". A later punch sync won't
+    overwrite a MANUAL row (rebuild is MANUAL-safe)."""
+    from fastapi import HTTPException, status as http_status
+
+    staff = (await session.execute(
+        select(Staff).where(
+            Staff.id == staff_id, Staff.branch_id == branch_id,
+            Staff.is_deleted == False,  # noqa: E712
+        )
+    )).scalar_one_or_none()
+    if staff is None:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Staff not found")
+
+    settings = get_settings()
+    tz_name = await branch_timezone(session, branch_id)
+    in_t = _parse_hhmm(in_time, "")
+    first_in = local_time_on(day, tz_name, in_t.hour, in_t.minute)
+    last_out = None
+    if out_time:
+        out_t = _parse_hhmm(out_time, "")
+        last_out = local_time_on(day, tz_name, out_t.hour, out_t.minute)
+        if last_out <= first_in:
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Out time must be after in time",
+            )
+
+    # Status + work, same shift-based rule as a punch-derived row.
+    shift_t = _parse_hhmm(staff.shift_start, settings.STAFF_SHIFT_START)
+    shift_start = local_time_on(day, tz_name, shift_t.hour, shift_t.minute)
+    grace = timedelta(minutes=settings.ATTENDANCE_GRACE_PERIOD_MINUTES)
+    late = first_in.replace(second=0, microsecond=0) > (shift_start + grace).replace(second=0, microsecond=0)
+    if last_out is not None:
+        work_minutes = max(0, int((last_out - first_in).total_seconds() // 60))
+        signoff = "COMPLETE"
+    else:
+        work_minutes = 0
+        signoff = "MISSING"
+    if signoff == "COMPLETE" and work_minutes < settings.STAFF_HALF_DAY_MINUTES:
+        day_status = "HALF_DAY"
+    else:
+        day_status = "LATE" if late else "PRESENT"
+
+    now = datetime.now(timezone.utc)
+    row = await _get_row(session, staff_id, day)
+    if row is None:
+        row = StaffDailyAttendance(
+            staff_id=staff_id, branch_id=branch_id, attendance_date=day,
+        )
+        session.add(row)
+    row.first_in = first_in
+    row.last_out = last_out
+    row.day_status = day_status
+    row.signoff = signoff
+    row.source = "MANUAL"
+    row.work_minutes = work_minutes
+    row.override_by = user_id
+    row.override_at = now
+    row.is_deleted = False
+    await session.flush()
+    return row
+
+
 async def _punches_for_day(
     session: AsyncSession,
     staff_id: uuid.UUID,
@@ -276,6 +352,11 @@ async def day_register(
     )).scalars().all()
     by_staff = {r.staff_id: r for r in day_rows}
 
+    # Resolve "Manually Marked by" labels (Name + Role) for the manual rows.
+    marked_by_labels = await _marked_by_labels(
+        session, {r.override_by for r in day_rows if r.source == "MANUAL" and r.override_by}
+    )
+
     def fmt_t(dt: datetime | None) -> str | None:
         if dt is None:
             return None
@@ -301,5 +382,46 @@ async def day_register(
             "ot_minutes": (r.ot_minutes or 0) if r else 0,
             "status": status,
             "missed_signoff": bool(r and r.signoff == "MISSING"),
+            "entry_type": (r.source if r else None),
+            "marked_by": (
+                marked_by_labels.get(r.override_by, "Not available")
+                if r and r.source == "MANUAL"
+                else None
+            ),
+            "marked_at": (fmt_t(r.override_at) if r and r.source == "MANUAL" else None),
         })
+    return out
+
+
+async def _marked_by_labels(
+    session: AsyncSession, user_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    """{user_id: "First Last (Role)"} for manual-entry attribution. A user with
+    no resolvable role shows just the name; an unknown id → "Not available"."""
+    if not user_ids:
+        return {}
+    from app.modules.auth.models.auth_models import Role, User, UserRole
+
+    names = {
+        uid: f"{fn} {ln}".strip()
+        for uid, fn, ln in (await session.execute(
+            select(User.id, User.first_name, User.last_name).where(User.id.in_(user_ids))
+        )).all()
+    }
+    roles: dict[uuid.UUID, str] = {}
+    for uid, role_name in (await session.execute(
+        select(UserRole.user_id, Role.display_name)
+        .join(Role, Role.id == UserRole.role_id)
+        .where(UserRole.user_id.in_(user_ids), UserRole.is_deleted == False)  # noqa: E712
+    )).all():
+        roles.setdefault(uid, role_name)  # first role wins
+    out: dict[uuid.UUID, str] = {}
+    for uid in user_ids:
+        name = names.get(uid)
+        if not name:
+            out[uid] = "Not available"
+        elif roles.get(uid):
+            out[uid] = f"{name} ({roles[uid]})"
+        else:
+            out[uid] = name
     return out

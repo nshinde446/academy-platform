@@ -10,11 +10,13 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useDepartments } from "../../staff/_hooks/use-staff";
 import { useStaffDayRegister } from "../_hooks/use-staff-attendance";
 import type { StaffDayRegisterRow } from "../_schemas/staff-attendance";
+import { StaffManualMarkDialog } from "./staff-manual-mark-dialog";
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
@@ -49,9 +51,17 @@ function StatusBadge({ status }: { status: string }) {
 // Staff day register — one day's staff in/out roster (the staff twin of the
 // student Day Register), so staff attendance is tracked daily. Read-only:
 // staff punch on the same BioMax fleet; rows roll up automatically.
-export function StaffDayRegister({ branchId }: { branchId: string | undefined }) {
+export function StaffDayRegister({
+  branchId,
+  canMark = false,
+}: {
+  branchId: string | undefined;
+  canMark?: boolean;
+}) {
   const [day, setDay] = useState(localISO(new Date()));
   const [departmentId, setDepartmentId] = useState("");
+  // The staff row whose manual-mark dialog is open (null → closed).
+  const [markStaff, setMarkStaff] = useState<StaffDayRegisterRow | null>(null);
 
   const departmentsQuery = useDepartments(branchId);
   const departments = useMemo(
@@ -163,6 +173,9 @@ export function StaffDayRegister({ branchId }: { branchId: string | undefined })
                   OT
                 </TableHead>
                 <TableHead className="text-right">Status</TableHead>
+                {canMark && (
+                  <TableHead className="text-right">Action</TableHead>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -178,6 +191,25 @@ export function StaffDayRegister({ branchId }: { branchId: string | undefined })
                   </TableCell>
                   <TableCell className="hidden sm:table-cell tabular-nums text-sm">
                     {r.in_time ?? "—"}
+                    {r.entry_type === "MANUAL" && (
+                      <span
+                        className="ml-1 align-middle"
+                        title={
+                          r.marked_by
+                            ? `Manually marked by: ${r.marked_by}${r.marked_at ? ` at ${r.marked_at}` : ""}`
+                            : "Manually marked"
+                        }
+                      >
+                        <Badge variant="secondary" className="text-[10px]">
+                          Manual
+                        </Badge>
+                      </span>
+                    )}
+                    {r.entry_type === "MANUAL" && r.marked_by && (
+                      <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
+                        by {r.marked_by}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="hidden sm:table-cell tabular-nums text-sm">
                     {r.out_time ?? "—"}
@@ -199,11 +231,32 @@ export function StaffDayRegister({ branchId }: { branchId: string | undefined })
                   <TableCell className="text-right">
                     <StatusBadge status={r.status} />
                   </TableCell>
+                  {canMark && (
+                    <TableCell className="text-right">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setMarkStaff(r)}
+                      >
+                        {r.in_time ? "Edit" : "Mark"}
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {canMark && markStaff && (
+        <StaffManualMarkDialog
+          key={markStaff.staff_id}
+          branchId={branchId}
+          day={day}
+          staff={markStaff}
+          onClose={() => setMarkStaff(null)}
+        />
       )}
     </div>
   );

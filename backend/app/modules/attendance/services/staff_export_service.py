@@ -51,7 +51,20 @@ STATUS_CODE = {
     "WO": "WO", "HOLIDAY": "H",
 }
 
-_LIST_HEADERS = ["Date", "Emp Code", "Name", "Department", "In", "Out", "Work", "OT", "Status"]
+_LIST_HEADERS = [
+    "Date", "Emp Code", "Name", "Department", "In", "Out", "Work", "OT",
+    "Status", "Entry Type", "Marked By",
+]
+
+# How the stored source maps to the report's "Entry Type" column (PDF3).
+_ENTRY_TYPE_LABEL = {
+    "MANUAL": "Manual", "BIOMETRIC": "Biometric", "SYSTEM": "System",
+}
+
+
+def _entry_type_label(source: Any) -> str:
+    s = "" if source is None else str(source)
+    return _ENTRY_TYPE_LABEL.get(s, s)
 
 
 def _esc(v: Any) -> str:
@@ -109,6 +122,8 @@ def list_html(
         f"<td class='c'>{_esc(r['work'])}</td>"
         f"<td class='c'>{_esc(r['ot'])}</td>"
         f"<td class='c {_esc(STATUS_CODE.get(r['status'], ''))}'>{_esc(r['status'])}</td>"
+        f"<td class='c'>{_esc(_entry_type_label(r.get('entry_type')))}</td>"
+        f"<td>{_esc(r.get('marked_by') or '')}</td>"
         "</tr>"
         for r in rows
     )
@@ -152,7 +167,11 @@ def list_xlsx(
         cell.alignment = _CENTER
         if r["status"] in _STATUS_FILL:
             cell.fill = _STATUS_FILL[r["status"]]
-    for c, w in enumerate((12, 10, 22, 20, 8, 8, 8, 8, 12), start=1):
+        ws.cell(
+            row=i, column=10, value=_entry_type_label(r.get("entry_type"))
+        ).alignment = _CENTER
+        ws.cell(row=i, column=11, value=r.get("marked_by") or "")
+    for c, w in enumerate((12, 10, 22, 20, 8, 8, 8, 8, 12, 12, 24), start=1):
         ws.column_dimensions[get_column_letter(c)].width = w
     return _xlsx_bytes(wb)
 
