@@ -118,6 +118,53 @@ GET /api/v1/students?branch_id=uuid&status=active
 - HTTP 200 OK
 - Returns confirmation message.
 
+### Accepted — Asynchronous (long-running) operations
+
+An operation that can exceed the ~30s prod HTTP gateway timeout must **not** run
+inline. It is enqueued as a Celery task and the request returns immediately:
+
+- HTTP **202 Accepted**, with a `task_id` and a `poll` URL.
+- The caller polls the poll URL until `state` is `SUCCESS` or `FAILURE`.
+- `state` is the Celery task state (`PENDING` → `STARTED` → `SUCCESS` / `FAILURE`);
+  on `SUCCESS` a `result` object carries the outcome, on `FAILURE` an `error`
+  string. These job envelopes are a deliberate exception to the standard
+  `data` / `error` envelopes above.
+
+Requires the Celery worker to be running (it is in prod; beat on).
+
+**Canonical example — recompute daily attendance classification.** Rebuilds
+PRESENT/LATE for every student-day in a range from punches (run after a
+classification-rule or per-batch class-time change; forward-only otherwise).
+Idempotent — `MANUAL` rows are preserved. `super_admin` / `branch_admin` only.
+
+`POST /api/v1/attendance/daily/recompute?branch_id={uuid}&start={YYYY-MM-DD}&end={YYYY-MM-DD}`
+
+```json
+// 202 Accepted — enqueued, returns at once (does not wait for the recompute)
+{
+  "task_id": "a5acc97c-0497-45ff-83b7-700a23938563",
+  "state": "PENDING",
+  "branch_id": "…",
+  "start": "2026-09-08",
+  "end": "2026-10-07",
+  "poll": "/api/v1/attendance/daily/recompute/a5acc97c-0497-45ff-83b7-700a23938563"
+}
+```
+
+`GET /api/v1/attendance/daily/recompute/{task_id}` (same role gate)
+
+```json
+// 200 OK — poll until state is SUCCESS or FAILURE
+{
+  "task_id": "a5acc97c-0497-45ff-83b7-700a23938563",
+  "state": "SUCCESS",
+  "result": { "recomputed": 21339, "branch_id": "…", "start": "2026-09-08", "end": "2026-10-07" }
+}
+```
+
+The service (`daily_service.recompute_range`) is batched — a few queries per day,
+not per student — so a full month (~21k rows) completes in a handful of seconds.
+
 ---
 
 ## Error Responses
