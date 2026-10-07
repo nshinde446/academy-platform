@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func, select
@@ -1283,28 +1284,108 @@ async def biometric_daily_batch_counts(
     return out
 
 
+async def _bulk_class_start_hm(
+    session: AsyncSession, student_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, tuple[int, int]]:
+    """The earliest batch class-start (h, m) per student, in one query — the bulk
+    form of ``_student_class_start`` used by ``recompute_range``. Students with no
+    timed batch are absent from the map (caller falls back to the global default)."""
+    from app.modules.batch.models.batch_models import Batch
+
+    if not student_ids:
+        return {}
+    rows = (await session.execute(
+        select(StudentBatchMapping.student_id, Batch.class_start_time)
+        .join(Batch, Batch.id == StudentBatchMapping.batch_id)
+        .where(
+            StudentBatchMapping.student_id.in_(student_ids),
+            StudentBatchMapping.is_deleted == False,  # noqa: E712
+            Batch.is_deleted == False,  # noqa: E712
+            Batch.class_start_time.isnot(None),
+        )
+    )).all()
+    out: dict[uuid.UUID, tuple[int, int]] = {}
+    for student_id, class_start_time in rows:
+        hm = _parse_hhmm(class_start_time)
+        if hm is None:
+            continue
+        current = out.get(student_id)
+        if current is None or hm < current:  # earliest class start of the day
+            out[student_id] = hm
+    return out
+
+
 async def recompute_range(
     session: AsyncSession, *, branch_id: uuid.UUID, start: date, end: date,
 ) -> int:
     """Rebuild every student-day with a record in the range from punches
-    (idempotent; MANUAL edits are preserved by rebuild_daily). Run this after
-    per-batch class times change so historical PRESENT/LATE reflects the corrected
-    cutoff (e.g. afternoon batches that were wrongly LATE against the morning
-    default). Returns the number of (student, day) rows recomputed."""
+    (idempotent; MANUAL edits are preserved). Run this after per-batch class times
+    change so historical PRESENT/LATE reflects the corrected cutoff (e.g. afternoon
+    batches that were wrongly LATE against the morning default). Returns the number
+    of (student, day) rows considered.
+
+    Batched to avoid the per-row N+1 of calling ``rebuild_daily`` in a loop: the
+    existing rows, every student's class-start, and each day's punches are loaded
+    in bulk, then classified in memory with a single flush — the same result
+    ``rebuild_daily`` produces per row, at a few queries per day instead of three
+    per row."""
     tz_name = await branch_timezone(session, branch_id)
-    pairs = (await session.execute(
-        select(DailyAttendance.student_id, DailyAttendance.attendance_date).where(
+    rows = list((await session.execute(
+        select(DailyAttendance).where(
             DailyAttendance.branch_id == branch_id,
             DailyAttendance.attendance_date >= start,
             DailyAttendance.attendance_date <= end,
             DailyAttendance.is_deleted == False,  # noqa: E712
         )
-    )).all()
-    for student_id, day in pairs:
-        await rebuild_daily(
-            session, student_id=student_id, branch_id=branch_id, day=day, tz_name=tz_name,
-        )
-    return len(pairs)
+    )).scalars().all())
+    if not rows:
+        return 0
+
+    # Human edits win — never clobbered (decision 7). They still count toward the
+    # total (matching the old per-row loop, which returned every pair).
+    targets = [r for r in rows if r.source not in _MANUAL_SOURCES]
+    cs_map = await _bulk_class_start_hm(session, {r.student_id for r in targets})
+
+    by_day: dict[date, list[DailyAttendance]] = defaultdict(list)
+    for r in targets:
+        by_day[r.attendance_date].append(r)
+
+    for day, day_rows in by_day.items():
+        d_start, d_end = day_bounds(day, tz_name)
+        punch_rows = (await session.execute(
+            select(RawPunchLog)
+            .where(
+                RawPunchLog.branch_id == branch_id,
+                RawPunchLog.student_id.in_([r.student_id for r in day_rows]),
+                RawPunchLog.punch_timestamp >= d_start,
+                RawPunchLog.punch_timestamp < d_end,
+                RawPunchLog.is_deleted == False,  # noqa: E712
+            )
+            .order_by(RawPunchLog.punch_timestamp)
+        )).scalars().all()
+        punches_by_student: dict[uuid.UUID, list[RawPunchLog]] = defaultdict(list)
+        for p in punch_rows:
+            punches_by_student[p.student_id].append(p)
+
+        for r in day_rows:
+            hm = cs_map.get(r.student_id)
+            class_start = (
+                local_time_on(day, tz_name, hm[0], hm[1]) if hm
+                else class_start_on(day, tz_name)
+            )
+            first_in, last_out, day_status, signoff, source = _classify(
+                punches_by_student.get(r.student_id, []), day, tz_name,
+                class_start=class_start,
+            )
+            r.first_in = first_in
+            r.last_out = last_out
+            r.day_status = day_status
+            r.signoff = signoff
+            r.source = source
+            r.is_deleted = False
+
+    await session.flush()
+    return len(rows)
 
 
 async def branch_summary(
