@@ -71,6 +71,9 @@ interface DateTimeFieldProps {
   required?: boolean;
   /** Accessible name base; the time <select> gets "<ariaLabel> time". */
   ariaLabel?: string;
+  /** Per-minute entry: render a native time input (any minute, e.g. 10:02)
+   *  instead of the fixed-step dropdown. Used for lecture scheduling. */
+  precise?: boolean;
 }
 
 export function DateTimeField({
@@ -83,11 +86,12 @@ export function DateTimeField({
   disabled,
   required,
   ariaLabel,
+  precise = false,
 }: DateTimeFieldProps) {
   const { date, time } = splitValue(value);
   const options = useMemo(
-    () => buildOptions(step, minHour, maxHour, time),
-    [step, minHour, maxHour, time],
+    () => (precise ? [] : buildOptions(step, minHour, maxHour, time)),
+    [precise, step, minHour, maxHour, time],
   );
 
   function emit(nextDate: string, nextTime: string) {
@@ -110,21 +114,35 @@ export function DateTimeField({
         className="flex-1"
         onChange={(e) => emit(e.target.value, time)}
       />
-      <select
-        value={time}
-        disabled={disabled}
-        required={required}
-        aria-label={ariaLabel ? `${ariaLabel} time` : undefined}
-        className="h-9 shrink-0 rounded-lg border border-input bg-background px-2 text-sm"
-        onChange={(e) => emit(date, e.target.value)}
-      >
-        <option value="">--:--</option>
-        {options.map((o) => (
-          <option key={o} value={o}>
-            {to12h(o)}
-          </option>
-        ))}
-      </select>
+      {precise ? (
+        // Native per-minute time input — any minute (10:02) can be typed/spun.
+        <Input
+          type="time"
+          step={60}
+          value={time}
+          disabled={disabled}
+          required={required}
+          aria-label={ariaLabel ? `${ariaLabel} time` : undefined}
+          className="w-32 shrink-0"
+          onChange={(e) => emit(date, e.target.value)}
+        />
+      ) : (
+        <select
+          value={time}
+          disabled={disabled}
+          required={required}
+          aria-label={ariaLabel ? `${ariaLabel} time` : undefined}
+          className="h-9 shrink-0 rounded-lg border border-input bg-background px-2 text-sm"
+          onChange={(e) => emit(date, e.target.value)}
+        >
+          <option value="">--:--</option>
+          {options.map((o) => (
+            <option key={o} value={o}>
+              {to12h(o)}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }

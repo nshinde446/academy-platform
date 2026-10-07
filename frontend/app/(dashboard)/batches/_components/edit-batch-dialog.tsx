@@ -61,6 +61,17 @@ export function EditBatchDialog({
       setError("Capacity must be at least 1");
       return;
     }
+    // Timing: both-or-neither, and End must be after Start.
+    const hasStart = !!form.class_start_time;
+    const hasEnd = !!form.class_end_time;
+    if (hasStart !== hasEnd) {
+      setError("Set both a start time and an end time, or leave both empty.");
+      return;
+    }
+    if (hasStart && hasEnd && form.class_end_time <= form.class_start_time) {
+      setError("End time must be after start time.");
+      return;
+    }
 
     try {
       await onSubmit({

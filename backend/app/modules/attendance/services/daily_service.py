@@ -150,7 +150,12 @@ def _classify(
 
     grace = timedelta(minutes=get_settings().ATTENDANCE_GRACE_PERIOD_MINUTES)
     cutoff = (class_start or class_start_on(day, tz_name)) + grace
-    day_status = "PRESENT" if first_in <= cutoff else "LATE"
+    # Compare minutes only — seconds are ignored (10:00:45 counts as 10:00).
+    day_status = (
+        "PRESENT"
+        if first_in.replace(second=0, microsecond=0) <= cutoff.replace(second=0, microsecond=0)
+        else "LATE"
+    )
 
     if len(punches) > 1:
         last_out = punches[-1].punch_timestamp

@@ -34,6 +34,16 @@ function findName<T extends { id: string; name: string }>(
   return list.find((x) => x.id === id)?.name ?? "—";
 }
 
+/** "HH:MM" (24h) -> "h:MM AM/PM"; null/empty -> "Not set". */
+function fmtTime(hhmm: string | null | undefined): string {
+  if (!hhmm) return "Not set";
+  const [h, m] = hhmm.split(":").map(Number);
+  if (Number.isNaN(h)) return hhmm;
+  const ap = h < 12 ? "AM" : "PM";
+  const h12 = ((h + 11) % 12) + 1;
+  return `${h12}:${String(m).padStart(2, "0")} ${ap}`;
+}
+
 export function BatchTable({
   batches,
   courses,
@@ -69,6 +79,7 @@ export function BatchTable({
               Academic Years
             </TableHead>
             <TableHead className="hidden xl:table-cell">Capacity</TableHead>
+            <TableHead className="hidden lg:table-cell">Timing</TableHead>
             <TableHead className="hidden lg:table-cell">Exam date</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Actions</TableHead>
@@ -104,6 +115,15 @@ export function BatchTable({
                 <TableCell className="hidden xl:table-cell">
                   {b.capacity}
                 </TableCell>
+                <TableCell className="hidden lg:table-cell text-xs">
+                  <span
+                    className={
+                      b.class_start_time ? "" : "text-muted-foreground italic"
+                    }
+                  >
+                    {fmtTime(b.class_start_time)} – {fmtTime(b.class_end_time)}
+                  </span>
+                </TableCell>
                 <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
                   {b.target_exam_date
                     ? new Date(b.target_exam_date).toLocaleDateString(
@@ -127,7 +147,7 @@ export function BatchTable({
                       variant="outline"
                       onClick={() => onEdit(b)}
                     >
-                      Edit
+                      {b.class_start_time ? "Edit" : "Set timing"}
                     </Button>
                     <Button
                       type="button"

@@ -332,7 +332,7 @@ export function CreateLectureDialog({
                 ariaLabel="Scheduled start"
                 value={start}
                 onChange={setStart}
-                step={15}
+                precise
                 required
               />
             </div>
@@ -343,7 +343,7 @@ export function CreateLectureDialog({
                 ariaLabel="Scheduled end"
                 value={end}
                 onChange={setEnd}
-                step={15}
+                precise
                 required
               />
               <div className="flex flex-wrap items-center gap-1.5">

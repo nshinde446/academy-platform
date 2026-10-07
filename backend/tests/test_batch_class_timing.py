@@ -44,8 +44,9 @@ async def _rebuild(db_session, seed_data):
     )
 
 
-# 14:05 IST == 08:35 UTC — after the global 10:10 cutoff, but on time for a 14:00 batch.
-AFTERNOON_H, AFTERNOON_M = 8, 35
+# 14:00 IST == 08:30 UTC — exactly the 14:00 batch start, so on time under the
+# strict (no-grace) rule; still LATE against the global 10:00 default.
+AFTERNOON_H, AFTERNOON_M = 8, 30
 
 
 @pytest.mark.usefixtures("seed_data")
@@ -133,6 +134,31 @@ async def _afternoon_lecture(db_session, seed_data):
 
 
 @pytest.mark.usefixtures("seed_data")
+async def test_strict_one_minute_late_is_late(db_session, seed_data):
+    """No grace: arriving one minute after the batch start is LATE."""
+    seed_data["batch"].class_start_time = "14:00"
+    await _map_to_batch(db_session, seed_data)
+    await _punch(db_session, seed_data, h=8, m=31)  # 14:01 IST, 1 min after start
+    row = await _rebuild(db_session, seed_data)
+    assert row.day_status == "LATE"
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_strict_seconds_ignored_is_present(db_session, seed_data):
+    """Seconds are ignored: 14:00:45 counts as 14:00 → PRESENT."""
+    seed_data["batch"].class_start_time = "14:00"
+    await _map_to_batch(db_session, seed_data)
+    db_session.add(RawPunchLog(
+        device_id="dev1", student_id=seed_data["student"].id,
+        punch_timestamp=datetime(2026, 6, 22, 8, 30, 45, tzinfo=timezone.utc),  # 14:00:45
+        branch_id=seed_data["branch_a"].id,
+    ))
+    await db_session.flush()
+    row = await _rebuild(db_session, seed_data)
+    assert row.day_status == "PRESENT"
+
+
+@pytest.mark.usefixtures("seed_data")
 async def test_early_arrival_is_present_no_lower_bound(db_session, seed_data):
     """Arriving well before class start is PRESENT (the old window flagged this
     as an EXCEPTION for being >30 min early)."""
@@ -161,7 +187,7 @@ async def test_lecture_schedule_does_not_change_status(db_session, seed_data):
     seed_data["batch"].class_start_time = "14:00"
     await _map_to_batch(db_session, seed_data)
     await _afternoon_lecture(db_session, seed_data)
-    await _punch(db_session, seed_data, h=8, m=35)  # 14:05 IST, on time for 14:00
+    await _punch(db_session, seed_data, h=8, m=30)  # 14:00 IST, exactly on time (strict)
     row = await _rebuild(db_session, seed_data)
     assert row.day_status == "PRESENT"  # unaffected by the 14:00–15:00 lecture
 
@@ -170,7 +196,7 @@ async def test_lecture_schedule_does_not_change_status(db_session, seed_data):
 async def test_single_punch_flags_missing_signoff(db_session, seed_data):
     seed_data["batch"].class_start_time = "14:00"
     await _map_to_batch(db_session, seed_data)
-    await _punch(db_session, seed_data, h=8, m=35)   # 14:05 IST, on time, single punch
+    await _punch(db_session, seed_data, h=8, m=30)   # 14:00 IST, exactly on time, single punch
     row = await _rebuild(db_session, seed_data)
     assert row.day_status == "PRESENT"
     assert row.signoff == "MISSING"   # NO PUNCH-OUT warning

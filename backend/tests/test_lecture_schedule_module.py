@@ -80,7 +80,8 @@ async def test_teachers_by_subject_endpoint(client: AsyncClient, seed_data):
 
 async def test_actuals_backfill_completes_and_times(client: AsyncClient, seed_data):
     """EOD backfill with no prior live Start/Complete: sets actuals, computes
-    duration, marks completed, and is on time (<10 min late)."""
+    duration, marks completed, and is on time (started at the scheduled minute —
+    strict rule: on time only when actual <= scheduled)."""
     await _login_admin(client)
     now = datetime.now(timezone.utc)
     start = now - timedelta(hours=30)  # past: the lecture has happened
@@ -88,8 +89,8 @@ async def test_actuals_backfill_completes_and_times(client: AsyncClient, seed_da
         "/api/v1/lectures", json=_payload(start, start + timedelta(hours=1))
     )
     lecture = resp.json()
-    a_start = start + timedelta(minutes=3)
-    a_end = start + timedelta(minutes=63)
+    a_start = start  # on time to the minute
+    a_end = start + timedelta(minutes=60)
     resp = await client.patch(
         f"/api/v1/lectures/{lecture['id']}/actuals",
         params={"branch_id": BRANCH_A_ID},
