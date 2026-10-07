@@ -24,6 +24,7 @@ from app.modules.staff.schemas.staff_schemas import (
     ProductivitySummaryResponse,
     StaffCreate,
     StaffDayRegisterRow,
+    StaffManualMarkRequest,
     StaffResponse,
     StaffUpdate,
 )
@@ -210,6 +211,30 @@ async def staff_day_register(
     return await staff_daily_service.day_register(
         session, branch_id=branch_id, day=day, department_id=department_id,
     )
+
+
+@router.post("/manual-mark", response_model=StaffDayRegisterRow)
+async def staff_manual_mark(
+    body: StaffManualMarkRequest,
+    branch_id: uuid.UUID = Query(...),
+    # Manager-only, like the student manual mark; denied attempts are audited.
+    current_user: dict = Depends(require_manager_or_audit("Manual Attendance", "staff")),
+    session: AsyncSession = Depends(get_db),
+):
+    """Enter a staff member's In Time (and optional Out Time) by hand when the
+    device didn't capture it. Records a MANUAL row stamped with the logged-in
+    user (the "Manually Marked by" audit trail). Literal path — before
+    ``/{staff_id}``."""
+    await staff_daily_service.manual_mark(
+        session, staff_id=body.staff_id, branch_id=branch_id, day=body.day,
+        in_time=body.in_time, out_time=body.out_time,
+        user_id=current_user["user_id"],
+    )
+    # Return the refreshed register row for that staff so the UI updates in place.
+    rows = await staff_daily_service.day_register(
+        session, branch_id=branch_id, day=body.day,
+    )
+    return next(r for r in rows if r["staff_id"] == body.staff_id)
 
 
 @router.get("/{staff_id}", response_model=StaffResponse)

@@ -1,6 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/services/api-client";
-import type { StaffDayRegisterRow } from "../_schemas/staff-attendance";
+import type {
+  StaffDayRegisterRow,
+  StaffManualMarkRequest,
+} from "../_schemas/staff-attendance";
 
 // Live-view refresh, matching the student day register — punches reach the DB
 // within seconds (BioMax push) / minutes (poll); react-query pauses this while
@@ -39,5 +42,25 @@ export function useStaffDayRegister(
     },
     enabled: !!branchId && !!day,
     refetchInterval: LIVE_REGISTER_MS,
+  });
+}
+
+// Manager hand-enters a staff In/Out time (PDF3). The backend stamps the row
+// MANUAL with the logged-in user; we refetch the day register so the new
+// "Manually Marked by" tag shows up in place.
+export function useStaffManualMark(branchId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: StaffManualMarkRequest) => {
+      const { data } = await apiClient.post<StaffDayRegisterRow>(
+        "/api/v1/staff/manual-mark",
+        body,
+        { params: { branch_id: branchId } },
+      );
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: staffAttendanceKeys.all });
+    },
   });
 }

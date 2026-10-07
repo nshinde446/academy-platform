@@ -324,7 +324,7 @@ export default function AttendancePage() {
           ) : effectiveView === "reports" ? (
             <ReportsHub branchId={branchId} batches={batches} />
           ) : effectiveView === "staff" ? (
-            <StaffDayRegister branchId={branchId} />
+            <StaffDayRegister branchId={branchId} canMark={isAdmin} />
           ) : (
           <div className="flex flex-col gap-6">
       {/* Lecture picker */}

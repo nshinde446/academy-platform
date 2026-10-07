@@ -125,6 +125,44 @@ async def test_gps_report_is_not_applicable_note(db_session: AsyncSession, seed_
     assert any("Not applicable" in c for c in col_a)
 
 
+async def test_list_report_has_entry_type_and_marked_by_columns(
+    db_session: AsyncSession, seed_data
+):
+    """PDF3: a manual entry carries Entry Type=Manual + Marked By=Name (Role);
+    a biometric entry reads Biometric with an empty Marked By."""
+    ADMIN = uuid.UUID("00000000-0000-0000-0000-000000000100")  # seeded Admin User
+    staff = await _seed(db_session)
+    # A manually-entered present day, stamped with the author.
+    db_session.add(StaffDailyAttendance(
+        staff_id=staff.id, branch_id=BRANCH_A, attendance_date=date(2026, 8, 6),
+        first_in=datetime(2026, 8, 6, 4, 50, tzinfo=timezone.utc),
+        last_out=datetime(2026, 8, 6, 12, 30, tzinfo=timezone.utc),
+        day_status="PRESENT", signoff="COMPLETE", source="MANUAL",
+        work_minutes=460, ot_minutes=0, override_by=ADMIN,
+        override_at=datetime(2026, 8, 6, 13, 0, tzinfo=timezone.utc),
+    ))
+    await db_session.flush()
+
+    _, data, _ = await rpt.generate(
+        db_session, branch_id=BRANCH_A, kind="in_out", frequency="monthly",
+        department_ids=None, staff_ids=None,
+        start=date(2026, 8, 3), end=date(2026, 8, 6), fmt="xlsx",
+    )
+    wb = load_workbook(io.BytesIO(data), read_only=True)
+    rows = list(wb.active.iter_rows(values_only=True))
+    header = next(r for r in rows if r and r[0] == "Date")
+    assert header[9] == "Entry Type"
+    assert header[10] == "Marked By"
+
+    manual = next(r for r in rows if r[0] == "2026-08-06")
+    assert manual[9] == "Manual"
+    assert manual[10] and manual[10].startswith("Admin User (")
+
+    biometric = next(r for r in rows if r[0] == "2026-08-03")
+    assert biometric[9] == "Biometric"
+    assert (biometric[10] or "") == ""
+
+
 async def test_invalid_kind_rejected(db_session: AsyncSession, seed_data):
     await _seed(db_session)
     with pytest.raises(Exception):
