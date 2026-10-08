@@ -3,23 +3,37 @@
 export interface TestSummary {
   id: string;
   name: string;
+  paper_type: string;
   batch_id: string;
+  batch_ids: string[];
   subject_id: string;
   subject_ids: string[];
   scheduled_at: string | null;
   total_marks: number;
+  question_type: string;
   omr_type: string | null;
   answer_key_file: string | null;
   test_status: string;
 }
 
+// A subject on a test plus its per-subject total marks (per-subject flow).
+export interface SubjectInput {
+  subject_id: string;
+  total_marks: number;
+}
+
 export interface ScheduleTestInput {
   name: string;
-  batch_id: string;
-  subject_ids: string[];
+  // OMR flow: single batch_id + subject_ids. Per-subject flow: batch_ids[] +
+  // subjects[{subject_id,total_marks}] + question_type.
+  batch_id?: string;
+  batch_ids?: string[];
+  subject_ids?: string[];
+  subjects?: SubjectInput[];
   scheduled_at: string | null;
   total_marks: number;
-  omr_type: string | null;
+  question_type?: string;
+  omr_type?: string | null;
 }
 
 export interface UploadResultSummary {
@@ -27,6 +41,15 @@ export interface UploadResultSummary {
   needs_review: number;
   absent: number;
   total_rows: number;
+}
+
+export interface SubjectUploadSummary {
+  subject_id: string;
+  matched: number;
+  unmatched: number;
+  absent: number;
+  errors: string[];
+  all_subjects_uploaded: boolean;
 }
 
 export interface RankRow {
@@ -37,7 +60,21 @@ export interface RankRow {
   marks_obtained: number | null;
   percentage: number | null;
   absent: boolean;
+  // Per-subject marks keyed by subject name (null = absent for that subject).
+  subject_marks: Record<string, number | null>;
 }
+
+export interface SubjectColumn {
+  subject_id: string;
+  subject_name: string;
+  total_marks: number | null;
+}
+
+// JEE question styles. NA for CET/NEET (and all OMR tests).
+export const QUESTION_TYPES = [
+  { value: "MCQ_ONLY", label: "MCQ only" },
+  { value: "MCQ_NUMERICAL", label: "MCQ + Numerical" },
+] as const;
 
 export interface ReviewRow {
   id: string;
@@ -50,6 +87,7 @@ export interface RankList {
   test_id: string;
   test_name: string;
   total_marks: number;
+  subjects: SubjectColumn[];
   ranked: RankRow[];
   absentees: RankRow[];
   needs_review: ReviewRow[];

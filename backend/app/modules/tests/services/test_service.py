@@ -1217,23 +1217,22 @@ async def upload_subject_csv(
 async def _subject_columns(session: AsyncSession, test) -> tuple[list, dict]:
     """Ordered subject columns for the per-subject rank list, and the per-student
     per-subject marks. Returns (subjects, by_student) where ``subjects`` is a list
-    of ``{subject_id, subject_name}`` in creation order and ``by_student`` maps
-    student_id -> {subject_name: marks | None(absent/missing)}. Both are empty for
-    an OMR/single-total test (no ``test_subject_marks`` rows), so its rank list is
-    unchanged."""
-    tsm = (await session.execute(
-        select(TestSubjectMark).where(
-            TestSubjectMark.test_id == test.id, TestSubjectMark.is_deleted == False,
-        )
-    )).scalars().all()
-    if not tsm:
-        return [], {}
+    of ``{subject_id, subject_name, total_marks}`` in creation order and
+    ``by_student`` maps student_id -> {subject_name: marks | None(absent/missing)}.
 
+    A test is per-subject when any of its ``TestSubject`` rows carries a
+    per-subject ``total_marks`` (set at create time) — so the subject columns and
+    the per-subject upload targets are known even before any CSV is uploaded. An
+    OMR/single-total test (no per-subject totals) returns ([], {}), leaving its
+    rank list unchanged."""
     ts_rows = (await session.execute(
         select(TestSubject).where(
             TestSubject.test_id == test.id, TestSubject.is_deleted == False,
         ).order_by(TestSubject.created_at)
     )).scalars().all()
+    if not any(t.total_marks is not None for t in ts_rows):
+        return [], {}
+
     subject_ids = [t.subject_id for t in ts_rows]
     names: dict[uuid.UUID, str] = {}
     if subject_ids:
@@ -1242,9 +1241,19 @@ async def _subject_columns(session: AsyncSession, test) -> tuple[list, dict]:
         )).all():
             names[sid] = name
     subjects = [
-        {"subject_id": sid, "subject_name": names.get(sid, "—")} for sid in subject_ids
+        {
+            "subject_id": t.subject_id,
+            "subject_name": names.get(t.subject_id, "—"),
+            "total_marks": t.total_marks,
+        }
+        for t in ts_rows
     ]
 
+    tsm = (await session.execute(
+        select(TestSubjectMark).where(
+            TestSubjectMark.test_id == test.id, TestSubjectMark.is_deleted == False,
+        )
+    )).scalars().all()
     by_student: dict[uuid.UUID, dict] = defaultdict(dict)
     for m in tsm:
         nm = names.get(m.subject_id, "—")
