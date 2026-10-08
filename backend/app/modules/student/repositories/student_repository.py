@@ -458,6 +458,7 @@ async def get_test_history(
         StudentMark,
         Test,
         TestQuestion,
+        TestSubjectMark,
     )
 
     student = await get_by_id(session, student_id)
@@ -522,6 +523,30 @@ async def get_test_history(
             bucket = topics_by_test.setdefault(r.test_id, [])
             if r.name not in bucket:
                 bucket.append(r.name)
+
+    # Per-subject marks for the per-subject Test Portal flow:
+    # {test_id: {subject_name: marks | None(absent)}}. Empty for OMR tests.
+    subject_marks_by_test: dict[uuid.UUID, dict] = {}
+    subj_mark_rows = (
+        await session.execute(
+            select(TestSubjectMark).where(
+                TestSubjectMark.student_id == student_id,
+                TestSubjectMark.test_id.in_(test_ids),
+                TestSubjectMark.is_deleted == False,  # noqa: E712
+            )
+        )
+    ).scalars().all()
+    extra_sids = {r.subject_id for r in subj_mark_rows} - set(subject_by_id)
+    if extra_sids:
+        for sid, name in (await session.execute(
+            select(Subject.id, Subject.name).where(Subject.id.in_(extra_sids))
+        )).all():
+            subject_by_id[sid] = name
+    for r in subj_mark_rows:
+        nm = subject_by_id.get(r.subject_id, "")
+        subject_marks_by_test.setdefault(r.test_id, {})[nm] = (
+            None if r.absent else r.marks_obtained
+        )
 
     # All marks across these tests in the same branch — for ranking.
     all_marks_rows = (
@@ -599,6 +624,7 @@ async def get_test_history(
             "scheduled_at": test.scheduled_at,
             "subject_id": test.subject_id,
             "subject_name": subject_by_id.get(test.subject_id, ""),
+            "subject_marks": subject_marks_by_test.get(test.id, {}),
             "topics": topics_by_test.get(test.id, []),
             "marks_obtained": m.marks_obtained,
             "max_marks": m.max_marks,

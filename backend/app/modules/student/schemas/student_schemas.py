@@ -303,6 +303,9 @@ class StudentTestHistoryRow(BaseModel):
     scheduled_at: datetime | None = None
     subject_id: uuid.UUID
     subject_name: str
+    # Per-subject marks for the per-subject Test Portal flow, keyed by subject
+    # name (None = absent for that subject). Empty for an OMR/single-total test.
+    subject_marks: dict[str, float | None] = {}
     topics: list[str] = []
     marks_obtained: float
     max_marks: float

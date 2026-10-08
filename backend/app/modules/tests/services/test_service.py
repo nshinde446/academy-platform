@@ -12,7 +12,7 @@ from app.modules.audit.services import audit_service
 from app.modules.batch.repositories import batch_repository
 from app.modules.events.services import event_service
 from app.modules.student.models.student_models import Student, StudentBatchMapping
-from app.modules.academic.models.academic_models import Course
+from app.modules.academic.models.academic_models import Course, Subject
 from app.modules.tests.models.test_models import (
     StudentMark,
     TestBatch,
@@ -1214,10 +1214,50 @@ async def upload_subject_csv(
     }
 
 
+async def _subject_columns(session: AsyncSession, test) -> tuple[list, dict]:
+    """Ordered subject columns for the per-subject rank list, and the per-student
+    per-subject marks. Returns (subjects, by_student) where ``subjects`` is a list
+    of ``{subject_id, subject_name}`` in creation order and ``by_student`` maps
+    student_id -> {subject_name: marks | None(absent/missing)}. Both are empty for
+    an OMR/single-total test (no ``test_subject_marks`` rows), so its rank list is
+    unchanged."""
+    tsm = (await session.execute(
+        select(TestSubjectMark).where(
+            TestSubjectMark.test_id == test.id, TestSubjectMark.is_deleted == False,
+        )
+    )).scalars().all()
+    if not tsm:
+        return [], {}
+
+    ts_rows = (await session.execute(
+        select(TestSubject).where(
+            TestSubject.test_id == test.id, TestSubject.is_deleted == False,
+        ).order_by(TestSubject.created_at)
+    )).scalars().all()
+    subject_ids = [t.subject_id for t in ts_rows]
+    names: dict[uuid.UUID, str] = {}
+    if subject_ids:
+        for sid, name in (await session.execute(
+            select(Subject.id, Subject.name).where(Subject.id.in_(subject_ids))
+        )).all():
+            names[sid] = name
+    subjects = [
+        {"subject_id": sid, "subject_name": names.get(sid, "—")} for sid in subject_ids
+    ]
+
+    by_student: dict[uuid.UUID, dict] = defaultdict(dict)
+    for m in tsm:
+        nm = names.get(m.subject_id, "—")
+        by_student[m.student_id][nm] = None if m.absent else m.marks_obtained
+    return subjects, by_student
+
+
 async def get_ranklist(session: AsyncSession, test_id: uuid.UUID, branch_id: uuid.UUID) -> dict:
-    """The current rank list (§4.6): appeared students highest→lowest, absentees
-    grouped at the bottom, and unmatched rows returned separately (excluded from
-    ranking). Computed on the fly from StudentMark so it's always in sync."""
+    """The rank list (spec Section 3): appeared students highest→lowest with
+    tie-aware ranks (same total → same rank, next rank skips the tied positions),
+    absentees grouped at the bottom, unmatched rows returned separately. Per-subject
+    columns are included for the per-subject flow. Computed on the fly from
+    StudentMark (+ TestSubjectMark) so it's always in sync."""
     test = await test_repository.get_test_by_id(session, test_id)
     if not test:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
@@ -1235,6 +1275,20 @@ async def get_ranklist(session: AsyncSession, test_id: uuid.UUID, branch_id: uui
         )).all():
             students[sid] = (f"{first} {last}".strip(), enr)
 
+    subjects, subject_marks = await _subject_columns(session, test)
+    # Per-subject totals sum to the rank list's total when the per-subject flow is
+    # used; else the test's single total.
+    total_marks = test.total_marks
+    if subjects:
+        ts_total = sum(
+            (t.total_marks or 0.0) for t in (await session.execute(
+                select(TestSubject).where(
+                    TestSubject.test_id == test_id, TestSubject.is_deleted == False,
+                )
+            )).scalars().all()
+        )
+        total_marks = ts_total or test.total_marks
+
     def _row(m, rank):
         name, prn = students.get(m.student_id, ("Unknown", None))
         return {
@@ -1242,13 +1296,20 @@ async def get_ranklist(session: AsyncSession, test_id: uuid.UUID, branch_id: uui
             "marks_obtained": None if m.is_absent else m.marks_obtained,
             "percentage": None if m.is_absent else m.percentage,
             "absent": m.is_absent,
+            "subject_marks": subject_marks.get(m.student_id, {}),
         }
 
     appeared = sorted(
         (m for m in marks if not m.is_absent),
         key=lambda m: m.marks_obtained, reverse=True,
     )
-    ranked = [_row(m, i + 1) for i, m in enumerate(appeared)]
+    # Tie-aware rank: 1 + (number of students with a strictly higher total), so
+    # equal totals share a rank and the next rank skips the tied positions.
+    totals = [m.marks_obtained for m in appeared]
+    ranked = [
+        _row(m, 1 + sum(1 for t in totals if t > m.marks_obtained))
+        for m in appeared
+    ]
     absentees = sorted(
         (_row(m, None) for m in marks if m.is_absent),
         key=lambda r: r["name"],
@@ -1269,7 +1330,8 @@ async def get_ranklist(session: AsyncSession, test_id: uuid.UUID, branch_id: uui
     return {
         "test_id": test_id,
         "test_name": test.name,
-        "total_marks": test.total_marks,
+        "total_marks": total_marks,
+        "subjects": subjects,
         "ranked": ranked,
         "absentees": absentees,
         "needs_review": needs_review,
