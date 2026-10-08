@@ -122,6 +122,12 @@ class Test(BaseModel):
     # Uploaded answer-key file kept for reference (Phase 1 doesn't score with it —
     # ZipGrade already scored). Stored path/key; set in PR-B.
     answer_key_file: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Test Portal (per-subject manual flow): JEE question style. MCQ_ONLY |
+    # MCQ_NUMERICAL | NA. NA when no JEE batch is selected (CET/NEET), which is
+    # the default for every other paper too.
+    question_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="NA", server_default="NA"
+    )
 
 
 class TestSubject(BaseModel):
@@ -139,6 +145,63 @@ class TestSubject(BaseModel):
     )
     branch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=False
+    )
+    # Per-subject total marks for the per-subject manual flow (Test Portal spec).
+    # NULL for the legacy single-total OMR flow, which scores off Test.total_marks.
+    total_marks: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class TestBatch(BaseModel):
+    """A batch this test is scheduled for. One test can cover multiple batches
+    (Test Portal spec); ``tests.batch_id`` holds the first/primary batch for
+    backward compatibility with the single-batch OMR flow, ranking and history."""
+
+    __tablename__ = "test_batches"
+
+    test_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("tests.id"), nullable=False
+    )
+    batch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("batches.id"), nullable=False
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
+    )
+
+
+class TestSubjectMark(BaseModel):
+    """Per-student, per-subject marks for the per-subject manual flow (Test
+    Portal spec's ``TestResults``). Coexists with ``StudentMark``: the per-subject
+    rows here are summed into the student's aggregate ``StudentMark`` total, so the
+    existing rank list and history keep working while gaining subject columns.
+
+    Unmatched CSV rows (PRN not found) continue to go to ``TestImportReview``.
+    """
+
+    __tablename__ = "test_subject_marks"
+
+    test_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("tests.id"), nullable=False
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("students.id"), nullable=False
+    )
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("batches.id"), nullable=True
+    )
+    subject_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("subjects.id"), nullable=False
+    )
+    # NULL when the student was absent for this subject.
+    marks_obtained: Mapped[float | None] = mapped_column(Float, nullable=True)
+    absent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
+    )
+    academic_year_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("academic_years.id"), nullable=False
     )
 
 
