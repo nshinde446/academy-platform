@@ -129,8 +129,13 @@ async def get_student(
     return student
 
 
-async def list_students(session: AsyncSession, branch_id: uuid.UUID, offset: int = 0, limit: int = 50):
-    return await student_repository.list_by_branch(session, branch_id, offset, limit)
+async def list_students(
+    session: AsyncSession, branch_id: uuid.UUID, offset: int = 0, limit: int = 50,
+    batch_id: uuid.UUID | None = None,
+):
+    return await student_repository.list_by_branch(
+        session, branch_id, offset, limit, batch_id=batch_id
+    )
 
 
 # Sort keys the roster supports → how to read them off a computed stats row.
