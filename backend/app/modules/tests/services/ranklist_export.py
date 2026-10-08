@@ -37,8 +37,17 @@ def _fmt_marks(m: float | None, total: float) -> str:
     return f"{m:g} / {total:g}"
 
 
+def _subject_names(ranklist: dict) -> list[str]:
+    return [s["subject_name"] for s in (ranklist.get("subjects") or [])]
+
+
+def _fmt_cell(v: float | None) -> str:
+    return "—" if v is None else f"{v:g}"
+
+
 def ranklist_xlsx(*, brand: str, ranklist: dict) -> bytes:
     total = ranklist["total_marks"] or 0.0
+    subjects = _subject_names(ranklist)
     wb = Workbook()
     ws = wb.active
     ws.title = "Rank list"
@@ -51,8 +60,12 @@ def ranklist_xlsx(*, brand: str, ranklist: dict) -> bytes:
         f" · Total marks {total:g}"
     )
 
+    # Per-subject columns sit between Student Name and Total (per-subject flow);
+    # an OMR test (no subjects) keeps the single "Marks" column.
+    marks_header = "Total" if subjects else "Marks"
+    headers = ["Rank", "PRN", "Student Name", *subjects, marks_header, "%"]
     head = 5
-    for c, h in enumerate(["Rank", "PRN", "Student Name", "Marks", "%"], start=1):
+    for c, h in enumerate(headers, start=1):
         cell = ws.cell(row=head, column=c, value=h)
         cell.font = _HEAD_FONT
         cell.fill = _HEAD_FILL
@@ -63,8 +76,12 @@ def ranklist_xlsx(*, brand: str, ranklist: dict) -> bytes:
         ws.cell(row=r, column=1, value=row["rank"])
         ws.cell(row=r, column=2, value=row.get("prn") or "")
         ws.cell(row=r, column=3, value=row["name"])
-        ws.cell(row=r, column=4, value=_fmt_marks(row["marks_obtained"], total))
-        ws.cell(row=r, column=5, value=(
+        col = 4
+        for name in subjects:
+            ws.cell(row=r, column=col, value=_fmt_cell(row.get("subject_marks", {}).get(name)))
+            col += 1
+        ws.cell(row=r, column=col, value=_fmt_marks(row["marks_obtained"], total))
+        ws.cell(row=r, column=col + 1, value=(
             f"{row['percentage']:.1f}" if row["percentage"] is not None else ""
         ))
     for row in ranklist["absentees"]:
@@ -72,12 +89,15 @@ def ranklist_xlsx(*, brand: str, ranklist: dict) -> bytes:
         ws.cell(row=r, column=1, value="—")
         ws.cell(row=r, column=2, value=row.get("prn") or "")
         ws.cell(row=r, column=3, value=row["name"])
-        ws.cell(row=r, column=4, value="ABSENT")
-        ws.cell(row=r, column=5, value="—")
+        col = 4
+        for _name in subjects:
+            ws.cell(row=r, column=col, value="—")
+            col += 1
+        ws.cell(row=r, column=col, value="ABSENT")
+        ws.cell(row=r, column=col + 1, value="—")
 
     ws.column_dimensions["B"].width = 14
     ws.column_dimensions["C"].width = 26
-    ws.column_dimensions["D"].width = 12
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -104,30 +124,41 @@ td.c { text-align:center; }
 
 def ranklist_html(*, brand: str, ranklist: dict) -> str:
     total = ranklist["total_marks"] or 0.0
+    subjects = _subject_names(ranklist)
     logo = _logo_data_uri()
     logo_html = f"<img src='{logo}' alt=''>" if logo else ""
+    marks_header = "Total" if subjects else "Marks"
+    subject_ths = "".join(f"<th class='c'>{_esc(s)}</th>" for s in subjects)
     body = [
         f"<div class='brandbar'>{logo_html}<h1>{_esc(brand)}</h1></div>",
         f"<p class='sub'><b>{_esc(ranklist['test_name'])}</b><br>"
         f"Ranked {len(ranklist['ranked'])} · Absent {len(ranklist['absentees'])}"
         f" · Total marks {total:g}</p>",
         "<table><tr><th>Rank</th><th>PRN</th><th>Student Name</th>"
-        "<th>Marks</th><th>%</th></tr>",
+        f"{subject_ths}<th>{marks_header}</th><th>%</th></tr>",
     ]
     for row in ranklist["ranked"]:
+        if row["percentage"] is None:
+            continue
+        subj_tds = "".join(
+            f"<td class='c'>{_esc(_fmt_cell(row.get('subject_marks', {}).get(s)))}</td>"
+            for s in subjects
+        )
         body.append(
             f"<tr><td class='c'>{row['rank']}</td>"
             f"<td>{_esc(row.get('prn') or '—')}</td>"
             f"<td>{_esc(row['name'])}</td>"
+            f"{subj_tds}"
             f"<td class='c'>{_esc(_fmt_marks(row['marks_obtained'], total))}</td>"
             f"<td class='c'>{row['percentage']:.1f}</td></tr>"
-            if row["percentage"] is not None else ""
         )
     for row in ranklist["absentees"]:
+        subj_tds = "".join("<td class='c'>—</td>" for _ in subjects)
         body.append(
             f"<tr class='absent'><td class='c'>—</td>"
             f"<td>{_esc(row.get('prn') or '—')}</td>"
             f"<td>{_esc(row['name'])}</td>"
+            f"{subj_tds}"
             f"<td class='c'>ABSENT</td><td class='c'>—</td></tr>"
         )
     body.append("</table>")

@@ -260,6 +260,14 @@ class RankRow(BaseModel):
     marks_obtained: float | None = None
     percentage: float | None = None
     absent: bool = False
+    # Per-subject marks keyed by subject name (per-subject flow); None = absent for
+    # that subject. Empty for an OMR/single-total test.
+    subject_marks: dict[str, float | None] = {}
+
+
+class SubjectColumn(BaseModel):
+    subject_id: uuid.UUID
+    subject_name: str
 
 
 class ReviewRow(BaseModel):
@@ -273,6 +281,7 @@ class RankListResponse(BaseModel):
     test_id: uuid.UUID
     test_name: str
     total_marks: float
+    subjects: list[SubjectColumn] = []  # per-subject columns (per-subject flow)
     ranked: list[RankRow]       # appeared, highest → lowest
     absentees: list[RankRow]    # grouped at the bottom
     needs_review: list[ReviewRow]  # unmatched CSV rows (excluded from ranking)
