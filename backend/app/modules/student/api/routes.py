@@ -70,12 +70,15 @@ async def create_student(
 @router.get("", response_model=list[StudentResponse])
 async def list_students(
     branch_id: uuid.UUID = Query(...),
+    batch_id: uuid.UUID | None = Query(None, description="Only students enrolled in this batch"),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
-    return await student_service.list_students(session, branch_id, offset, limit)
+    return await student_service.list_students(
+        session, branch_id, offset, limit, batch_id=batch_id
+    )
 
 
 @router.get("/with-stats", response_model=list[StudentWithStats])

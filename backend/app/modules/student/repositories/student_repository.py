@@ -25,14 +25,27 @@ async def get_by_id(session: AsyncSession, student_id: uuid.UUID) -> Student | N
 
 
 async def list_by_branch(
-    session: AsyncSession, branch_id: uuid.UUID, offset: int = 0, limit: int = 50
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    offset: int = 0,
+    limit: int = 50,
+    batch_id: uuid.UUID | None = None,
 ) -> list[Student]:
-    result = await session.execute(
-        select(Student)
-        .where(Student.branch_id == branch_id, Student.is_deleted == False)
-        .offset(offset)
-        .limit(limit)
+    query = select(Student).where(
+        Student.branch_id == branch_id, Student.is_deleted == False
     )
+    if batch_id is not None:
+        # Restrict to students actively enrolled in the batch. Subquery (not a
+        # join) so a student with more than one live mapping isn't duplicated.
+        query = query.where(
+            Student.id.in_(
+                select(StudentBatchMapping.student_id).where(
+                    StudentBatchMapping.batch_id == batch_id,
+                    StudentBatchMapping.is_deleted == False,  # noqa: E712
+                )
+            )
+        )
+    result = await session.execute(query.offset(offset).limit(limit))
     return list(result.scalars().all())
 
 
