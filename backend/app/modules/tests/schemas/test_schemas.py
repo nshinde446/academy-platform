@@ -240,6 +240,18 @@ class UploadResultSummary(BaseModel):
     total_rows: int
 
 
+class SubjectUploadSummary(BaseModel):
+    """Outcome of a per-subject marks CSV upload (Test Portal spec, Section 2)."""
+    subject_id: uuid.UUID
+    matched: int
+    unmatched: int
+    absent: int
+    # Rows rejected for bad marks (not a number / above the subject total).
+    errors: list[str] = []
+    # True once every subject of the test has marks → status "Results Ready".
+    all_subjects_uploaded: bool
+
+
 class RankRow(BaseModel):
     rank: int | None = None  # null for absentees
     student_id: uuid.UUID

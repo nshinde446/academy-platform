@@ -1,5 +1,6 @@
 import json
 import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
@@ -17,6 +18,7 @@ from app.modules.tests.models.test_models import (
     TestBatch,
     TestImportReview,
     TestSubject,
+    TestSubjectMark,
 )
 from app.modules.tests.repositories import test_repository
 from app.modules.tests.services import zipgrade_csv
@@ -999,6 +1001,216 @@ async def upload_result(
     return {
         "matched": matched, "needs_review": needs_review, "absent": absent,
         "total_rows": len(rows),
+    }
+
+
+# ─── Test Portal: per-subject manual-marks CSV (Section 2) ────────────────────
+
+
+async def _test_batch_ids(session: AsyncSession, test) -> list[uuid.UUID]:
+    """Every batch the test is scheduled for: the ``test_batches`` rows unioned
+    with the primary ``tests.batch_id`` (so a legacy single-batch test still has
+    a roster even without a ``test_batches`` row)."""
+    rows = (await session.execute(
+        select(TestBatch.batch_id).where(
+            TestBatch.test_id == test.id, TestBatch.is_deleted == False,
+        )
+    )).scalars().all()
+    return list(dict.fromkeys([test.batch_id, *rows]))
+
+
+async def _recompute_aggregate_marks(
+    session: AsyncSession, test, test_subjects: list,
+    student_ids, current_user_id: uuid.UUID, now: datetime,
+) -> None:
+    """Rebuild each student's aggregate ``StudentMark`` for the test as the sum of
+    their per-subject ``TestSubjectMark`` rows, so the existing rank list and
+    history keep working off StudentMark. A student present in no subject is
+    aggregate-absent; otherwise their total is the sum of the subjects they sat."""
+    total_possible = sum((ts.total_marks or 0.0) for ts in test_subjects)
+    sm_rows = (await session.execute(
+        select(TestSubjectMark).where(
+            TestSubjectMark.test_id == test.id, TestSubjectMark.is_deleted == False,
+        )
+    )).scalars().all()
+    by_student: dict[uuid.UUID, list] = defaultdict(list)
+    for m in sm_rows:
+        by_student[m.student_id].append(m)
+
+    for sid in student_ids:
+        present = [m for m in by_student.get(sid, []) if not m.absent]
+        is_absent = not present
+        total = sum((m.marks_obtained or 0.0) for m in present)
+        pct = (total / total_possible * 100) if (total_possible > 0 and not is_absent) else 0.0
+        grade = None if is_absent else _calculate_grade(pct)
+        existing = await test_repository.get_student_mark(session, sid, test.id)
+        if existing:
+            existing.marks_obtained = total
+            existing.max_marks = total_possible
+            existing.percentage = pct
+            existing.grade = grade
+            existing.is_absent = is_absent
+            existing.marked_at = now
+            existing.marked_by = current_user_id
+        else:
+            await test_repository.create_student_mark(
+                session, student_id=sid, test_id=test.id,
+                branch_id=test.branch_id, academic_year_id=test.academic_year_id,
+                marks_obtained=total, max_marks=total_possible, percentage=pct,
+                grade=grade, is_absent=is_absent, raw_csv_row=None,
+                marked_at=now, marked_by=current_user_id,
+            )
+    await session.flush()
+
+
+async def upload_subject_csv(
+    session: AsyncSession,
+    test_id: uuid.UUID,
+    subject_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    csv_bytes: bytes,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+) -> dict:
+    """Import one subject's marks CSV (Name, PRN, Marks) for the per-subject flow
+    (Section 2). Matches each PRN to a student in any of the test's batches →
+    ``TestSubjectMark`` (present); students in a batch but not in the CSV → absent
+    for this subject; unmatched PRNs → ``TestImportReview``. Marks above the
+    subject total are reported as errors and skipped. The aggregate ``StudentMark``
+    (sum across subjects) is rebuilt so the rank list stays in sync. Idempotent —
+    re-uploading replaces this subject's prior marks + review rows."""
+    test = await test_repository.get_test_by_id(session, test_id)
+    if not test:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
+    if test.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    test_subjects = (await session.execute(
+        select(TestSubject).where(
+            TestSubject.test_id == test_id, TestSubject.is_deleted == False,
+        )
+    )).scalars().all()
+    ts = next((t for t in test_subjects if t.subject_id == subject_id), None)
+    if ts is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Subject is not part of this test",
+        )
+    subject_total = ts.total_marks
+
+    try:
+        rows = zipgrade_csv.parse_subject_marks_csv(csv_bytes)
+    except zipgrade_csv.ZipGradeCsvError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+    # Roster across all the test's batches; PRN (enrollment_number) -> student.
+    roster: dict[uuid.UUID, uuid.UUID] = {}  # student_id -> batch_id
+    prn_to_student: dict[str, uuid.UUID] = {}
+    for bid in await _test_batch_ids(session, test):
+        for sid, _f, _l, enr in await _batch_roster(session, bid):
+            roster.setdefault(sid, bid)
+            key = (enr or "").strip().lower()
+            if key:
+                prn_to_student.setdefault(key, sid)
+
+    now = datetime.now(timezone.utc)
+
+    # Idempotency: soft-delete this subject's prior marks + its prior review rows.
+    for m in (await session.execute(
+        select(TestSubjectMark).where(
+            TestSubjectMark.test_id == test_id,
+            TestSubjectMark.subject_id == subject_id,
+            TestSubjectMark.is_deleted == False,
+        )
+    )).scalars().all():
+        m.is_deleted = True
+    for r in (await session.execute(
+        select(TestImportReview).where(
+            TestImportReview.test_id == test_id, TestImportReview.is_deleted == False,
+        )
+    )).scalars().all():
+        if str(r.raw_row.get("__subject_id__")) == str(subject_id):
+            r.is_deleted = True
+
+    matched_ids: set[uuid.UUID] = set()
+    matched = unmatched = 0
+    errors: list[str] = []
+
+    for i, row in enumerate(rows, start=1):
+        marks = row["marks"]
+        if marks is not None and subject_total is not None and marks > subject_total:
+            errors.append(
+                f"Row {i} (PRN {row['prn'] or '—'}): marks {marks} exceed the "
+                f"subject total {subject_total}"
+            )
+            continue
+        key = (row["prn"] or "").strip().lower()
+        if key and key in prn_to_student:
+            sid = prn_to_student[key]
+            session.add(TestSubjectMark(
+                test_id=test_id, student_id=sid, batch_id=roster.get(sid),
+                subject_id=subject_id, marks_obtained=marks, absent=False,
+                branch_id=branch_id, academic_year_id=test.academic_year_id,
+            ))
+            matched_ids.add(sid)
+            matched += 1
+        else:
+            session.add(TestImportReview(
+                test_id=test_id, branch_id=branch_id,
+                csv_prn=row["prn"] or None, csv_name=row["name"] or None,
+                raw_row={**row["raw"], "__subject_id__": str(subject_id)},
+            ))
+            unmatched += 1
+
+    # Roster students with no row for this subject → absent for this subject.
+    absent = 0
+    for sid, bid in roster.items():
+        if sid not in matched_ids:
+            session.add(TestSubjectMark(
+                test_id=test_id, student_id=sid, batch_id=bid,
+                subject_id=subject_id, marks_obtained=None, absent=True,
+                branch_id=branch_id, academic_year_id=test.academic_year_id,
+            ))
+            absent += 1
+
+    await session.flush()
+    await _recompute_aggregate_marks(
+        session, test, test_subjects, roster.keys(), current_user_id, now,
+    )
+
+    # A subject counts as uploaded once it has any mark row (present or absent).
+    uploaded_subject_ids = set((await session.execute(
+        select(TestSubjectMark.subject_id).where(
+            TestSubjectMark.test_id == test_id, TestSubjectMark.is_deleted == False,
+        ).distinct()
+    )).scalars().all())
+    all_uploaded = {t.subject_id for t in test_subjects} <= uploaded_subject_ids
+
+    await event_service.emit_event(
+        session,
+        event_type="MARKS_UPDATED",
+        test_id=test_id,
+        batch_id=test.batch_id,
+        subject_id=subject_id,
+        branch_id=branch_id,
+        metadata={"matched": matched, "unmatched": unmatched, "absent": absent},
+    )
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="UPDATE",
+        table_name="test_subject_marks",
+        record_id=test_id,
+        new_values={
+            "subject_id": str(subject_id), "matched": matched,
+            "unmatched": unmatched, "absent": absent,
+        },
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return {
+        "subject_id": subject_id, "matched": matched, "unmatched": unmatched,
+        "absent": absent, "errors": errors, "all_subjects_uploaded": all_uploaded,
     }
 
 
