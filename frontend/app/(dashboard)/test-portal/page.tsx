@@ -28,10 +28,11 @@ export default function TestPortalPage() {
   const testsQuery = useTests(branchId);
   const schedule = useScheduleTest(branchId);
 
-  // Only the offline-OMR tests belong in the Test Portal (composer papers are
-  // DPP/CPP and live on the Papers page).
+  // Only offline tests (paper_type TEST) belong in the Test Portal — both the
+  // OMR and the per-subject flows. Composer papers (DPP/CPP) live on the Papers
+  // page and are filtered out here.
   const tests = useMemo(
-    () => (testsQuery.data ?? []).filter((t) => t.omr_type != null || t.test_status !== "DRAFT"),
+    () => (testsQuery.data ?? []).filter((t) => t.paper_type === "TEST"),
     [testsQuery.data],
   );
   const selected = tests.find((t) => t.id === selectedId) ?? null;

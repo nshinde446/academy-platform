@@ -3,6 +3,7 @@ import apiClient from "@/services/api-client";
 import type {
   RankList,
   ScheduleTestInput,
+  SubjectUploadSummary,
   TestSummary,
   UploadResultSummary,
 } from "../_schemas/test-portal";
@@ -55,6 +56,38 @@ export function useUploadResult(branchId: string | undefined) {
       form.append("file", file);
       const res = await apiClient.post<UploadResultSummary>(
         `/api/v1/tests/${testId}/upload-result`,
+        form,
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    onSuccess: (_data, vars) => {
+      if (branchId) {
+        qc.invalidateQueries({
+          queryKey: testPortalKeys.ranklist(branchId, vars.testId),
+        });
+      }
+    },
+  });
+}
+
+// Per-subject marks CSV upload (per-subject flow) — one file per subject.
+export function useUploadSubjectCsv(branchId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      testId,
+      subjectId,
+      file,
+    }: {
+      testId: string;
+      subjectId: string;
+      file: File;
+    }) => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await apiClient.post<SubjectUploadSummary>(
+        `/api/v1/tests/${testId}/upload-csv/${subjectId}`,
         form,
         { params: { branch_id: branchId } },
       );

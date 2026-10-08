@@ -268,6 +268,7 @@ class RankRow(BaseModel):
 class SubjectColumn(BaseModel):
     subject_id: uuid.UUID
     subject_name: str
+    total_marks: float | None = None
 
 
 class ReviewRow(BaseModel):

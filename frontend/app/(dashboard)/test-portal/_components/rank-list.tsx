@@ -20,6 +20,7 @@ import {
   useRankList,
   useUploadAnswerKey,
   useUploadResult,
+  useUploadSubjectCsv,
 } from "../_hooks/use-test-portal";
 import type { ReviewRow, TestSummary } from "../_schemas/test-portal";
 import { ResolveReviewDialog } from "./resolve-review-dialog";
@@ -34,13 +35,43 @@ export function RankList({
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const keyRef = useRef<HTMLInputElement>(null);
+  const subjectFileRef = useRef<HTMLInputElement>(null);
   const query = useRankList(branchId, test.id);
   const upload = useUploadResult(branchId);
+  const uploadSubject = useUploadSubjectCsv(branchId);
   const download = useDownloadRankList(branchId);
   const uploadKey = useUploadAnswerKey(branchId);
   const downloadKey = useDownloadAnswerKey(branchId);
   const [resolving, setResolving] = useState<ReviewRow | null>(null);
+  // Which subject's per-subject CSV is being picked (per-subject flow).
+  const [pendingSubject, setPendingSubject] = useState<{ id: string; name: string } | null>(null);
   const rl = query.data;
+  // A per-subject test exposes its subjects (set at create time); an OMR test
+  // has none, so it keeps the single ZipGrade upload + single Marks column.
+  const subjects = rl?.subjects ?? [];
+  const perSubject = subjects.length > 0;
+
+  async function onSubjectFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    const target = pendingSubject;
+    setPendingSubject(null);
+    if (!file || !target) return;
+    try {
+      const res = await uploadSubject.mutateAsync({
+        testId: test.id,
+        subjectId: target.id,
+        file,
+      });
+      const extra = res.errors.length ? ` · ${res.errors.length} error(s)` : "";
+      toast.success(
+        `${target.name} uploaded`,
+        `${res.matched} matched · ${res.absent} absent · ${res.unmatched} to review${extra}`,
+      );
+    } catch {
+      toast.error("Upload failed", "Check the CSV and try again.");
+    }
+  }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -85,17 +116,44 @@ export function RankList({
           onChange={onAnswerKey}
           className="hidden"
         />
-        <Button size="sm" onClick={() => fileRef.current?.click()} disabled={upload.isPending}>
-          {upload.isPending ? "Uploading…" : "Upload ZipGrade CSV"}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          title="Download a sample ZipGrade export to see the expected format"
-          render={<a href="/zipgrade-sample.csv" download="zipgrade-sample.csv" />}
-        >
-          Sample CSV
-        </Button>
+        <input
+          ref={subjectFileRef}
+          type="file"
+          accept=".csv,text/csv"
+          onChange={onSubjectFile}
+          className="hidden"
+        />
+        {perSubject ? (
+          // One upload button per subject (Test Portal per-subject flow).
+          subjects.map((s) => (
+            <Button
+              key={s.subject_id}
+              size="sm"
+              variant="outline"
+              disabled={uploadSubject.isPending}
+              onClick={() => {
+                setPendingSubject({ id: s.subject_id, name: s.subject_name });
+                subjectFileRef.current?.click();
+              }}
+            >
+              {`Upload ${s.subject_name} CSV`}
+            </Button>
+          ))
+        ) : (
+          <>
+            <Button size="sm" onClick={() => fileRef.current?.click()} disabled={upload.isPending}>
+              {upload.isPending ? "Uploading…" : "Upload ZipGrade CSV"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              title="Download a sample ZipGrade export to see the expected format"
+              render={<a href="/zipgrade-sample.csv" download="zipgrade-sample.csv" />}
+            >
+              Sample CSV
+            </Button>
+          </>
+        )}
         <Button
           size="sm"
           variant="outline"
@@ -182,7 +240,10 @@ export function RankList({
         <Card size="sm">
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              No results yet. Upload the ZipGrade CSV to build the rank list.
+              No results yet.{" "}
+              {perSubject
+                ? "Upload each subject's marks CSV to build the rank list."
+                : "Upload the ZipGrade CSV to build the rank list."}
             </p>
           </CardContent>
         </Card>
@@ -194,7 +255,14 @@ export function RankList({
                 <TableHead className="w-14 text-right">Rank</TableHead>
                 <TableHead>PRN</TableHead>
                 <TableHead>Student</TableHead>
-                <TableHead className="text-right">Marks</TableHead>
+                {subjects.map((s) => (
+                  <TableHead key={s.subject_id} className="text-right">
+                    {s.subject_name}
+                  </TableHead>
+                ))}
+                <TableHead className="text-right">
+                  {perSubject ? "Total" : "Marks"}
+                </TableHead>
                 <TableHead className="text-right">%</TableHead>
               </TableRow>
             </TableHeader>
@@ -208,6 +276,14 @@ export function RankList({
                     {r.prn || "—"}
                   </TableCell>
                   <TableCell className="font-medium">{r.name}</TableCell>
+                  {subjects.map((s) => {
+                    const v = r.subject_marks?.[s.subject_name];
+                    return (
+                      <TableCell key={s.subject_id} className="text-right tabular-nums text-sm">
+                        {v == null ? "—" : v}
+                      </TableCell>
+                    );
+                  })}
                   <TableCell className="text-right tabular-nums">
                     {r.marks_obtained ?? 0} / {rl.total_marks}
                   </TableCell>
@@ -223,6 +299,11 @@ export function RankList({
                     {r.prn || "—"}
                   </TableCell>
                   <TableCell className="font-medium">{r.name}</TableCell>
+                  {subjects.map((s) => (
+                    <TableCell key={s.subject_id} className="text-right text-muted-foreground">
+                      —
+                    </TableCell>
+                  ))}
                   <TableCell className="text-right">
                     <Badge variant="destructive">ABSENT</Badge>
                   </TableCell>
