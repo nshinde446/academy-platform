@@ -27,6 +27,7 @@ from app.modules.tests.schemas.test_schemas import (
     TestQuestionsAdd,
     TestReportResponse,
     TestResponse,
+    SubjectUploadSummary,
     UploadResultSummary,
 )
 from app.modules.tests.services import ranklist_export, test_service
@@ -412,6 +413,29 @@ async def upload_result(
     content = await file.read()
     return await test_service.upload_result(
         session, test_id, branch_id, content, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@tests_router.post(
+    "/{test_id}/upload-csv/{subject_id}", response_model=SubjectUploadSummary
+)
+async def upload_subject_csv(
+    test_id: uuid.UUID,
+    subject_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_roles(_PORTAL_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Per-subject manual-marks CSV (Name, PRN, Marks) for one subject of the test
+    (Test Portal spec, Section 2) → match PRNs across the test's batches, save
+    per-subject marks, mark absentees for this subject, flag unmatched rows, and
+    rebuild the aggregate marks that feed the rank list."""
+    content = await file.read()
+    return await test_service.upload_subject_csv(
+        session, test_id, subject_id, branch_id, content, current_user["user_id"],
         request.client.host if request.client else None,
     )
 

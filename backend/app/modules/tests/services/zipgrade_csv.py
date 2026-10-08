@@ -23,7 +23,10 @@ from typing import Any
 
 # Header aliases (compared lowercase, stripped). First match wins. The PRN
 # aliases deliberately exclude ZipGrade's own internal "zipgrade id".
-_PRN_ALIASES = ["student id", "studentid", "prn", "external id", "id number"]
+_PRN_ALIASES = [
+    "student id", "studentid", "prn", "prn number", "prn no", "external id",
+    "id number",
+]
 _NAME_ALIASES = ["student name", "name", "full name"]
 _FIRST_ALIASES = ["first name", "firstname"]
 _LAST_ALIASES = ["last name", "lastname", "surname"]
@@ -132,6 +135,53 @@ def parse_zipgrade_csv(content: bytes) -> list[dict[str, Any]]:
             "score": _to_float(raw.get(score_col)) if score_col else None,
             "total": _to_float(raw.get(total_col)) if total_col else None,
             "percent": _to_float(raw.get(percent_col)) if percent_col else None,
+            "raw": dict(raw),
+        })
+    return rows
+
+
+# ── Per-subject manual-marks CSV (Test Portal spec, Section 2) ────────────────
+# A plain three-column file: Student Name, PRN Number, Marks Obtained. One file
+# per subject. Reuses the same tolerant header aliases as the ZipGrade parser.
+
+
+def parse_subject_marks_csv(content: bytes) -> list[dict[str, Any]]:
+    """Parse a per-subject marks CSV (Name, PRN, Marks) into normalized rows:
+    ``{prn, name, marks, raw}`` where ``marks`` is a float or None (blank/not a
+    number). Raises ``ZipGradeCsvError`` if the header, PRN column, or marks
+    column is missing (the spec's "reject a file that doesn't have the 3 columns").
+    """
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1")
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise ZipGradeCsvError("CSV has no header row")
+
+    header_map = {_norm(h): h for h in reader.fieldnames if h}
+    prn_col = _pick(header_map, _PRN_ALIASES)
+    marks_col = _pick(header_map, _SCORE_ALIASES)
+    if not prn_col or not marks_col:
+        raise ZipGradeCsvError(
+            "The marks CSV needs a Student Name, a PRN, and a Marks Obtained "
+            f"column. Columns seen: {', '.join(reader.fieldnames)}"
+        )
+    name_col = _pick(header_map, _NAME_ALIASES)
+
+    rows: list[dict[str, Any]] = []
+    for raw in reader:
+        prn = (raw.get(prn_col) or "").strip()
+        name = (raw.get(name_col) or "").strip() if name_col else ""
+        marks_cell = raw.get(marks_col)
+        # Skip fully-blank trailing rows.
+        if not prn and not name and not (marks_cell or "").strip():
+            continue
+        rows.append({
+            "prn": prn,
+            "name": name,
+            "marks": _to_float(marks_cell),
             "raw": dict(raw),
         })
     return rows
