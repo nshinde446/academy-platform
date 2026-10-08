@@ -124,21 +124,32 @@ export function RankList({
           className="hidden"
         />
         {perSubject ? (
-          // One upload button per subject (Test Portal per-subject flow).
-          subjects.map((s) => (
+          // One upload button per subject (Test Portal per-subject flow), plus a
+          // sample of the expected Name/PRN/Marks CSV.
+          <>
+            {subjects.map((s) => (
+              <Button
+                key={s.subject_id}
+                size="sm"
+                variant="outline"
+                disabled={uploadSubject.isPending}
+                onClick={() => {
+                  setPendingSubject({ id: s.subject_id, name: s.subject_name });
+                  subjectFileRef.current?.click();
+                }}
+              >
+                {`Upload ${s.subject_name} CSV`}
+              </Button>
+            ))}
             <Button
-              key={s.subject_id}
               size="sm"
-              variant="outline"
-              disabled={uploadSubject.isPending}
-              onClick={() => {
-                setPendingSubject({ id: s.subject_id, name: s.subject_name });
-                subjectFileRef.current?.click();
-              }}
+              variant="ghost"
+              title="Download a sample marks CSV (Student Name, PRN, Marks) — one file per subject"
+              render={<a href="/subject-marks-sample.csv" download="subject-marks-sample.csv" />}
             >
-              {`Upload ${s.subject_name} CSV`}
+              Sample CSV
             </Button>
-          ))
+          </>
         ) : (
           <>
             <Button size="sm" onClick={() => fileRef.current?.click()} disabled={upload.isPending}>
