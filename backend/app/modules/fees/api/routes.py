@@ -85,6 +85,23 @@ async def get_fee_profile(
     return await fee_service.get_fee_profile(session, student_id, branch_id)
 
 
+@router.delete("/student/{student_id}", status_code=204)
+async def void_fee_profile(
+    student_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(_MANAGER)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Void a student's fee profile (manager only) — for a wrongly-entered
+    admission. Soft-deletes the profile + its installments so a new one can be
+    created; payment/remark rows are kept for the audit trail (spec note #8)."""
+    await fee_service.void_fee_profile(
+        session, student_id, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
 @router.post("/installment/{installment_id}/pay", response_model=PaymentResult)
 async def record_payment(
     installment_id: uuid.UUID,

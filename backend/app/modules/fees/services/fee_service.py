@@ -267,6 +267,40 @@ async def get_fee_profile(
     return profile
 
 
+async def void_fee_profile(
+    session: AsyncSession, student_id: uuid.UUID, branch_id: uuid.UUID,
+    user_id: uuid.UUID, ip_address: str | None = None,
+) -> None:
+    """Void a student's fee profile (manager-only) — e.g. a wrongly-entered
+    admission. Soft-deletes the profile and its installments so a fresh profile
+    can be created. Payment and remark rows are kept (spec note #8: never delete
+    payments/remarks — corrections are new entries), but they are detached from
+    the live profile along with it. Idempotent at the API layer."""
+    profile = (await session.execute(
+        select(StudentFeeProfile).where(
+            StudentFeeProfile.student_id == student_id,
+            StudentFeeProfile.is_deleted == False,  # noqa: E712
+        )
+    )).scalar_one_or_none()
+    if profile is None:
+        raise HTTPException(status_code=404, detail="No fee profile for this student")
+    if profile.branch_id != branch_id:
+        raise HTTPException(status_code=403, detail="No access to this branch")
+
+    for inst in await _installments_for(session, profile.id):
+        inst.is_deleted = True
+        inst.updated_by = user_id
+    profile.is_deleted = True
+    profile.updated_by = user_id
+    await session.flush()
+
+    await audit_service.log_action(
+        session, user_id=user_id, action="VOID", table_name="student_fee_profiles",
+        record_id=profile.id, new_values={"student_id": str(student_id)},
+        ip_address=ip_address, branch_id=branch_id,
+    )
+
+
 # ── Payments (spec §6) + remarks (spec §4) ───────────────────────────────────
 
 async def record_payment(

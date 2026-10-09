@@ -138,3 +138,23 @@ async def test_get_fee_profile_returns_installments(db_session: AsyncSession, se
     )
     assert got.agreed_fee == 150000
     assert len(got.installments) == 5
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_void_profile_allows_recreate(db_session: AsyncSession, seed_data):
+    sid = seed_data["student"].id
+    b = seed_data["branch_a"].id
+    await _create(db_session, seed_data)
+    await fee_service.void_fee_profile(db_session, sid, b, seed_data["admin_user"].id)
+    # Gone: read now 404s.
+    with pytest.raises(HTTPException) as ei:
+        await fee_service.get_fee_profile(db_session, sid, b)
+    assert ei.value.status_code == 404
+    # The "one profile per student" guard no longer blocks a fresh profile.
+    again = await _create(db_session, seed_data, agreed_fee=120000)
+    assert again.agreed_fee == 120000
+    # Voiding when there is no live profile → 404.
+    await fee_service.void_fee_profile(db_session, sid, b, seed_data["admin_user"].id)
+    with pytest.raises(HTTPException) as ei2:
+        await fee_service.void_fee_profile(db_session, sid, b, seed_data["admin_user"].id)
+    assert ei2.value.status_code == 404
