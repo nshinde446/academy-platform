@@ -36,7 +36,8 @@ export function useStudentsInBatch(branchId: string | undefined, batchId: string
   return useQuery<StudentLite[]>({
     queryKey: [...feesKeys.all, "students", branchId ?? "", batchId ?? ""],
     queryFn: async () =>
-      (await apiClient.get("/api/v1/students", { params: { branch_id: branchId, batch_id: batchId, limit: 500 } })).data,
+      // /students caps limit at 200; a batch never exceeds that.
+      (await apiClient.get("/api/v1/students", { params: { branch_id: branchId, batch_id: batchId, limit: 200 } })).data,
     enabled: !!branchId && !!batchId,
   });
 }
