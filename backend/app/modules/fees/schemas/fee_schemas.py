@@ -136,3 +136,40 @@ class FollowUpDashboard(BaseModel):
     dues_total: float
     commitments_total: float
     overdue_total: float
+
+
+# ── Collection forecast + staff performance (spec §5, §8) ────────────────────
+
+class ForecastDay(BaseModel):
+    date: date
+    installments_due: int
+    expected_amount: float
+
+
+class ForecastRange(BaseModel):
+    from_date: date
+    to_date: date
+    days: list[ForecastDay] = []
+    total_installments: int
+    total_expected: float
+
+
+class CollectionSummary(BaseModel):
+    total_agreed: float
+    total_collected: float
+    total_pending: float
+    collection_pct: float
+    student_count: int
+    batch_id: uuid.UUID | None = None   # set for a batch summary
+
+
+class StaffPerformanceRow(BaseModel):
+    staff_id: uuid.UUID
+    staff_name: str
+    calls_made: int
+    collection: float
+
+
+class StaffPerformance(BaseModel):
+    day: date
+    staff: list[StaffPerformanceRow] = []

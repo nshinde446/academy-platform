@@ -7,17 +7,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database.session import get_db
 from app.modules.auth.permissions.rbac import require_roles
 from app.modules.fees.schemas.fee_schemas import (
+    CollectionSummary,
     CourseFeeConfigResponse,
     CourseFeeConfigUpsert,
     FollowUpDashboard,
+    ForecastRange,
     PaymentCreate,
     PaymentResult,
     RemarkCreate,
     RemarkResponse,
+    StaffPerformance,
     StudentFeeProfileCreate,
     StudentFeeProfileResponse,
 )
-from app.modules.fees.services import fee_service, followup_service
+from app.modules.fees.services import fee_service, followup_service, forecast_service
 
 router = APIRouter(prefix="/fees", tags=["fees"])
 
@@ -134,3 +137,52 @@ async def follow_up_dashboard(
     return await followup_service.follow_up_dashboard(
         session, branch_id, day or _date.today(),
     )
+
+
+# ── Forecast + reports (manager only, spec §5 / §8 / §12) ────────────────────
+
+@router.get("/forecast", response_model=ForecastRange)
+async def collection_forecast(
+    branch_id: uuid.UUID = Query(...),
+    from_date: date = Query(..., alias="from"),
+    to_date: date = Query(..., alias="to"),
+    current_user: dict = Depends(require_roles(_MANAGER)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Day-wise expected collection over a date range (spec §5 reports 1-2). A
+    single date is ``from == to``."""
+    return await forecast_service.forecast_range(session, branch_id, from_date, to_date)
+
+
+@router.get("/batch/{batch_id}/summary", response_model=CollectionSummary)
+async def batch_fee_summary(
+    batch_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(_MANAGER)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Agreed / collected / pending / collection % for one batch (spec §5 report 3)."""
+    return await forecast_service.batch_summary(session, branch_id, batch_id)
+
+
+@router.get("/dashboard", response_model=CollectionSummary)
+async def overall_collection_summary(
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(_MANAGER)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Branch-wide collection summary card (spec §5 report 4)."""
+    return await forecast_service.overall_summary(session, branch_id)
+
+
+@router.get("/staff-performance", response_model=StaffPerformance)
+async def staff_performance(
+    branch_id: uuid.UUID = Query(...),
+    day: date | None = Query(None, description="Defaults to today"),
+    current_user: dict = Depends(require_roles(_MANAGER)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Per-staff calls made + collection achieved on a day (spec §8 feature 4)."""
+    from datetime import date as _date
+
+    return await forecast_service.staff_performance(session, branch_id, day or _date.today())
