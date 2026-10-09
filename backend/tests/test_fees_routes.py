@@ -64,3 +64,21 @@ async def test_followup_dashboard_endpoint(client: AsyncClient, seed_data):
     assert body["day"] == "2026-11-01"
     assert body["dues"] == [] and body["commitments"] == [] and body["overdue"] == []
     assert body["overdue_total"] == 0
+
+
+async def test_forecast_and_summary_endpoints(client: AsyncClient, seed_data):
+    await _login_admin(client)
+    # Forecast uses the from/to query aliases.
+    r = await client.get(
+        f"/api/v1/fees/forecast?branch_id={BRANCH}&from=2026-10-20&to=2026-10-24"
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["total_expected"] == 0  # no profiles yet
+
+    r = await client.get(f"/api/v1/fees/dashboard?branch_id={BRANCH}")
+    assert r.status_code == 200
+    assert r.json()["collection_pct"] == 0
+
+    r = await client.get(f"/api/v1/fees/batch/{BATCH}/summary?branch_id={BRANCH}")
+    assert r.status_code == 200
+    assert r.json()["student_count"] == 0
