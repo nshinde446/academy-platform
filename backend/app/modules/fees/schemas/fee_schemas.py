@@ -109,3 +109,30 @@ class RemarkResponse(BaseModel):
     next_followup_date: date | None = None
     created_by: uuid.UUID | None = None
     model_config = {"from_attributes": True}
+
+
+# ── Daily Follow-Up dashboard (spec §3) ──────────────────────────────────────
+
+class FollowUpRow(BaseModel):
+    student_id: uuid.UUID
+    name: str
+    prn: str | None = None
+    phone: str | None = None
+    batch: str | None = None
+    installment_id: uuid.UUID
+    installment_number: int
+    due_date: date
+    amount_due: float
+    days_overdue: int
+    last_remark: str | None = None
+    last_remark_date: date | None = None
+
+
+class FollowUpDashboard(BaseModel):
+    day: date
+    dues: list[FollowUpRow] = []          # installments due today
+    commitments: list[FollowUpRow] = []   # promised to pay today (rescheduled)
+    overdue: list[FollowUpRow] = []       # past due, oldest first
+    dues_total: float
+    commitments_total: float
+    overdue_total: float
