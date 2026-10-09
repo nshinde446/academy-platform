@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +9,7 @@ from app.modules.auth.permissions.rbac import require_roles
 from app.modules.fees.schemas.fee_schemas import (
     CourseFeeConfigResponse,
     CourseFeeConfigUpsert,
+    FollowUpDashboard,
     PaymentCreate,
     PaymentResult,
     RemarkCreate,
@@ -15,7 +17,7 @@ from app.modules.fees.schemas.fee_schemas import (
     StudentFeeProfileCreate,
     StudentFeeProfileResponse,
 )
-from app.modules.fees.services import fee_service
+from app.modules.fees.services import fee_service, followup_service
 
 router = APIRouter(prefix="/fees", tags=["fees"])
 
@@ -114,4 +116,21 @@ async def add_remark(
     return await fee_service.add_remark(
         session, body.model_dump(), branch_id, current_user["user_id"],
         request.client.host if request.client else None,
+    )
+
+
+@router.get("/followup", response_model=FollowUpDashboard)
+async def follow_up_dashboard(
+    branch_id: uuid.UUID = Query(...),
+    day: date | None = Query(None, description="Defaults to today"),
+    current_user: dict = Depends(require_roles(_MANAGER_OR_ACCOUNTS)),
+    session: AsyncSession = Depends(get_db),
+):
+    """The Daily Follow-Up dashboard (spec §3): Today's Dues, Today's Commitments,
+    and the Overdue list (oldest first) — with amount due, phone and last remark
+    per row. One call powers the accounts team's morning working screen."""
+    from datetime import date as _date
+
+    return await followup_service.follow_up_dashboard(
+        session, branch_id, day or _date.today(),
     )

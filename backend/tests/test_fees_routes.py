@@ -54,3 +54,13 @@ async def test_endpoints_require_auth(client: AsyncClient, seed_data):
         json={"course_name": "CET", "standard_fee": 1},
     )
     assert r.status_code in (401, 403)
+
+
+async def test_followup_dashboard_endpoint(client: AsyncClient, seed_data):
+    await _login_admin(client)
+    r = await client.get(f"/api/v1/fees/followup?branch_id={BRANCH}&day=2026-11-01")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["day"] == "2026-11-01"
+    assert body["dues"] == [] and body["commitments"] == [] and body["overdue"] == []
+    assert body["overdue_total"] == 0

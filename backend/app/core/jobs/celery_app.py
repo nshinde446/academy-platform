@@ -77,6 +77,13 @@ celery_app.conf.update(
             "task": "notifications.lecture_reminders",
             "schedule": crontab(minute="*/15"),
         },
+        # Fees auto-overdue: mark past-due installments OVERDUE once a day. Beat
+        # fires hourly; each branch triggers only in its local 06:00 hour, and the
+        # sweep is idempotent so extra firings are no-ops.
+        "fees-mark-overdue": {
+            "task": "fees.mark_overdue",
+            "schedule": crontab(minute="0"),
+        },
     },
     # Explicit import so the worker registers our tasks without autodiscover.
     # ``app.main`` is imported first so the worker loads the *full* SQLAlchemy
@@ -89,5 +96,6 @@ celery_app.conf.update(
         "app.main",
         "app.modules.attendance.jobs.tasks",
         "app.modules.notifications.jobs.tasks",
+        "app.modules.fees.jobs.tasks",
     ),
 )
