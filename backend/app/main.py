@@ -50,6 +50,7 @@ from app.modules.tests.api.routes import marks_router
 from app.modules.student.api.routes import router as student_router
 from app.modules.teacher.api.routes import router as teacher_router
 from app.modules.staff.api.routes import router as staff_router
+from app.modules.fees.api.routes import router as fees_router
 
 settings = get_settings()
 logger = setup_logging()
@@ -95,6 +96,7 @@ app.include_router(syllabus_router, prefix=settings.API_V1_PREFIX)
 app.include_router(student_router, prefix=settings.API_V1_PREFIX)
 app.include_router(teacher_router, prefix=settings.API_V1_PREFIX)
 app.include_router(staff_router, prefix=settings.API_V1_PREFIX)
+app.include_router(fees_router, prefix=settings.API_V1_PREFIX)
 app.include_router(batch_router, prefix=settings.API_V1_PREFIX)
 app.include_router(classroom_router, prefix=settings.API_V1_PREFIX)
 app.include_router(lectures_router, prefix=settings.API_V1_PREFIX)
