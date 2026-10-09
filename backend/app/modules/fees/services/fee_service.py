@@ -18,9 +18,13 @@ from app.modules.fees.models.fee_models import (
     INSTALLMENT,
     ONE_TIME,
     PAID,
+    PARTIAL,
+    PAYMENT_MODES,
     PENDING,
     CourseFeeConfig,
+    FeeRemark,
     Installment,
+    PaymentRecord,
     StudentFeeProfile,
 )
 from app.modules.student.models.student_models import Student
@@ -255,3 +259,112 @@ async def get_fee_profile(
         raise HTTPException(status_code=403, detail="No access to this branch")
     profile.installments = await _installments_for(session, profile.id)
     return profile
+
+
+# ── Payments (spec §6) + remarks (spec §4) ───────────────────────────────────
+
+async def record_payment(
+    session: AsyncSession, installment_id: uuid.UUID, branch_id: uuid.UUID,
+    *, amount_paid: float, payment_date: date, payment_mode: str,
+    notes: str | None, user_id: uuid.UUID, ip_address: str | None = None,
+) -> dict:
+    """Record a payment against an installment (spec §6). Partial payments keep
+    the balance on the same installment (status PARTIAL); a full payment marks it
+    PAID. The profile's totals are updated. A payment above the installment's
+    remaining balance is rejected (developer-note #4, applied per installment)."""
+    mode = (payment_mode or "").upper()
+    if mode not in PAYMENT_MODES:
+        raise HTTPException(status_code=422, detail=f"payment_mode must be one of {sorted(PAYMENT_MODES)}")
+    if amount_paid <= 0:
+        raise HTTPException(status_code=422, detail="Amount paid must be greater than 0")
+
+    inst = (await session.execute(
+        select(Installment).where(
+            Installment.id == installment_id, Installment.is_deleted == False,  # noqa: E712
+        )
+    )).scalar_one_or_none()
+    if inst is None or inst.branch_id != branch_id:
+        raise HTTPException(status_code=404, detail="Installment not found in this branch")
+    if inst.installment_status == PAID:
+        raise HTTPException(status_code=409, detail="This installment is already fully paid")
+
+    balance = round(inst.amount - inst.paid_amount, 2)
+    if amount_paid - balance > _CENTS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Payment {amount_paid} exceeds this installment's balance {balance}",
+        )
+
+    profile = (await session.execute(
+        select(StudentFeeProfile).where(StudentFeeProfile.id == inst.profile_id)
+    )).scalar_one()
+
+    session.add(PaymentRecord(
+        student_id=inst.student_id, installment_id=inst.id, branch_id=branch_id,
+        amount_paid=amount_paid, payment_date=payment_date, payment_mode=mode,
+        notes=notes, created_by=user_id,
+    ))
+
+    inst.paid_amount = round(inst.paid_amount + amount_paid, 2)
+    inst.payment_mode = mode
+    inst.paid_date = payment_date
+    inst.installment_status = PAID if inst.paid_amount >= inst.amount - _CENTS else PARTIAL
+
+    profile.total_paid = round(profile.total_paid + amount_paid, 2)
+    profile.total_pending = round(profile.total_pending - amount_paid, 2)
+    profile.updated_by = user_id
+    await session.flush()
+
+    await audit_service.log_action(
+        session, user_id=user_id, action="PAYMENT", table_name="fee_payment_records",
+        record_id=inst.id,
+        new_values={"amount_paid": amount_paid, "mode": mode,
+                    "installment_status": inst.installment_status},
+        ip_address=ip_address, branch_id=branch_id,
+    )
+    return {
+        "installment": inst,
+        "total_paid": profile.total_paid,
+        "total_pending": profile.total_pending,
+    }
+
+
+async def add_remark(
+    session: AsyncSession, data: dict, branch_id: uuid.UUID,
+    user_id: uuid.UUID, ip_address: str | None = None,
+) -> FeeRemark:
+    """Add a call-log remark (spec §4). A next follow-up date is required unless
+    the fee is fully paid (developer-note #5); when given, the student shows up in
+    that day's Commitments list (built in slice 3)."""
+    profile = (await session.execute(
+        select(StudentFeeProfile).where(
+            StudentFeeProfile.id == data["profile_id"],
+            StudentFeeProfile.is_deleted == False,  # noqa: E712
+        )
+    )).scalar_one_or_none()
+    if profile is None or profile.branch_id != branch_id:
+        raise HTTPException(status_code=404, detail="Fee profile not found in this branch")
+    if profile.student_id != data["student_id"]:
+        raise HTTPException(status_code=422, detail="student_id does not match this profile")
+
+    if data.get("next_followup_date") is None and profile.total_pending > _CENTS:
+        raise HTTPException(
+            status_code=422,
+            detail="A next follow-up date is required until the fee is fully paid",
+        )
+
+    remark = FeeRemark(
+        student_id=data["student_id"], profile_id=data["profile_id"], branch_id=branch_id,
+        remark_text=data["remark_text"], call_date=data["call_date"],
+        next_followup_date=data.get("next_followup_date"), created_by=user_id,
+    )
+    session.add(remark)
+    await session.flush()
+
+    await audit_service.log_action(
+        session, user_id=user_id, action="REMARK", table_name="fee_remarks",
+        record_id=remark.id,
+        new_values={"next_followup_date": str(data.get("next_followup_date"))},
+        ip_address=ip_address, branch_id=branch_id,
+    )
+    return remark

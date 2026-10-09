@@ -71,3 +71,41 @@ class StudentFeeProfileResponse(BaseModel):
     admission_date: date
     installments: list[InstallmentResponse] = []
     model_config = {"from_attributes": True}
+
+
+# ── Payments (spec §6) ───────────────────────────────────────────────────────
+
+class PaymentCreate(BaseModel):
+    amount_paid: float
+    payment_date: date
+    payment_mode: str                    # CASH | UPI | CHEQUE | BANK_TRANSFER
+    notes: str | None = None
+
+
+class PaymentResult(BaseModel):
+    """Outcome of recording a payment: the updated installment + the profile's
+    new totals, so the UI refreshes without a second fetch."""
+    installment: InstallmentResponse
+    total_paid: float
+    total_pending: float
+
+
+# ── Remarks / call log (spec §4) ─────────────────────────────────────────────
+
+class RemarkCreate(BaseModel):
+    student_id: uuid.UUID
+    profile_id: uuid.UUID
+    remark_text: str
+    call_date: date
+    next_followup_date: date | None = None
+
+
+class RemarkResponse(BaseModel):
+    id: uuid.UUID
+    student_id: uuid.UUID
+    profile_id: uuid.UUID
+    remark_text: str
+    call_date: date
+    next_followup_date: date | None = None
+    created_by: uuid.UUID | None = None
+    model_config = {"from_attributes": True}

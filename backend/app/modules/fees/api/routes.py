@@ -8,6 +8,10 @@ from app.modules.auth.permissions.rbac import require_roles
 from app.modules.fees.schemas.fee_schemas import (
     CourseFeeConfigResponse,
     CourseFeeConfigUpsert,
+    PaymentCreate,
+    PaymentResult,
+    RemarkCreate,
+    RemarkResponse,
     StudentFeeProfileCreate,
     StudentFeeProfileResponse,
 )
@@ -74,3 +78,40 @@ async def get_fee_profile(
 ):
     """A student's full fee profile with its installment schedule (spec §7)."""
     return await fee_service.get_fee_profile(session, student_id, branch_id)
+
+
+@router.post("/installment/{installment_id}/pay", response_model=PaymentResult)
+async def record_payment(
+    installment_id: uuid.UUID,
+    body: PaymentCreate,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(_MANAGER_OR_ACCOUNTS)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Record a payment against an installment (spec §6). Partial payments keep
+    the balance (status PARTIAL); a full payment marks it PAID. Returns the updated
+    installment and the profile's new totals."""
+    return await fee_service.record_payment(
+        session, installment_id, branch_id,
+        amount_paid=body.amount_paid, payment_date=body.payment_date,
+        payment_mode=body.payment_mode, notes=body.notes,
+        user_id=current_user["user_id"],
+        ip_address=request.client.host if request.client else None,
+    )
+
+
+@router.post("/remark", response_model=RemarkResponse)
+async def add_remark(
+    body: RemarkCreate,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(_MANAGER_OR_ACCOUNTS)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Add a call-log remark + next follow-up date (spec §4). The follow-up date is
+    required until the fee is fully paid."""
+    return await fee_service.add_remark(
+        session, body.model_dump(), branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
