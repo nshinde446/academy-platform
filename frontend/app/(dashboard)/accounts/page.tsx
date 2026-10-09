@@ -12,10 +12,12 @@ import { FeeProfileDialog } from "./_components/fee-profile-view";
 type Tab = "followup" | "forecast" | "config";
 
 const MANAGER_ROLES = new Set(["super_admin", "branch_admin"]);
+// Stable reference — returning a fresh `[]` from the selector would re-render loop.
+const NO_ROLES: string[] = [];
 
 export default function AccountsPage() {
   const { branchId } = useBranchId();
-  const roles = useUserStore((s) => s.user?.roles ?? []);
+  const roles = useUserStore((s) => s.user?.roles) ?? NO_ROLES;
   const isManager = useMemo(() => roles.some((r) => MANAGER_ROLES.has(r)), [roles]);
 
   const [tab, setTab] = useState<Tab>("followup");
