@@ -70,6 +70,7 @@ class StudentFeeProfileResponse(BaseModel):
     total_pending: float
     admission_date: date
     installments: list[InstallmentResponse] = []
+    remarks: list["RemarkResponse"] = []   # call log, newest first
     model_config = {"from_attributes": True}
 
 
@@ -115,6 +116,7 @@ class RemarkResponse(BaseModel):
 
 class FollowUpRow(BaseModel):
     student_id: uuid.UUID
+    profile_id: uuid.UUID
     name: str
     prn: str | None = None
     phone: str | None = None

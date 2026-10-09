@@ -1,30 +1,69 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { PageHeader } from "@/components/layout/page-header";
-import { Card, CardContent } from "@/components/ui/card";
+import { useBranchId, useUserStore } from "@/store/user-store";
+import { FollowUpBoard } from "./_components/follow-up-board";
+import { ForecastPanel } from "./_components/forecast-panel";
+import { ConfigPanel } from "./_components/config-panel";
+import { CreateProfileDialog } from "./_components/create-profile-dialog";
+import { FeeProfileDialog } from "./_components/fee-profile-view";
 
-// Placeholder for the fees/accounts module. Scaffolded now (per the RBAC spec —
-// the Accounts role's home) so the nav entry and route exist; the fees features
-// land in a later increment.
+type Tab = "followup" | "forecast" | "config";
+
+const MANAGER_ROLES = new Set(["super_admin", "branch_admin"]);
+
 export default function AccountsPage() {
+  const { branchId } = useBranchId();
+  const roles = useUserStore((s) => s.user?.roles ?? []);
+  const isManager = useMemo(() => roles.some((r) => MANAGER_ROLES.has(r)), [roles]);
+
+  const [tab, setTab] = useState<Tab>("followup");
+  const [profileStudent, setProfileStudent] = useState<string | null>(null);
+
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "followup", label: "Daily Follow-Up" },
+    ...(isManager
+      ? ([
+          { key: "forecast", label: "Forecast" },
+          { key: "config", label: "Course Fees" },
+        ] as { key: Tab; label: string }[])
+      : []),
+  ];
+  const active: Tab = tabs.some((t) => t.key === tab) ? tab : "followup";
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Accounts"
-        description="Fees & accounts. This module is being set up — features are coming soon."
+        description="Fee collection, installment tracking, daily follow-up calls and collection forecast."
+        actions={<CreateProfileDialog branchId={branchId} />}
       />
-      <Card>
-        <CardContent>
-          <div className="flex flex-col items-center gap-2 py-16 text-center">
-            <p className="text-lg font-medium">Accounts module coming soon</p>
-            <p className="max-w-md text-sm text-muted-foreground">
-              This is where fees and accounts will live. It&apos;s scaffolded as
-              the home for the Accounts role; the fees features will be built out
-              next.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+
+      {/* Tab switcher */}
+      <div className="inline-flex w-fit rounded-lg border p-0.5 text-sm">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            aria-pressed={active === t.key}
+            className={`rounded-md px-3 py-1.5 transition-colors ${
+              active === t.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {active === "followup" && (
+        <FollowUpBoard branchId={branchId} onOpenProfile={(id) => setProfileStudent(id)} />
+      )}
+      {active === "forecast" && isManager && <ForecastPanel branchId={branchId} />}
+      {active === "config" && isManager && <ConfigPanel branchId={branchId} />}
+
+      <FeeProfileDialog branchId={branchId} studentId={profileStudent} onClose={() => setProfileStudent(null)} />
     </div>
   );
 }
