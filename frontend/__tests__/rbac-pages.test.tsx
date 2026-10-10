@@ -29,10 +29,33 @@ vi.mock("@/app/(dashboard)/batches/_hooks/use-batches", () => ({
   useBatches: () => ({ data: [], isLoading: false, isError: false }),
 }));
 
+// The Accounts page drives the fees module via react-query hooks + toast; stub
+// them so it renders without a QueryClient / Toast.Provider in the test.
+vi.mock("@/app/(dashboard)/accounts/_hooks/use-fees", () => {
+  const empty = () => ({ data: undefined, isLoading: false, isError: false });
+  return {
+    useFollowUp: empty,
+    useRecordPayment: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useAddRemark: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useCourseFees: () => ({ data: [], isLoading: false, isError: false }),
+    useCreateFeeProfile: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useStudentsInBatch: () => ({ data: [], isLoading: false, isError: false }),
+    useFeeProfile: empty,
+  };
+});
+vi.mock("@/app/(dashboard)/lectures/_hooks/use-lectures", () => ({
+  useBatchesForLectures: () => ({ data: [], isLoading: false, isError: false }),
+}));
+vi.mock("@/components/ui/toast", () => ({
+  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+}));
+
 describe("RBAC admin pages", () => {
-  it("Accounts module is scaffolded as a placeholder", () => {
+  it("Accounts page renders the fees module (follow-up tab)", () => {
     render(<AccountsPage />);
-    expect(screen.getByText("Accounts module coming soon")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Accounts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /daily follow-up/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /new fee profile/i })).toBeInTheDocument();
   });
 
   it("WhatsApp delivery log shows a delivered row with its status", () => {

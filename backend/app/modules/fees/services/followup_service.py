@@ -132,6 +132,7 @@ async def follow_up_dashboard(
         rem = remarks.get(inst.student_id)
         return {
             "student_id": inst.student_id,
+            "profile_id": inst.profile_id,
             "name": s.get("name", ""),
             "prn": s.get("prn"),
             "phone": s.get("phone"),

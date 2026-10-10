@@ -258,6 +258,12 @@ async def get_fee_profile(
     if profile.branch_id != branch_id:
         raise HTTPException(status_code=403, detail="No access to this branch")
     profile.installments = await _installments_for(session, profile.id)
+    # Call log, newest first — powers the profile view's remarks history (spec §7).
+    profile.remarks = list((await session.execute(
+        select(FeeRemark).where(
+            FeeRemark.profile_id == profile.id, FeeRemark.is_deleted == False,  # noqa: E712
+        ).order_by(FeeRemark.call_date.desc(), FeeRemark.created_at.desc())
+    )).scalars().all())
     return profile
 
 
