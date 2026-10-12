@@ -144,6 +144,29 @@ async def download_staff_report(
     return _download(filename, data, mime)
 
 
+@router.get("/date-wise-report")
+async def download_date_wise_report(
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    fmt: str = Query("pdf", description="pdf | xlsx"),
+    department_ids: list[uuid.UUID] | None = Query(
+        None, description="omit for All Groups"
+    ),
+    staff_ids: list[uuid.UUID] | None = Query(None),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Staff Monthly "Date Wise Attendance" — one row per staff with a coded cell
+    per calendar day (P/A/L/HD/WO/HL) + totals, as landscape PDF or Excel. All
+    Groups by default; a department/group filter narrows the roster."""
+    filename, data, mime = await staff_report_service.generate_datewise(
+        session, branch_id=branch_id, department_ids=department_ids,
+        staff_ids=staff_ids, start=start, end=end, fmt=fmt,
+    )
+    return _download(filename, data, mime)
+
+
 @router.get("/faculty-activity")
 async def download_faculty_activity(
     branch_id: uuid.UUID = Query(...),
