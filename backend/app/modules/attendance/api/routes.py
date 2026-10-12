@@ -288,6 +288,24 @@ async def download_batch_report(
     return _download(filename, data, mime)
 
 
+@router.get("/reports/batch-month-grid/{batch_id}")
+async def download_batch_month_grid(
+    batch_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    start: date = Query(...),
+    end: date = Query(...),
+    fmt: str = Query("xlsx", pattern="^(xlsx|pdf)$"),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Student Batch Month Grid download (§3) — the on-screen grid as landscape
+    PDF or frozen-header Excel, titled "Batch Month Grid"."""
+    filename, data, mime = await attendance_report_service.batch_month_grid_report(
+        session, batch_id=batch_id, branch_id=branch_id, start=start, end=end, fmt=fmt,
+    )
+    return _download(filename, data, mime)
+
+
 @router.get("/reports/all-batches")
 async def download_all_batches_report(
     branch_id: uuid.UUID = Query(...),

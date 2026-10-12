@@ -1,10 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { InfoHint } from "@/components/ui/info-hint";
 import { TableSkeleton } from "@/components/ui/skeleton";
-import { useBatchMatrix } from "../_hooks/use-attendance";
+import {
+  useBatchMatrix,
+  useDownloadAttendanceReport,
+} from "../_hooks/use-attendance";
 
 const CONTROL_CLASS =
   "h-9 rounded-lg border border-input bg-background px-3 text-sm";
@@ -77,6 +81,16 @@ export function BatchMatrix({ branchId, batches }: BatchMatrixProps) {
   const matrix = query.data;
   const dates = useMemo(() => matrix?.dates ?? [], [matrix]);
 
+  const download = useDownloadAttendanceReport(branchId);
+  // The grid has downloadable data only when a batch is picked and the matrix
+  // has both students and day columns (§3: never generate an empty file).
+  const hasData = !!matrix && matrix.student_count > 0 && dates.length > 0;
+
+  function handleDownload(fmt: "pdf" | "xlsx") {
+    if (!batchId || !hasData) return;
+    download.mutate({ scope: "batch-month-grid", id: batchId, start: from, end: to, fmt });
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* Controls */}
@@ -133,6 +147,26 @@ export function BatchMatrix({ branchId, batches }: BatchMatrixProps) {
                   </>
                 }
               />
+            </div>
+            <div className="ml-auto flex items-end gap-2 pb-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!hasData || download.isPending}
+                onClick={() => handleDownload("pdf")}
+                title={hasData ? "Download as PDF" : "Pick a batch with data first"}
+              >
+                PDF
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!hasData || download.isPending}
+                onClick={() => handleDownload("xlsx")}
+                title={hasData ? "Download as Excel" : "Pick a batch with data first"}
+              >
+                Excel
+              </Button>
             </div>
           </div>
         </CardContent>

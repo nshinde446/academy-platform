@@ -187,6 +187,60 @@ def test_batch_xlsx_matrix_cells():
     assert "P" in flat and "A" in flat
 
 
+def test_batch_month_grid_xlsx_titled_and_frozen():
+    """§3 Excel: titled "Batch Month Grid", header row frozen, cell values (the
+    matrix codes) present."""
+    data = ex.batch_month_grid_xlsx(
+        brand="MSA", batch_name="NEET-12-B",
+        start=date(2026, 6, 1), end=date(2026, 6, 30), matrix=_matrix(),
+        generated="gen",
+    )
+    wb = load_workbook(io.BytesIO(data))
+    ws = wb["Batch Month Grid"]
+    assert ws["A1"].value == "Batch Month Grid"
+    # Full calendar month -> "June 2026" month/year line.
+    flat = [c.value for row in ws.iter_rows() for c in row if c.value is not None]
+    assert "June 2026" in flat
+    assert "NEET-12-B" in str(flat)
+    assert "P" in flat and "A" in flat          # cell codes, not images
+    assert ws.freeze_panes is not None          # header row frozen
+
+
+def test_batch_month_grid_html_titled():
+    s = ex.batch_month_grid_html(
+        brand="MSA", batch_name="NEET-12-B",
+        start=date(2026, 6, 1), end=date(2026, 6, 30), matrix=_matrix(),
+    )
+    assert "<h1>Batch Month Grid</h1>" in s
+    assert "NEET-12-B" in s and "June 2026" in s
+    assert "Present / day" in s
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_batch_month_grid_report_filename_and_404(db_session, seed_data):
+    # With data: full-month range -> BatchMonthGrid_<batch>_June-2026.xlsx.
+    _present_setup(db_session, seed_data)
+    await db_session.commit()
+    fn, data, mime = await rep.batch_month_grid_report(
+        db_session, batch_id=seed_data["batch"].id,
+        branch_id=seed_data["branch_a"].id, start=START, end=END, fmt="xlsx",
+    )
+    assert fn.startswith("BatchMonthGrid_") and "June-2026" in fn and fn.endswith(".xlsx")
+    assert mime == rep.XLSX_MIME and len(data) > 0
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_batch_month_grid_report_404_when_empty(db_session, seed_data):
+    # No students mapped and no lectures -> no grid data -> 404, never an empty file.
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        await rep.batch_month_grid_report(
+            db_session, batch_id=seed_data["batch"].id,
+            branch_id=seed_data["branch_a"].id, start=START, end=END, fmt="xlsx",
+        )
+    assert exc.value.status_code == 404
+
+
 def test_all_batches_xlsx_summary_plus_sheet():
     summaries = [{
         "batch_name": "NEET-12-B", "batch_code": "N12B", "student_count": 1,

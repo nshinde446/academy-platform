@@ -9,6 +9,7 @@ matrix), all batches (summary + sheet per batch) — each in both formats.
 from __future__ import annotations
 
 import base64
+import calendar
 import html
 import io
 from datetime import date, datetime, timezone
@@ -261,6 +262,58 @@ def batch_xlsx(
         generated=generated,
     )
     return _xlsx_bytes(wb)
+
+
+def _month_year_label(start: date, end: date) -> str:
+    """"October 2026" when the range is a full calendar month, else the explicit
+    period — the header's "month and year" line for the Batch Month Grid."""
+    full_month = (
+        start.year == end.year and start.month == end.month
+        and start.day == 1
+        and end.day == calendar.monthrange(end.year, end.month)[1]
+    )
+    return start.strftime("%B %Y") if full_month else _period(start, end)
+
+
+def batch_month_grid_xlsx(
+    *, brand: str, batch_name: str, start: date, end: date, matrix: dict,
+    generated: str = "",
+) -> bytes:
+    """Student Batch Month Grid (requirement §3) — the on-screen grid as Excel,
+    titled "Batch Month Grid", with the header row frozen and cell values (not
+    images). Reuses the shared matrix sheet writer so the look matches the other
+    attendance reports."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Batch Month Grid"
+    title_lines = [
+        "Batch Month Grid",
+        f"{brand} — {batch_name}",
+        _month_year_label(start, end),
+    ]
+    _write_matrix_sheet(ws, title_lines=title_lines, matrix=matrix, generated=generated)
+    # Freeze the title + header rows and the #/Student/PRN identity columns so the
+    # day columns scroll under a fixed header. generated rides as an extra title
+    # line inside _write_matrix_sheet, so account for it here.
+    head = len(title_lines) + (1 if generated else 0) + 2
+    ws.freeze_panes = ws.cell(row=head + 1, column=4)
+    return _xlsx_bytes(wb)
+
+
+def batch_month_grid_html(
+    *, brand: str, batch_name: str, start: date, end: date, matrix: dict,
+    generated: str = "",
+) -> str:
+    """Student Batch Month Grid as landscape PDF — same table as the register,
+    titled "Batch Month Grid" with the batch name, month and year."""
+    body = (
+        f"<h1>Batch Month Grid</h1>"
+        f"<p class='sub'>{_esc(brand)} — {_esc(batch_name)} · {_esc(_month_year_label(start, end))} · "
+        f"{matrix['student_count']} students · {len(matrix['dates'])} working days "
+        f"(P present / L late / A absent)</p>"
+        f"{_matrix_table_html(matrix)}"
+    )
+    return _doc(body, generated)
 
 
 def _safe_sheet_title(name: str, used: set[str]) -> str:

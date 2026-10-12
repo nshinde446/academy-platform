@@ -106,6 +106,60 @@ async def batch_report(
     return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME
 
 
+def _month_year_slug(start: date, end: date) -> str:
+    """"October-2026" for a full calendar month, else "start_to_end" — the
+    ``[Month-Year]`` segment of the Batch Month Grid filename."""
+    import calendar
+    full_month = (
+        start.year == end.year and start.month == end.month
+        and start.day == 1
+        and end.day == calendar.monthrange(end.year, end.month)[1]
+    )
+    return start.strftime("%B-%Y") if full_month else f"{start}_to_{end}"
+
+
+async def batch_month_grid_report(
+    session: AsyncSession, *, batch_id: uuid.UUID, branch_id: uuid.UUID,
+    start: date, end: date, fmt: str,
+) -> tuple[str, bytes, str]:
+    """Student Batch Month Grid (requirement §3): the on-screen batch grid as a
+    downloadable PDF (landscape) / Excel (frozen header), titled "Batch Month
+    Grid" with the batch name, month and year. Reuses the register matrix so the
+    exported data matches the screen. Raises 404 if the grid has no data, so an
+    empty file is never generated."""
+    _check_fmt(fmt)
+    batch = (await session.execute(
+        select(Batch).where(Batch.id == batch_id, Batch.branch_id == branch_id)
+    )).scalar_one_or_none()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    tz = await daily_service.branch_timezone(session, branch_id)
+    matrix = await daily_service.batch_matrix(
+        session, branch_id=branch_id, batch_id=batch_id, start=start, end=end, tz_name=tz,
+    )
+    if not matrix["students"] or not matrix["dates"]:
+        raise HTTPException(
+            status_code=404,
+            detail="No grid data for this batch and range — nothing to download.",
+        )
+
+    brand = get_settings().ACADEMY_BRAND_NAME
+    base = f"BatchMonthGrid_{_slug(batch.name)}_{_month_year_slug(start, end)}"
+    gen = ex.generated_stamp(tz)
+    if fmt == "xlsx":
+        data = ex.batch_month_grid_xlsx(
+            brand=brand, batch_name=batch.name, start=start, end=end, matrix=matrix,
+            generated=gen,
+        )
+        return f"{base}.xlsx", data, XLSX_MIME
+    html = ex.batch_month_grid_html(
+        brand=brand, batch_name=batch.name, start=start, end=end, matrix=matrix,
+        generated=gen,
+    )
+    return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME
+
+
 async def daily_ledger_report(
     session: AsyncSession, *, branch_id: uuid.UUID, start: date, end: date, fmt: str,
 ) -> tuple[str, bytes, str]:
