@@ -105,6 +105,53 @@ def test_late_fine_html_has_colored_cell_and_total():
     assert "Total Fine" in html and ">1700<" in html
 
 
+async def test_late_fine_falls_back_to_default_shift_start(
+    db_session: AsyncSession, seed_data
+):
+    """A staff with no shift_start set must still be measured against the system
+    default start (STAFF_SHIFT_START, 10:00) — not read as 0 late for everyone.
+    Reproduces the field bug where First Lecture Start Time showed "—" and Late
+    Minutes was always 0."""
+    db_session.add_all([
+        _slab(1, 5, 200, "#BDD7EE", "1 to 5"),
+        _slab(6, 10, 500, "#FFEB84", "6 to 10"),
+        _slab(11, None, 1000, "#FF6B6B", "11 or more"),
+    ])
+    dept = Department(branch_id=BRANCH, name="MSA-Teachers", id_range_start=1, id_range_end=50)
+    db_session.add(dept)
+    await db_session.flush()
+    staff = Staff(
+        branch_id=BRANCH, emp_code="91009", first_name="Dhiraj", last_name="Shrivastav",
+        department_id=dept.id, shift_start=None,  # no explicit shift
+    )
+    db_session.add(staff)
+    await db_session.flush()
+    # IN times in IST: 09:48 (early), 09:59 (on time), 10:01 (1 late), 10:01 (1 late).
+    # IST = UTC+5:30, so local 10:01 = UTC 04:31.
+    for day, h, m in [(8, 4, 18), (9, 4, 29), (10, 4, 31), (12, 4, 31)]:
+        db_session.add(StaffDailyAttendance(
+            staff_id=staff.id, branch_id=BRANCH, attendance_date=date(2026, 10, day),
+            first_in=datetime(2026, 10, day, h, m, tzinfo=UTC),
+            day_status="PRESENT", signoff="COMPLETE", source="BIOMETRIC", work_minutes=400,
+        ))
+    await db_session.flush()
+
+    _, data, _ = await lf.generate(
+        db_session, branch_id=BRANCH, staff_id=staff.id,
+        start=date(2026, 10, 8), end=date(2026, 10, 12), fmt="xlsx",
+    )
+    ws = load_workbook(io.BytesIO(data)).active
+    rows = list(ws.iter_rows(values_only=True))
+    hdr = next(i for i, r in enumerate(rows) if r[0] == "Date")
+    data_rows = rows[hdr + 1: hdr + 5]
+    # First Lecture Start Time column shows the default, never "—".
+    assert {r[1] for r in data_rows} == {"10:00"}
+    assert [r[4] for r in data_rows] == [0, 0, 1, 1]        # Late Minutes
+    assert [r[5] for r in data_rows] == [0, 0, 200, 200]    # Fine Amount (1-5 slab)
+    total_row = rows[hdr + 5]
+    assert total_row[3] == "Total Fine" and total_row[5] == 400
+
+
 async def test_late_fine_rejects_from_after_to(db_session: AsyncSession, seed_data):
     staff = await _seed(db_session)
     with pytest.raises(HTTPException) as ei:

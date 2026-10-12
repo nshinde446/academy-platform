@@ -98,6 +98,13 @@ async def generate(
     tz = get_tz(tz_name)
     slabs = await _load_slabs(session)
 
+    # "First Lecture Start Time" = the staff member's scheduled start. When a
+    # staff has none set, fall back to the system default (STAFF_SHIFT_START) —
+    # the same start the rest of the staff-attendance engine uses to classify
+    # late IN — so lateness is measured against a real time rather than reading
+    # as 0 for everyone without an explicit shift.
+    effective_start = staff.shift_start or get_settings().STAFF_SHIFT_START
+
     days = (await session.execute(
         select(StaffDailyAttendance).where(
             StaffDailyAttendance.staff_id == staff_id,
@@ -115,11 +122,11 @@ async def generate(
         if in_utc is not None and in_utc.tzinfo is None:
             in_utc = in_utc.replace(tzinfo=timezone.utc)  # stored UTC; SQLite drops tzinfo
         in_local = in_utc.astimezone(tz) if in_utc else None
-        mins = late_minutes(staff.shift_start, in_local)
+        mins = late_minutes(effective_start, in_local)
         fine, slab = fine_for(mins, slabs)
         rows.append({
             "date": d.attendance_date.strftime("%d-%m-%Y"),
-            "start": staff.shift_start or "—",
+            "start": effective_start,
             "in": _fmt_in(in_local),
             "late_in": _hhmm(mins),
             "late_minutes": mins,
