@@ -81,6 +81,39 @@ async def test_daily_faculty_activity(db_session: AsyncSession, seed_data):
     assert c["Attendance Hours"] == "7:00"         # 420 min work
 
 
+async def test_faculty_report_carries_permanent_policy_note(
+    db_session: AsyncSession, seed_data
+):
+    """The permanent NOTES block (Academy Mgmt req §1) appears in the daily and
+    summary exports — PDF (HTML) and Excel — rendered verbatim."""
+    await _seed(db_session)
+    # Daily Excel: the heading + each line land in column A.
+    _, xlsx, _ = await fac.daily_report(
+        db_session, branch_id=BRANCH_A, teacher_id=TEACHER, day=DAY, fmt="xlsx",
+    )
+    col_a = [r[0] for r in load_workbook(io.BytesIO(xlsx), read_only=True).active.iter_rows(values_only=True)]
+    assert "NOTES:" in col_a
+    for line in fac.FACULTY_NOTE_LINES:
+        assert line in col_a
+
+    # Daily PDF is rendered from the HTML — check the note text is in it.
+    html = fac._daily_html("Brand", {
+        "teacher_name": "T", "emp_code": "1", "day": "2026-10-06",
+        "in": "08:00", "out": "17:00", "attendance_min": 420, "scheduled_min": 120,
+        "effective_min": 105, "delay_min": 15, "total_lectures": 2,
+        "delayed_lectures": 1, "delayed_detail": [], "ontime_detail": [],
+    }, "gen")
+    assert "NOTES:" in html
+    assert fac.FACULTY_NOTE_LINES[1] in html
+
+    # Summary Excel carries it too.
+    _, sx, _ = await fac.summary_report(
+        db_session, branch_id=BRANCH_A, start=DAY, end=DAY, teacher_ids=None, fmt="xlsx",
+    )
+    scol = [r[0] for r in load_workbook(io.BytesIO(sx), read_only=True).active.iter_rows(values_only=True)]
+    assert "NOTES:" in scol
+
+
 async def test_daily_faculty_activity_lists_delayed_lectures(
     db_session: AsyncSession, seed_data
 ):
