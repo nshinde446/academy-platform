@@ -105,13 +105,26 @@ def test_late_fine_html_has_colored_cell_and_total():
     assert "Total Fine" in html and ">1700<" in html
 
 
-async def test_late_fine_falls_back_to_default_shift_start(
+def test_start_for_day_weekday_vs_saturday():
+    """Institute shift: 08:00 on weekdays (Mon–Fri), 10:00 on the weekend
+    (Sat/Sun), when the staff has no per-person shift set."""
+    from types import SimpleNamespace
+    no_shift = SimpleNamespace(shift_start=None)
+    assert lf.start_for_day(date(2026, 10, 5), no_shift) == "08:00"   # Monday
+    assert lf.start_for_day(date(2026, 10, 9), no_shift) == "08:00"   # Friday
+    assert lf.start_for_day(date(2026, 10, 10), no_shift) == "10:00"  # Saturday
+    assert lf.start_for_day(date(2026, 10, 11), no_shift) == "10:00"  # Sunday
+    # A per-staff explicit shift still wins on any day.
+    custom = SimpleNamespace(shift_start="09:30")
+    assert lf.start_for_day(date(2026, 10, 10), custom) == "09:30"
+
+
+async def test_late_fine_uses_weekday_and_saturday_starts(
     db_session: AsyncSession, seed_data
 ):
-    """A staff with no shift_start set must still be measured against the system
-    default start (STAFF_SHIFT_START, 10:00) — not read as 0 late for everyone.
-    Reproduces the field bug where First Lecture Start Time showed "—" and Late
-    Minutes was always 0."""
+    """A staff with no shift_start is judged against 08:00 on weekdays and 10:00
+    on Saturday — reproduces the field case (the report previously read 0 late
+    for everyone without an explicit shift)."""
     db_session.add_all([
         _slab(1, 5, 200, "#BDD7EE", "1 to 5"),
         _slab(6, 10, 500, "#FFEB84", "6 to 10"),
@@ -126,9 +139,12 @@ async def test_late_fine_falls_back_to_default_shift_start(
     )
     db_session.add(staff)
     await db_session.flush()
-    # IN times in IST: 09:48 (early), 09:59 (on time), 10:01 (1 late), 10:01 (1 late).
-    # IST = UTC+5:30, so local 10:01 = UTC 04:31.
-    for day, h, m in [(8, 4, 18), (9, 4, 29), (10, 4, 31), (12, 4, 31)]:
+    # IST = UTC+5:30. (date, utc_h, utc_m, expected local, weekday):
+    #   Mon 05 Oct 08:04 IST (02:34 UTC) -> start 08:00 -> 4 late -> 200
+    #   Tue 06 Oct 08:16 IST (02:46 UTC) -> start 08:00 -> 16 late -> 1000
+    #   Sat 10 Oct 10:01 IST (04:31 UTC) -> start 10:00 -> 1 late -> 200
+    #   Sat 17 Oct 10:30 IST (05:00 UTC) -> start 10:00 -> 30 late -> 1000
+    for day, h, m in [(5, 2, 34), (6, 2, 46), (10, 4, 31), (17, 5, 0)]:
         db_session.add(StaffDailyAttendance(
             staff_id=staff.id, branch_id=BRANCH, attendance_date=date(2026, 10, day),
             first_in=datetime(2026, 10, day, h, m, tzinfo=UTC),
@@ -138,18 +154,17 @@ async def test_late_fine_falls_back_to_default_shift_start(
 
     _, data, _ = await lf.generate(
         db_session, branch_id=BRANCH, staff_id=staff.id,
-        start=date(2026, 10, 8), end=date(2026, 10, 12), fmt="xlsx",
+        start=date(2026, 10, 5), end=date(2026, 10, 17), fmt="xlsx",
     )
     ws = load_workbook(io.BytesIO(data)).active
     rows = list(ws.iter_rows(values_only=True))
     hdr = next(i for i, r in enumerate(rows) if r[0] == "Date")
     data_rows = rows[hdr + 1: hdr + 5]
-    # First Lecture Start Time column shows the default, never "—".
-    assert {r[1] for r in data_rows} == {"10:00"}
-    assert [r[4] for r in data_rows] == [0, 0, 1, 1]        # Late Minutes
-    assert [r[5] for r in data_rows] == [0, 0, 200, 200]    # Fine Amount (1-5 slab)
+    assert [r[1] for r in data_rows] == ["08:00", "08:00", "10:00", "10:00"]  # Start
+    assert [r[4] for r in data_rows] == [4, 16, 1, 30]                        # Late Minutes
+    assert [r[5] for r in data_rows] == [200, 1000, 200, 1000]                # Fine
     total_row = rows[hdr + 5]
-    assert total_row[3] == "Total Fine" and total_row[5] == 400
+    assert total_row[3] == "Total Fine" and total_row[5] == 2400
 
 
 async def test_late_fine_rejects_from_after_to(db_session: AsyncSession, seed_data):

@@ -62,6 +62,16 @@ def fine_for(minutes: int, slabs: list[LateFineSlab]) -> tuple[float, LateFineSl
     return 0.0, None
 
 
+def start_for_day(day: date, staff: Staff) -> str:
+    """The "First Lecture Start Time" to judge a given day against. A staff
+    member's own ``shift_start`` wins when set; otherwise the institute shift —
+    08:00 on weekdays (Mon–Fri), 10:00 on the weekend (Sat/Sun)."""
+    if staff.shift_start:
+        return staff.shift_start
+    s = get_settings()
+    return s.LATE_FINE_WEEKEND_START if day.weekday() >= 5 else s.LATE_FINE_WEEKDAY_START
+
+
 def _hhmm(minutes: int) -> str:
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
@@ -98,13 +108,6 @@ async def generate(
     tz = get_tz(tz_name)
     slabs = await _load_slabs(session)
 
-    # "First Lecture Start Time" = the staff member's scheduled start. When a
-    # staff has none set, fall back to the system default (STAFF_SHIFT_START) —
-    # the same start the rest of the staff-attendance engine uses to classify
-    # late IN — so lateness is measured against a real time rather than reading
-    # as 0 for everyone without an explicit shift.
-    effective_start = staff.shift_start or get_settings().STAFF_SHIFT_START
-
     days = (await session.execute(
         select(StaffDailyAttendance).where(
             StaffDailyAttendance.staff_id == staff_id,
@@ -122,11 +125,12 @@ async def generate(
         if in_utc is not None and in_utc.tzinfo is None:
             in_utc = in_utc.replace(tzinfo=timezone.utc)  # stored UTC; SQLite drops tzinfo
         in_local = in_utc.astimezone(tz) if in_utc else None
-        mins = late_minutes(effective_start, in_local)
+        day_start = start_for_day(d.attendance_date, staff)
+        mins = late_minutes(day_start, in_local)
         fine, slab = fine_for(mins, slabs)
         rows.append({
             "date": d.attendance_date.strftime("%d-%m-%Y"),
-            "start": effective_start,
+            "start": day_start,
             "in": _fmt_in(in_local),
             "late_in": _hhmm(mins),
             "late_minutes": mins,
