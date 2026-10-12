@@ -19,6 +19,7 @@ validated for labelling; the actual window is ``start..end`` the caller passes.
 
 from __future__ import annotations
 
+import calendar
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -177,6 +178,24 @@ def _match(kind: str, row: StaffDailyAttendance | None, staff: Staff, day: date,
     return False
 
 
+# Date-Wise Attendance: map the stored day_status to the single cell code, and
+# fall back to WO / A for a day with no row at all. One code per cell (a Late day
+# is L only, a Half Day is HD only) — matching the report's totals logic.
+_DATEWISE_STATUS_CODE = {
+    "PRESENT": "P", "LATE": "L", "HALF_DAY": "HD",
+    "ABSENT": "A", "WO": "WO", "HOLIDAY": "HL", "HL": "HL",
+}
+
+# Longest range the Date-Wise PDF stays legible over (spec: suggest 62 days).
+DATEWISE_MAX_DAYS = 62
+
+
+def _datewise_code(row: StaffDailyAttendance | None, staff: Staff, day: date) -> str:
+    if row is None:
+        return "WO" if day.weekday() in _weekly_off(staff) else "A"
+    return _DATEWISE_STATUS_CODE.get(row.day_status, "A")
+
+
 def _weekly_off(staff: Staff) -> set[int]:
     raw = staff.weekly_off_days if staff.weekly_off_days is not None else get_settings().STAFF_WEEKLY_OFF_DAYS
     return {int(p) for p in (raw or "").split(",") if p.strip().isdigit()}
@@ -305,4 +324,79 @@ async def generate(
             brand=brand, title=title, subtitle=subtitle, rows=out_rows, generated=gen), XLSX_MIME
     html = ex.list_html(
         brand=brand, title=title, subtitle=subtitle, rows=out_rows, generated=gen)
+    return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME
+
+
+def _is_full_month(start: date, end: date) -> bool:
+    return (
+        start.year == end.year and start.month == end.month
+        and start.day == 1
+        and end.day == calendar.monthrange(end.year, end.month)[1]
+    )
+
+
+def _datewise_header_label(start: date, end: date) -> str:
+    """"Month - October 2026" for a full calendar month, else the explicit
+    "Period - 05 Oct 2026 to 20 Oct 2026"."""
+    if _is_full_month(start, end):
+        return f"Month - {start.strftime('%B %Y')}"
+    return f"Period - {start.strftime('%d %b %Y')} to {end.strftime('%d %b %Y')}"
+
+
+async def generate_datewise(
+    session: AsyncSession, *, branch_id: uuid.UUID,
+    department_ids: list[uuid.UUID] | None, staff_ids: list[uuid.UUID] | None,
+    start: date, end: date, fmt: str,
+) -> tuple[str, bytes, str]:
+    """Staff Monthly "Date Wise Attendance": one row per staff member with a
+    coded cell per calendar day (P/A/L/HD/WO/HL) plus the six totals. Works for
+    every department/group and for All Groups (``department_ids=None``)."""
+    if fmt not in ("xlsx", "pdf"):
+        raise HTTPException(status_code=400, detail="format must be xlsx or pdf")
+    if start > end:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="From date must not be after To date.",
+        )
+    ndays = (end - start).days + 1
+    if ndays > DATEWISE_MAX_DAYS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Date range is {ndays} days; the maximum for this report is "
+                f"{DATEWISE_MAX_DAYS} days. Narrow the range and try again."
+            ),
+        )
+
+    brand = get_settings().ACADEMY_BRAND_NAME
+    tz = await daily_service.branch_timezone(session, branch_id)
+    gen = ex.generated_stamp(tz)
+    staff, _ = await _resolve_staff(session, branch_id, department_ids, staff_ids)
+    rows_by_key = await _daily_rows(session, branch_id, [s.id for s in staff], start, end)
+    dates = _dates_in_range(start, end)
+
+    out_rows: list[dict] = []
+    for s in staff:
+        cells: list[str] = []
+        totals: dict[str, int] = {c: 0 for c in ex.DATEWISE_TOTAL_CODES}
+        for d in dates:
+            code = _datewise_code(rows_by_key.get((s.id, d)), s, d)
+            cells.append(code)
+            totals[code] = totals.get(code, 0) + 1
+        out_rows.append({
+            "emp_code": s.emp_code,
+            "name": f"{s.first_name} {s.last_name}".strip(),
+            "cells": cells, "totals": totals,
+        })
+
+    header_label = _datewise_header_label(start, end)
+    title = "Date Wise Attendance"
+    base = f"DateWiseAttendance_{start}_to_{end}"
+    if fmt == "xlsx":
+        return f"{base}.xlsx", ex.datewise_xlsx(
+            brand=brand, title=title, header_label=header_label,
+            dates=dates, rows=out_rows, generated=gen), XLSX_MIME
+    html = ex.datewise_html(
+        brand=brand, title=title, header_label=header_label,
+        dates=dates, rows=out_rows, generated=gen)
     return f"{base}.pdf", await ex.render_html_to_pdf(html, landscape=True), PDF_MIME

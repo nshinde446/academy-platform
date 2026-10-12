@@ -262,3 +262,133 @@ def grid_xlsx(
     for j in range(len(dates)):
         ws.column_dimensions[get_column_letter(2 + j)].width = 6
     return _xlsx_bytes(wb)
+
+
+# ── Date-Wise Attendance (Staff Monthly Attendance Report) ──────────────────
+#
+# One row per staff member: Empcode · Name · a cell per calendar day carrying a
+# single status code (P/A/L/HD/WO/HL) · six totals (P/A/HD/L/HL/WO). L/HD/HL
+# cells are highlighted red/blue/grey in both PDF and Excel. A legend and the
+# client's note print below the table. Day columns stay legible in landscape.
+
+DATEWISE_TOTAL_CODES = ["P", "A", "HD", "L", "HL", "WO"]
+
+DATEWISE_LEGEND = [
+    ("P", "Present"), ("A", "Absent"), ("L", "Late"),
+    ("HD", "Half Day"), ("WO", "Weekly Off"), ("HL", "Holiday"),
+]
+
+# The single client-facing note that prints on the report (open-item default:
+# note 1 prints; notes 2 & 3 are implemented as functional requirements).
+DATEWISE_NOTE = "1. This is for your reference."
+
+# Cell highlights for the coded day cells (red / blue / grey light shades).
+_DATEWISE_HTML_BG = {"L": "#F8C9C9", "HD": "#C9DAF8", "HL": "#D9D9D9"}
+_DATEWISE_XLSX_FILL = {
+    "L": PatternFill("solid", fgColor="F8C9C9"),
+    "HD": PatternFill("solid", fgColor="C9DAF8"),
+    "HL": PatternFill("solid", fgColor="D9D9D9"),
+}
+
+
+def _datewise_day_heads(dates: list[date]) -> list[str]:
+    """Day-column headers: the day number, or ``d/m`` when the range spans
+    more than one month so the day stays unambiguous."""
+    spans_months = len({(d.year, d.month) for d in dates}) > 1
+    return [f"{d.day}/{d.month}" if spans_months else str(d.day) for d in dates]
+
+
+def datewise_html(
+    *, brand: str, title: str, header_label: str, dates: list[date],
+    rows: list[dict], generated: str = "",
+) -> str:
+    """``rows`` items: {emp_code, name, cells: [code,…] aligned to ``dates``,
+    totals: {code: count}}. ``header_label`` is the "Month - …" / "Period - …"
+    banner; ``title`` is the fixed "Date Wise Attendance"."""
+    heads = _datewise_day_heads(dates)
+    day_ths = "".join(f"<th class='c'>{_esc(h)}</th>" for h in heads)
+    total_ths = "".join(f"<th class='c'>{_esc(code)}</th>" for code in DATEWISE_TOTAL_CODES)
+    body_rows = []
+    for r in rows:
+        day_tds = "".join(
+            (
+                f"<td class='c' style='background:{_DATEWISE_HTML_BG[code]}'>{_esc(code)}</td>"
+                if code in _DATEWISE_HTML_BG
+                else f"<td class='c'>{_esc(code)}</td>"
+            )
+            for code in r["cells"]
+        )
+        total_tds = "".join(
+            f"<td class='c'>{r['totals'].get(code, 0)}</td>" for code in DATEWISE_TOTAL_CODES
+        )
+        body_rows.append(
+            f"<tr><td class='c'>{_esc(r['emp_code'])}</td>"
+            f"<td>{_esc(r['name'])}</td>{day_tds}{total_tds}</tr>"
+        )
+    empty = "" if rows else "<p class='sub'>No staff match the selection.</p>"
+    legend = " &nbsp;·&nbsp; ".join(f"<b>{_esc(c)}</b> = {_esc(m)}" for c, m in DATEWISE_LEGEND)
+    body = (
+        f"<h1>{_esc(brand)} — {_esc(title)}</h1>"
+        f"<p class='sub'>{_esc(header_label)}</p>"
+        f"<table style='font-size:8.5px'><tr>"
+        f"<th>Empcode</th><th>Name</th>{day_ths}{total_ths}</tr>"
+        f"{''.join(body_rows)}</table>{empty}"
+        f"<div class='sub' style='margin-top:10px'><b>Legend:</b> {legend}</div>"
+        f"<div class='sub' style='margin-top:6px'><b>Notes:</b><div>{_esc(DATEWISE_NOTE)}</div></div>"
+    )
+    return _doc(body, generated)
+
+
+def datewise_xlsx(
+    *, brand: str, title: str, header_label: str, dates: list[date],
+    rows: list[dict], generated: str = "",
+) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Date Wise Attendance"
+    ws["A1"] = brand
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = title
+    ws["A2"].font = Font(bold=True, size=12)
+    ws["A3"] = header_label
+    ws["A4"] = generated
+
+    heads = _datewise_day_heads(dates)
+    head_row = 6
+    headers = ["Empcode", "Name", *heads, *DATEWISE_TOTAL_CODES]
+    for c, h in enumerate(headers, start=1):
+        cell = ws.cell(row=head_row, column=c, value=h)
+        cell.font = _BOLD
+        cell.fill = _HEAD_FILL
+        cell.alignment = _CENTER
+    first_day_col = 3  # columns 1,2 = Empcode, Name
+    for i, r in enumerate(rows, start=head_row + 1):
+        ws.cell(row=i, column=1, value=r["emp_code"]).alignment = _CENTER
+        ws.cell(row=i, column=2, value=r["name"])
+        for j, code in enumerate(r["cells"]):
+            cell = ws.cell(row=i, column=first_day_col + j, value=code)
+            cell.alignment = _CENTER
+            if code in _DATEWISE_XLSX_FILL:
+                cell.fill = _DATEWISE_XLSX_FILL[code]
+        total_col = first_day_col + len(dates)
+        for k, code in enumerate(DATEWISE_TOTAL_CODES):
+            ws.cell(
+                row=i, column=total_col + k, value=r["totals"].get(code, 0)
+            ).alignment = _CENTER
+
+    # Legend + note below the table.
+    gap = head_row + len(rows) + 2
+    ws.cell(row=gap, column=1, value="Legend").font = _BOLD
+    for n, (code, meaning) in enumerate(DATEWISE_LEGEND, start=1):
+        ws.cell(row=gap + n, column=1, value=code).font = _BOLD
+        ws.cell(row=gap + n, column=2, value=meaning)
+    note_row = gap + len(DATEWISE_LEGEND) + 2
+    ws.cell(row=note_row, column=1, value="Notes").font = _BOLD
+    ws.cell(row=note_row + 1, column=1, value=DATEWISE_NOTE)
+
+    ws.freeze_panes = ws.cell(row=head_row + 1, column=first_day_col)
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["B"].width = 22
+    for j in range(len(dates) + len(DATEWISE_TOTAL_CODES)):
+        ws.column_dimensions[get_column_letter(first_day_col + j)].width = 4.5
+    return _xlsx_bytes(wb)
