@@ -104,6 +104,8 @@ const COORDINATOR_SECTIONS: NavSection[] = [
       { label: "Teachers", href: "/teachers" },
       // Scoped to their assigned batches (a lean schedule/list view).
       { label: "Lectures", href: "/lectures" },
+      // Floor coordinators enter test marks (upload subject/result CSVs).
+      { label: "Test Portal", href: "/test-portal" },
     ],
   },
 ];

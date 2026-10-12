@@ -36,6 +36,15 @@ router = APIRouter(prefix="/questions", tags=["questions"])
 tests_router = APIRouter(prefix="/tests", tags=["tests"])
 marks_router = APIRouter(prefix="/marks", tags=["marks"])
 
+# Test Portal role sets (defined up front so every route can reference them).
+_PORTAL_ROLES = ["super_admin", "branch_admin", "academic_head"]
+# Operational staff who enter a test's marks (upload subject/result CSVs + answer
+# key, resolve unmatched rows) alongside the portal admins — device operators and
+# floor coordinators run this day to day. Teachers are intentionally excluded.
+_MARKS_ENTRY_ROLES = _PORTAL_ROLES + ["device_operator", "floor_coordinator"]
+# Everyone who can view the portal and its rank lists (marks-entry staff + teachers).
+_PORTAL_VIEW_ROLES = _MARKS_ENTRY_ROLES + ["teacher"]
+
 
 # ─── Question Endpoints ───────────────────────────────────────────────────────
 
@@ -242,7 +251,7 @@ async def list_tests(
     subject_id: uuid.UUID | None = Query(None),
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    current_user: dict = Depends(require_roles(["super_admin", "branch_admin", "academic_head", "teacher"])),
+    current_user: dict = Depends(require_roles(_PORTAL_VIEW_ROLES)),
     session: AsyncSession = Depends(get_db),
 ):
     return await test_service.list_tests(session, branch_id, batch_id, subject_id, offset, limit)
@@ -396,8 +405,6 @@ async def submit_responses(
 
 # ─── Test Portal: ZipGrade CSV upload + rank list ─────────────────────────────
 
-_PORTAL_ROLES = ["super_admin", "branch_admin", "academic_head"]
-
 
 @tests_router.post("/{test_id}/upload-result", response_model=UploadResultSummary)
 async def upload_result(
@@ -405,7 +412,7 @@ async def upload_result(
     request: Request,
     branch_id: uuid.UUID = Query(...),
     file: UploadFile = File(...),
-    current_user: dict = Depends(require_roles(_PORTAL_ROLES)),
+    current_user: dict = Depends(require_roles(_MARKS_ENTRY_ROLES)),
     session: AsyncSession = Depends(get_db),
 ):
     """Upload a ZipGrade results CSV → match PRNs, save marks, flag unmatched
@@ -426,7 +433,7 @@ async def upload_subject_csv(
     request: Request,
     branch_id: uuid.UUID = Query(...),
     file: UploadFile = File(...),
-    current_user: dict = Depends(require_roles(_PORTAL_ROLES)),
+    current_user: dict = Depends(require_roles(_MARKS_ENTRY_ROLES)),
     session: AsyncSession = Depends(get_db),
 ):
     """Per-subject manual-marks CSV (Name, PRN, Marks) for one subject of the test
@@ -444,7 +451,7 @@ async def upload_subject_csv(
 async def get_ranklist(
     test_id: uuid.UUID,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(_PORTAL_ROLES + ["teacher"])),
+    current_user: dict = Depends(require_roles(_PORTAL_VIEW_ROLES)),
     session: AsyncSession = Depends(get_db),
 ):
     return await test_service.get_ranklist(session, test_id, branch_id)
@@ -455,7 +462,7 @@ async def download_ranklist(
     test_id: uuid.UUID,
     branch_id: uuid.UUID = Query(...),
     format: str = Query("pdf", pattern="^(pdf|xlsx)$"),
-    current_user: dict = Depends(require_roles(_PORTAL_ROLES + ["teacher"])),
+    current_user: dict = Depends(require_roles(_PORTAL_VIEW_ROLES)),
     session: AsyncSession = Depends(get_db),
 ):
     ranklist = await test_service.get_ranklist(session, test_id, branch_id)
@@ -481,7 +488,7 @@ async def resolve_review(
     body: ResolveReviewRequest,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(_PORTAL_ROLES)),
+    current_user: dict = Depends(require_roles(_MARKS_ENTRY_ROLES)),
     session: AsyncSession = Depends(get_db),
 ):
     """Assign an unmatched ZipGrade row to a student → write their mark and mark
@@ -499,7 +506,7 @@ async def upload_answer_key(
     request: Request,
     branch_id: uuid.UUID = Query(...),
     file: UploadFile = File(...),
-    current_user: dict = Depends(require_roles(_PORTAL_ROLES)),
+    current_user: dict = Depends(require_roles(_MARKS_ENTRY_ROLES)),
     session: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
 ):
@@ -516,7 +523,7 @@ async def upload_answer_key(
 async def download_answer_key(
     test_id: uuid.UUID,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(_PORTAL_ROLES + ["teacher"])),
+    current_user: dict = Depends(require_roles(_PORTAL_VIEW_ROLES)),
     session: AsyncSession = Depends(get_db),
     storage: StorageBackend = Depends(get_storage_backend),
 ):
