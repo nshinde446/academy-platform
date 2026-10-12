@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -211,3 +212,18 @@ class AttendanceException(BaseModel):
     branch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=False
     )
+
+
+class LateFineSlab(BaseModel):
+    """A fine slab for the Staff Late Fine Report (requirement §2). Configurable
+    so the client can change amounts/bands without a code release; seeded with the
+    three fined bands. ``max_minutes`` is NULL for the open-ended top band (11+).
+    Late minutes of 0 or less carry no fine and need no row."""
+
+    __tablename__ = "late_fine_slabs"
+
+    min_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fine_amount: Mapped[float] = mapped_column(Float, nullable=False)
+    color_hex: Mapped[str] = mapped_column(String(7), nullable=False)  # e.g. #BDD7EE
+    label: Mapped[str] = mapped_column(String(50), nullable=False)

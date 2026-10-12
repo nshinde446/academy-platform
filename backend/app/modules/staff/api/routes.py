@@ -161,6 +161,26 @@ async def download_faculty_activity(
     return _download(filename, data, mime)
 
 
+@router.get("/late-fine-report")
+async def download_late_fine_report(
+    branch_id: uuid.UUID = Query(...),
+    staff_id: uuid.UUID = Query(...),
+    start: date = Query(..., description="From date"),
+    end: date = Query(..., description="To date (defaults to From for a single day)"),
+    fmt: str = Query("pdf", description="pdf | xlsx"),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Staff Late Fine Report — per-staff lateness vs the First Lecture Start Time
+    with per-day fines from the configurable slabs, for a single day or a range."""
+    from app.modules.attendance.services import staff_late_fine_service
+
+    filename, data, mime = await staff_late_fine_service.generate(
+        session, branch_id=branch_id, staff_id=staff_id, start=start, end=end, fmt=fmt,
+    )
+    return _download(filename, data, mime)
+
+
 @router.get("/faculty-activity/summary")
 async def download_faculty_summary(
     branch_id: uuid.UUID = Query(...),
