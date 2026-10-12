@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     STAFF_SHIFT_START: str = "10:00"
     STAFF_SHIFT_END: str = "20:00"
     STAFF_HALF_DAY_MINUTES: int = 240
+    # Staff Late Fine Report — the "First Lecture Start Time" each day is judged
+    # against: 08:00 on weekdays (Mon–Fri) and 10:00 on the weekend (Sat/Sun).
+    LATE_FINE_WEEKDAY_START: str = "08:00"
+    LATE_FINE_WEEKEND_START: str = "10:00"
     # Default weekly-off weekdays (Mon=0 … Sun=6) when a staff row sets none.
     # Empty = no default weekly off (the client's staff work most Sundays).
     STAFF_WEEKLY_OFF_DAYS: str = ""
