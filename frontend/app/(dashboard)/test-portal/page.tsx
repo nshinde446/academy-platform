@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useBranchId } from "@/store/user-store";
+import { useBranchId, useRoles } from "@/store/user-store";
 import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,8 +22,16 @@ function fmtDate(iso: string | null): string {
 
 export default function TestPortalPage() {
   const { branchId } = useBranchId();
+  const { roles } = useRoles();
   const toast = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Only test creators (admins) schedule tests; marks-entry staff (device
+  // operators, floor coordinators) upload marks on tests that already exist, so
+  // we don't show them a "Schedule test" button the backend would reject.
+  const canCreateTest = roles.some((r) =>
+    ["super_admin", "branch_admin", "academic_head"].includes(r),
+  );
 
   const testsQuery = useTests(branchId);
   const schedule = useScheduleTest(branchId);
@@ -48,11 +56,13 @@ export default function TestPortalPage() {
         title="Test Portal"
         description="Schedule offline OMR tests, upload the ZipGrade results CSV, and get an automatic rank list — no more rebuilding it in Excel."
         actions={
-          <ScheduleTestDialog
-            branchId={branchId}
-            onSubmit={handleSchedule}
-            isPending={schedule.isPending}
-          />
+          canCreateTest ? (
+            <ScheduleTestDialog
+              branchId={branchId}
+              onSubmit={handleSchedule}
+              isPending={schedule.isPending}
+            />
+          ) : undefined
         }
       />
 
