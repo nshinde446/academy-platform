@@ -118,6 +118,13 @@ export default function StaffPage() {
             <Button
               variant="secondary"
               size="sm"
+              render={<Link href="/staff/late-fine" />}
+            >
+              Late Fine
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               disabled={syncTeachersMutation.isPending}
               onClick={() => syncTeachersMutation.mutate()}
               title="Create/refresh a staff record for every teacher (MSA-Teachers)"
