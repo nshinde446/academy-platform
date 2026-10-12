@@ -45,6 +45,7 @@ PRESENT_STATUSES = {"PRESENT", "LATE", "HALF_DAY"}
 LIST_KINDS = {
     "present": "Daily Present Report",
     "absent": "Daily Absent Report",
+    "present_absent": "Present + Absent Report",
     "late_in": "Late IN Report",
     "early_out": "Early OUT Report",
     "early_in": "Early IN Report",
@@ -142,6 +143,11 @@ def _fmt_t(dt: datetime | None, tz: str) -> str:
 
 
 def _match(kind: str, row: StaffDailyAttendance | None, staff: Staff, day: date, tz: str) -> bool:
+    # Combined Present + Absent: a single report carrying both groups. The two
+    # predicates are disjoint, so the row count equals present rows + absent rows
+    # and the existing Present-only / Absent-only reports stay unchanged.
+    if kind == "present_absent":
+        return _match("present", row, staff, day, tz) or _match("absent", row, staff, day, tz)
     if row is None:
         return kind == "absent" and day.weekday() not in _weekly_off(staff)
     st = row.day_status
@@ -285,6 +291,11 @@ async def generate(
                     if is_manual else ""
                 ),
             })
+
+    # Combined report: group Present rows first, then Absent, each by name/date,
+    # so the two groups read as distinct blocks under the shared Status column.
+    if kind == "present_absent":
+        out_rows.sort(key=lambda r: (r["status"] == "ABSENT", r["name"], r["date"]))
 
     title = f"{freq_label} · {LIST_KINDS[kind]}"
     subtitle = f"{period} · {len(out_rows)} rows"

@@ -15,6 +15,7 @@ const REPORT_KINDS: { value: string; label: string }[] = [
   { value: "performance", label: "Performance (grid)" },
   { value: "present", label: "Present" },
   { value: "absent", label: "Absent" },
+  { value: "present_absent", label: "Present + Absent" },
   { value: "late_in", label: "Late IN" },
   { value: "early_out", label: "Early OUT" },
   { value: "early_in", label: "Early IN" },

@@ -163,6 +163,43 @@ async def test_list_report_has_entry_type_and_marked_by_columns(
     assert (biometric[10] or "") == ""
 
 
+async def test_present_absent_combined_is_union_of_both(
+    db_session: AsyncSession, seed_data
+):
+    """The combined report carries Present and Absent rows together, and its row
+    count equals the Present-only count plus the Absent-only count. The existing
+    single-status reports are unaffected."""
+    await _seed(db_session)
+    kw = dict(
+        branch_id=BRANCH_A, frequency="monthly", department_ids=None,
+        staff_ids=None, start=date(2026, 8, 3), end=date(2026, 8, 5), fmt="xlsx",
+    )
+
+    def _dates(data: bytes) -> list[str]:
+        rows = list(load_workbook(io.BytesIO(data), read_only=True).active.iter_rows(values_only=True))
+        return [
+            r[0] for r in rows
+            if isinstance(r[0], str) and len(r[0]) == 10 and r[0].startswith("2026-")
+        ]
+
+    _, p_data, _ = await rpt.generate(db_session, kind="present", **kw)
+    _, a_data, _ = await rpt.generate(db_session, kind="absent", **kw)
+    _, c_data, _ = await rpt.generate(db_session, kind="present_absent", **kw)
+
+    present_dates = _dates(p_data)
+    absent_dates = _dates(a_data)
+    combined_dates = _dates(c_data)
+
+    # Present: the LATE day + the PRESENT (mis-punch) day. Absent: the absent day.
+    assert set(present_dates) == {"2026-08-03", "2026-08-05"}
+    assert set(absent_dates) == {"2026-08-04"}
+    # Union, with the count equal to present rows + absent rows.
+    assert set(combined_dates) == {"2026-08-03", "2026-08-04", "2026-08-05"}
+    assert len(combined_dates) == len(present_dates) + len(absent_dates)
+    # Grouped Present-first: the absent day sorts after the present days.
+    assert combined_dates.index("2026-08-04") == len(combined_dates) - 1
+
+
 async def test_invalid_kind_rejected(db_session: AsyncSession, seed_data):
     await _seed(db_session)
     with pytest.raises(Exception):
