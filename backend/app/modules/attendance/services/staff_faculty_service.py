@@ -37,6 +37,34 @@ from app.modules.teacher.models.teacher_models import Teacher
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 PDF_MIME = "application/pdf"
 
+# Permanent policy note on the Faculty Activity Report (Academy Mgmt req §1).
+# Single source of truth for screen + every export — a future wording change is a
+# one-place edit here (and FACULTY_POLICY_NOTE in the frontend). Rendered verbatim.
+FACULTY_NOTE_HEADING = "NOTES:"
+FACULTY_NOTE_LINES = [
+    "1. Need to have Punch IN and OUT in the system to consider a Full Working Day for Payroll Processing.",
+    "2. Missing Punches (IN or OUT) will be marked as Half Day.",
+    "3. On Holidays/SAT/SUN, a minimum of 5 hrs of Pre-Planned work, Lectures, PTM etc. (Prior Approval is Required) should be there to consider it as a Present Day. Else it will be marked as ABSENT.",
+]
+
+
+def _note_html() -> str:
+    """The policy note as an HTML block for the PDF exports (heading bold)."""
+    lines = "".join(f"<div>{ex._esc(ln)}</div>" for ln in FACULTY_NOTE_LINES)
+    return (
+        "<div class='sub' style='margin-top:14px'>"
+        f"<b>{ex._esc(FACULTY_NOTE_HEADING)}</b>{lines}</div>"
+    )
+
+
+def _note_into_xlsx(ws, start_row: int) -> None:
+    """Write the policy note into an Excel sheet starting at ``start_row``."""
+    from openpyxl.styles import Font
+
+    ws.cell(row=start_row, column=1, value=FACULTY_NOTE_HEADING).font = Font(bold=True)
+    for i, ln in enumerate(FACULTY_NOTE_LINES, start=1):
+        ws.cell(row=start_row + i, column=1, value=ln)
+
 
 def _slug(s: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "-", s).strip("-").lower() or "report"
@@ -398,7 +426,7 @@ def _daily_html(brand: str, d: dict, gen: str) -> str:
         f"<th>Time Lost to Delay</th><td class='c'>{ex.fmt_minutes(d['delay_min'])}</td></tr>"
         f"<tr><th>Total Lectures</th><td class='c'>{d['total_lectures']}</td>"
         f"<th>Delayed Lectures</th><td class='c'>{d['delayed_lectures']}</td></tr>"
-        f"</table>{detail_table}"
+        f"</table>{detail_table}{_note_html()}"
     )
     return ex._doc(body, gen)
 
@@ -463,8 +491,12 @@ def _daily_xlsx(brand: str, d: dict, gen: str) -> bytes:
             ws.cell(row=row, column=4, value=r["scheduled"])
             ws.cell(row=row, column=5, value=r["actual"])
             ws.cell(row=row, column=6, value="On Time")
+        cursor = cursor + 1 + len(ontime)
     else:
         ws.cell(row=cursor + 1, column=1, value="No on-time lectures.")
+        cursor = cursor + 1
+
+    _note_into_xlsx(ws, cursor + 2)  # policy note below the tables
 
     ws.column_dimensions["A"].width = 26
     ws.column_dimensions["B"].width = 20
@@ -553,7 +585,7 @@ def _summary_html(brand: str, start: date, end: date, data: dict, gen: str) -> s
         f"{_PIE_CSS}"
         f"<h1>{ex._esc(brand)} — Teacher Productivity Report</h1>"
         f"<p class='sub'>{ex._period(start, end)}</p>"
-        f"<table><tr>{ths}</tr>{body_rows}</table>{empty}{charts}"
+        f"<table><tr>{ths}</tr>{body_rows}</table>{empty}{_note_html()}{charts}"
     )
     return ex._doc(body, gen)
 
@@ -588,6 +620,8 @@ def _summary_xlsx(brand: str, start: date, end: date, data: dict, gen: str) -> b
         ws.cell(row=row, column=9, value=_hours_words(r["delivered_minutes"]))
     for c, w in enumerate((7, 14, 9, 24, 12, 12, 14, 16, 16), start=1):
         ws.column_dimensions[get_column_letter(c)].width = w
+
+    _note_into_xlsx(ws, head + len(rows) + 2)  # policy note below the roster
 
     # Two pie charts on a Charts sheet (Section 5).
     cs = wb.create_sheet("Charts")

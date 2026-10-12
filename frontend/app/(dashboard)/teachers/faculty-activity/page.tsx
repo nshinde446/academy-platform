@@ -10,6 +10,15 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/layout/page-header";
 import { useTeachers } from "../_hooks/use-teachers";
 
+// Permanent policy note shown on the Faculty Activity Report (Academy Mgmt req
+// §1). Single source of truth on the frontend; the backend exports render the
+// same text from FACULTY_NOTE_LINES. Rendered verbatim.
+const FACULTY_POLICY_NOTE = [
+  "1. Need to have Punch IN and OUT in the system to consider a Full Working Day for Payroll Processing.",
+  "2. Missing Punches (IN or OUT) will be marked as Half Day.",
+  "3. On Holidays/SAT/SUN, a minimum of 5 hrs of Pre-Planned work, Lectures, PTM etc. (Prior Approval is Required) should be there to consider it as a Present Day. Else it will be marked as ABSENT.",
+];
+
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -223,6 +232,16 @@ export default function FacultyActivityPage() {
             </Button>
           </div>
         </div>
+      </div>
+
+      {/* Permanent policy note — always visible, also printed in the exports. */}
+      <div className="rounded-lg border bg-muted/30 p-4 text-sm">
+        <p className="font-bold">NOTES:</p>
+        {FACULTY_POLICY_NOTE.map((line) => (
+          <p key={line} className="mt-1 text-muted-foreground">
+            {line}
+          </p>
+        ))}
       </div>
     </div>
   );
