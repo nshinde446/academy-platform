@@ -4,9 +4,11 @@ import { BatchMatrix } from "@/app/(dashboard)/attendance/_components/batch-matr
 import type { BatchMatrix as BatchMatrixData } from "@/app/(dashboard)/attendance/_schemas/attendance";
 
 const matrixMock = vi.fn();
+const downloadMutate = vi.fn();
 
 vi.mock("@/app/(dashboard)/attendance/_hooks/use-attendance", () => ({
   useBatchMatrix: (...args: unknown[]) => matrixMock(...args),
+  useDownloadAttendanceReport: () => ({ mutate: downloadMutate, isPending: false }),
 }));
 
 const BATCHES = [
@@ -111,6 +113,28 @@ describe("BatchMatrix", () => {
       expect.any(String),
       expect.any(String),
     );
+  });
+
+  it("downloads the Batch Month Grid for the selected batch", () => {
+    setResult({ data: MATRIX });
+    downloadMutate.mockReset();
+    render(<BatchMatrix branchId="br1" batches={BATCHES} />);
+    fireEvent.change(screen.getByLabelText("Select batch"), {
+      target: { value: "b1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "PDF" }));
+    expect(downloadMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: "batch-month-grid", id: "b1", fmt: "pdf" }),
+    );
+  });
+
+  it("disables the download buttons when the grid has no data", () => {
+    setResult({
+      data: { ...MATRIX, dates: [], students: [], day_present: [], student_count: 0 },
+    });
+    render(<BatchMatrix branchId="br1" batches={BATCHES} />);
+    expect(screen.getByRole("button", { name: "PDF" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Excel" })).toBeDisabled();
   });
 
   it("shows a fallback when the batch has no scheduled lectures in range", () => {

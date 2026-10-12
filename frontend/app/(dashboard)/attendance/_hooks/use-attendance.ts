@@ -152,6 +152,7 @@ export type ReportScope =
   | "all-batches"
   | "daily-ledger"
   | "day"
+  | "batch-month-grid" // one batch × date range — the on-screen grid, titled export
   // Biometric summary reports (Date · Class · Batch · Enrolled · Present · Absent)
   | "daywise-batchwise" // date range × all batches
   | "batchwise-datewise"; // one batch × date range
@@ -190,6 +191,10 @@ export function useDownloadAttendanceReport(branchId: string | undefined) {
           break;
         case "batch":
           path = `${base}/batch/${id}`;
+          params = { branch_id: branchId, start, end, fmt };
+          break;
+        case "batch-month-grid":
+          path = `${base}/batch-month-grid/${id}`;
           params = { branch_id: branchId, start, end, fmt };
           break;
         case "batchwise-datewise":
