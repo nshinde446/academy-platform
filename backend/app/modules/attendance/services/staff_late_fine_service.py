@@ -10,6 +10,7 @@ strictly per the slabs).
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import date, datetime, timezone
 
@@ -32,13 +33,21 @@ PDF_MIME = "application/pdf"
 
 
 def _parse_hhmm(value: str | None) -> tuple[int, int] | None:
-    if not value:
+    """Parse a wall-clock time the staff's First Lecture Start Time is entered
+    as. Tolerant of the separator the academy actually uses: ``08:00``, ``08.00``
+    (dot), ``8-00``, ``0800`` and ``800`` all parse to (8, 0). Returns None only
+    when no valid hour/minute can be read."""
+    if value is None:
         return None
-    try:
-        h, m = value.split(":")
-        return int(h), int(m)
-    except (ValueError, AttributeError):
+    digits = re.findall(r"\d+", str(value))
+    if len(digits) >= 2:
+        h, m = int(digits[0]), int(digits[1])
+    elif len(digits) == 1 and len(digits[0]) in (3, 4):
+        d = digits[0].zfill(4)  # "800" -> "0800"
+        h, m = int(d[:2]), int(d[2:])
+    else:
         return None
+    return (h, m) if 0 <= h < 24 and 0 <= m < 60 else None
 
 
 def late_minutes(start_hhmm: str | None, in_local: datetime | None) -> int:

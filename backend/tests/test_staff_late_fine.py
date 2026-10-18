@@ -50,6 +50,62 @@ async def _seed(db: AsyncSession) -> Staff:
     return staff
 
 
+def test_parse_hhmm_tolerant_of_separator():
+    # Staff enter the First Lecture Start Time with various separators; a dot was
+    # the field bug (08.00) that made every Late Minutes read 0.
+    for raw in ("08:00", "08.00", "8-00", "0800", "800"):
+        assert lf._parse_hhmm(raw) == (8, 0), raw
+    assert lf._parse_hhmm("") is None
+    assert lf._parse_hhmm(None) is None
+    # A dot-separated start now measures lateness correctly.
+    assert lf.late_minutes("08.00", datetime(2026, 10, 5, 8, 4)) == 4
+    assert lf.late_minutes("08.00", datetime(2026, 10, 1, 18, 22)) == 622
+    assert lf.late_minutes("08.00", datetime(2026, 10, 14, 7, 59)) == 0
+
+
+async def test_late_fine_with_dot_separated_shift_start(
+    db_session: AsyncSession, seed_data
+):
+    """Reproduces the field report (emp 91008): First Lecture Start Time stored
+    as "08.00" (dot). Late Minutes/Fine must compute, not read 0 everywhere."""
+    db_session.add_all([
+        _slab(1, 5, 200, "#BDD7EE", "1 to 5"),
+        _slab(6, 10, 500, "#FFEB84", "6 to 10"),
+        _slab(11, None, 1000, "#FF6B6B", "11 or more"),
+    ])
+    dept = Department(branch_id=BRANCH, name="MSA-Teachers", id_range_start=1, id_range_end=50)
+    db_session.add(dept)
+    await db_session.flush()
+    staff = Staff(
+        branch_id=BRANCH, emp_code="91008", first_name="Deepak", last_name="Singh",
+        department_id=dept.id, shift_start="08.00",  # entered with a dot
+    )
+    db_session.add(staff)
+    await db_session.flush()
+    # IST = UTC+5:30. local 08:04 = 02:34 UTC, 08:06 = 02:36, 18:22 = 12:52, 07:59 = 02:29.
+    for day, h, m in [(5, 2, 34), (6, 2, 36), (1, 12, 52), (14, 2, 29)]:
+        db_session.add(StaffDailyAttendance(
+            staff_id=staff.id, branch_id=BRANCH, attendance_date=date(2026, 10, day),
+            first_in=datetime(2026, 10, day, h, m, tzinfo=UTC),
+            day_status="PRESENT", signoff="COMPLETE", source="BIOMETRIC", work_minutes=400,
+        ))
+    await db_session.flush()
+
+    _, data, _ = await lf.generate(
+        db_session, branch_id=BRANCH, staff_id=staff.id,
+        start=date(2026, 10, 1), end=date(2026, 10, 14), fmt="xlsx",
+    )
+    ws = load_workbook(io.BytesIO(data)).active
+    rows = list(ws.iter_rows(values_only=True))
+    hdr = next(i for i, r in enumerate(rows) if r[0] == "Date")
+    by_date = {r[0]: r for r in rows[hdr + 1:] if isinstance(r[0], str) and r[0].count("-") == 2}
+    # start column shown as entered; late minutes + fines now computed.
+    assert by_date["01-10-2026"][4] == 622 and by_date["01-10-2026"][5] == 1000  # 18:22
+    assert by_date["05-10-2026"][4] == 4 and by_date["05-10-2026"][5] == 200     # 08:04
+    assert by_date["06-10-2026"][4] == 6 and by_date["06-10-2026"][5] == 500     # 08:06
+    assert by_date["14-10-2026"][4] == 0 and by_date["14-10-2026"][5] == 0       # 07:59 on time
+
+
 def test_fine_calc_matches_spec_example():
     slabs = [_slab(1, 5, 200, "#BDD7EE", "a"), _slab(6, 10, 500, "#FFEB84", "b"),
              _slab(11, None, 1000, "#FF6B6B", "c")]
