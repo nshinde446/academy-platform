@@ -34,6 +34,7 @@ from app.modules.attendance.time_utils import (
     day_bounds,
     local_date_of,
     local_time_on,
+    parse_hhmm,
 )
 from app.modules.academic.models.academic_models import Subject
 from app.modules.audit.services import audit_service
@@ -94,13 +95,9 @@ async def _punches_for_day(
 
 
 def _parse_hhmm(value: str | None) -> tuple[int, int] | None:
-    if not value:
-        return None
-    try:
-        h, m = value.split(":")
-        return int(h), int(m)
-    except (ValueError, AttributeError):
-        return None
+    # Tolerant of the separator a human typed (08:00 / 08.00 / 0800) — see
+    # time_utils.parse_hhmm; a stray dot must not zero a class-time cutoff.
+    return parse_hhmm(value)
 
 
 async def _student_class_start(

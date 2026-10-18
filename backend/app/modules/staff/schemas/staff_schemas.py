@@ -1,7 +1,9 @@
 import uuid
 from datetime import date
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from app.modules.attendance.time_utils import normalize_hhmm
 
 
 class DepartmentResponse(BaseModel):
@@ -38,6 +40,13 @@ class StaffCreate(BaseModel):
     shift_end: str | None = None
     weekly_off_days: str | None = None
 
+    # Store the First Lecture Start Time / shift end as canonical HH:MM however it
+    # was typed (08:00, 08.00, 0800) so downstream late/OT calc never mis-reads it.
+    @field_validator("shift_start", "shift_end")
+    @classmethod
+    def _normalize_shift(cls, v: str | None) -> str | None:
+        return normalize_hhmm(v)
+
 
 class StaffUpdate(BaseModel):
     first_name: str | None = None
@@ -52,6 +61,11 @@ class StaffUpdate(BaseModel):
     shift_start: str | None = None
     shift_end: str | None = None
     weekly_off_days: str | None = None
+
+    @field_validator("shift_start", "shift_end")
+    @classmethod
+    def _normalize_shift(cls, v: str | None) -> str | None:
+        return normalize_hhmm(v)
 
 
 class StaffResponse(BaseModel):
