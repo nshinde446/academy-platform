@@ -10,11 +10,48 @@ See docs/biometric-attendance-design.md §2.3.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from zoneinfo import ZoneInfo
 
 from app.core.config.settings import get_settings
+
+
+def parse_hhmm(value: str | None) -> tuple[int, int] | None:
+    """Parse a wall-clock time a human entered, tolerant of the separator they
+    actually use: ``08:00``, ``08.00`` (dot), ``8-00``, ``0800`` and ``800`` all
+    read as (8, 0). Returns None when no valid hour/minute can be read.
+
+    Shift / class times are free-text fields, so a stray dot must never silently
+    zero out a downstream calculation (it did: the Late Fine report read 0 for
+    every staff whose start was typed "08.00"). Use this everywhere such a field
+    is parsed.
+    """
+    if value is None:
+        return None
+    digits = re.findall(r"\d+", str(value))
+    if len(digits) >= 2:
+        h, m = int(digits[0]), int(digits[1])
+    elif len(digits) == 1 and len(digits[0]) in (3, 4):
+        d = digits[0].zfill(4)  # "800" -> "0800"
+        h, m = int(d[:2]), int(d[2:])
+    else:
+        return None
+    return (h, m) if 0 <= h < 24 and 0 <= m < 60 else None
+
+
+def normalize_hhmm(value: str | None) -> str | None:
+    """Canonicalize a human-entered wall-clock time to ``HH:MM`` for storage, so
+    the DB always holds a clean value. Unparseable input is returned stripped and
+    unchanged (readers stay tolerant); blank input becomes None."""
+    if value is None:
+        return None
+    hm = parse_hhmm(value)
+    if hm is not None:
+        return f"{hm[0]:02d}:{hm[1]:02d}"
+    stripped = str(value).strip()
+    return stripped or None
 
 
 @lru_cache(maxsize=64)
