@@ -21,24 +21,32 @@ import csv
 import io
 from typing import Any
 
-# Header aliases (compared lowercase, stripped). First match wins. The PRN
-# aliases deliberately exclude ZipGrade's own internal "zipgrade id".
+# Header aliases (compared lowercase, stripped — internal spaces are kept, so
+# list both the spaced and un-spaced spellings). First match wins.
 _PRN_ALIASES = [
-    "student id", "studentid", "prn", "prn number", "prn no", "external id",
-    "id number",
+    "student id", "studentid", "prn", "prn number", "prn no",
+    "external id", "externalid", "id number",
 ]
+# ZipGrade's own ID column. Many academies type the student's PRN as the Student
+# ID on the bubble sheet, so ZipGrade stores it here while ExternalID stays
+# blank — used as the PRN when the explicit PRN / ExternalID cell is empty.
+_ZIPGRADE_ID_ALIASES = ["zipgradeid", "zipgrade id"]
 _NAME_ALIASES = ["student name", "name", "full name"]
 _FIRST_ALIASES = ["first name", "firstname"]
 _LAST_ALIASES = ["last name", "lastname", "surname"]
+# Spellings include ZipGrade's own CamelCase export headers (EarnedPts,
+# PossiblePts, PercentCorrect) alongside the spaced variants.
 _SCORE_ALIASES = [
-    "earned points", "points earned", "score", "marks", "marks obtained",
-    "total earned",
+    "earned points", "earnedpts", "points earned", "score", "marks",
+    "marks obtained", "total earned",
 ]
 _TOTAL_ALIASES = [
-    "possible points", "points possible", "total points", "total marks",
-    "possible", "max points",
+    "possible points", "possiblepts", "points possible", "total points",
+    "total marks", "possible", "max points",
 ]
-_PERCENT_ALIASES = ["percent correct", "percent", "percentage", "pct", "%"]
+_PERCENT_ALIASES = [
+    "percent correct", "percentcorrect", "percent", "percentage", "pct", "%",
+]
 
 
 class ZipGradeCsvError(ValueError):
@@ -102,7 +110,8 @@ def parse_zipgrade_csv(content: bytes) -> list[dict[str, Any]]:
     # normalized-header -> original-header
     header_map = {_norm(h): h for h in reader.fieldnames if h}
     prn_col = _pick(header_map, _PRN_ALIASES)
-    if not prn_col:
+    zip_col = _pick(header_map, _ZIPGRADE_ID_ALIASES)
+    if not prn_col and not zip_col:
         raise ZipGradeCsvError(
             "Could not find a Student ID / PRN column in the CSV. "
             f"Columns seen: {', '.join(reader.fieldnames)}"
@@ -116,7 +125,10 @@ def parse_zipgrade_csv(content: bytes) -> list[dict[str, Any]]:
 
     rows: list[dict[str, Any]] = []
     for raw in reader:
-        prn = (raw.get(prn_col) or "").strip()
+        prn = (raw.get(prn_col) or "").strip() if prn_col else ""
+        # Fall back to the ZipGrade ID when the explicit PRN/ExternalID is blank.
+        if not prn and zip_col:
+            prn = (raw.get(zip_col) or "").strip()
         if name_col:
             name = (raw.get(name_col) or "").strip()
         else:
