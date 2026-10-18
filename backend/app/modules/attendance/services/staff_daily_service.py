@@ -13,6 +13,7 @@ Idempotent and MANUAL-safe, exactly like the student rebuild.
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 
@@ -36,13 +37,24 @@ from app.modules.staff.models.staff_models import Staff
 
 
 def _parse_hhmm(value: str | None, default: str) -> time:
-    raw = (value or default).strip()
-    hh, _, mm = raw.partition(":")
-    try:
-        return time(int(hh), int(mm or 0))
-    except (TypeError, ValueError):
-        h, m = default.split(":")
-        return time(int(h), int(m))
+    """Wall-clock time, tolerant of the separator staff shift times are entered
+    with — ``08:00``, ``08.00`` (dot), ``8-00``, ``0800`` all parse to 08:00.
+    Falls back to ``default`` when ``value`` can't be read."""
+    for candidate in (value, default):
+        if candidate is None:
+            continue
+        digits = re.findall(r"\d+", str(candidate))
+        if len(digits) >= 2:
+            h, m = int(digits[0]), int(digits[1])
+        elif len(digits) == 1 and len(digits[0]) in (3, 4):
+            d = digits[0].zfill(4)
+            h, m = int(d[:2]), int(d[2:])
+        else:
+            continue
+        if 0 <= h < 24 and 0 <= m < 60:
+            return time(h, m)
+    h, m = default.split(":")  # well-formed constant, last resort
+    return time(int(h), int(m))
 
 
 def _weekly_off_set(value: str | None, default: str) -> set[int]:
