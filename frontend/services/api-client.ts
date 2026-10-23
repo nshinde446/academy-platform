@@ -6,6 +6,18 @@ const apiClient = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+// File uploads send FormData, which the browser must serialize as
+// `multipart/form-data; boundary=…`. The client's default JSON Content-Type
+// otherwise leaks onto those requests, so the server can't read the file field
+// and rejects it ("body.file: Field required"). Drop the Content-Type for any
+// FormData body and let the browser set the multipart header + boundary itself.
+apiClient.interceptors.request.use((config) => {
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    config.headers.delete("Content-Type");
+  }
+  return config;
+});
+
 // A 401 from these endpoints is terminal, not "access token expired" — never
 // try to refresh-and-retry them, or a stale refresh token makes the interceptor
 // call /refresh in an endless recursion (the original request never settles,
