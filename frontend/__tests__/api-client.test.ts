@@ -32,7 +32,11 @@ describe("apiClient", () => {
   let apiClient: any;
   let mockInstance: any;
   let responseInterceptorError: any;
-  let requestInterceptor: any;
+  type ReqConfig = {
+    data: unknown;
+    headers: { delete: (key: string) => void };
+  };
+  let requestInterceptor: ((config: ReqConfig) => ReqConfig) | undefined;
 
   beforeEach(async () => {
     vi.clearAllMocks();
