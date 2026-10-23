@@ -64,7 +64,7 @@ describe("apiClient", () => {
       data: new FormData(),
       headers: { delete: (k: string) => deleted.push(k) },
     };
-    const out = requestInterceptor(config);
+    const out = requestInterceptor!(config);
     expect(deleted).toContain("Content-Type");
     expect(out).toBe(config);
   });
@@ -76,7 +76,7 @@ describe("apiClient", () => {
       data: { foo: "bar" },
       headers: { delete: (k: string) => deleted.push(k) },
     };
-    requestInterceptor(config);
+    requestInterceptor!(config);
     expect(deleted).toEqual([]);
   });
 
