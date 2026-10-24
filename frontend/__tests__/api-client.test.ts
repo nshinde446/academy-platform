@@ -32,6 +32,11 @@ describe("apiClient", () => {
   let apiClient: any;
   let mockInstance: any;
   let responseInterceptorError: any;
+  type ReqConfig = {
+    data: unknown;
+    headers: { delete: (key: string) => void };
+  };
+  let requestInterceptor: ((config: ReqConfig) => ReqConfig) | undefined;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -46,6 +51,33 @@ describe("apiClient", () => {
     if (responseUseCalls.length > 0) {
       responseInterceptorError = responseUseCalls[0][1];
     }
+    const requestUseCalls = mockInstance.interceptors.request.use.mock.calls;
+    if (requestUseCalls.length > 0) {
+      requestInterceptor = requestUseCalls[0][0];
+    }
+  });
+
+  it("drops the JSON Content-Type for FormData uploads so the browser sets multipart", () => {
+    expect(requestInterceptor).toBeTypeOf("function");
+    const deleted: string[] = [];
+    const config = {
+      data: new FormData(),
+      headers: { delete: (k: string) => deleted.push(k) },
+    };
+    const out = requestInterceptor!(config);
+    expect(deleted).toContain("Content-Type");
+    expect(out).toBe(config);
+  });
+
+  it("leaves Content-Type untouched for non-FormData (JSON) bodies", () => {
+    expect(requestInterceptor).toBeTypeOf("function");
+    const deleted: string[] = [];
+    const config = {
+      data: { foo: "bar" },
+      headers: { delete: (k: string) => deleted.push(k) },
+    };
+    requestInterceptor!(config);
+    expect(deleted).toEqual([]);
   });
 
   it("creates axios instance with correct config", async () => {
