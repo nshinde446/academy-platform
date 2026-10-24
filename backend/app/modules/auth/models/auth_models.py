@@ -1,7 +1,15 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Uuid
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -36,6 +44,37 @@ class User(BaseModel):
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
     primary_branch_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=True
+    )
+
+    # ── Teacher Login account-lifecycle fields (migration 0067) ─────────────
+    # Teacher accounts log in by employee code (username), which links to the
+    # staff record the read-only portal serves. Email-login users leave these
+    # null. Uniqueness (case-insensitive username, one user per staff) is
+    # enforced by partial indexes in the migration. The existing ``status``
+    # column (BaseModel) carries active/inactive — no separate is_active.
+    username: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # use_alter breaks the users<->staff<->teachers FK cycle for metadata table
+    # ordering (staff/teachers already reference users); the migration adds the
+    # real FK on Postgres.
+    staff_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("staff.id", use_alter=True, name="fk_users_staff_id"),
+        nullable=True,
+    )
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    failed_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 
@@ -106,5 +145,51 @@ class RefreshToken(Base):
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+# Recognised auth_events.event values (append-only login/account activity log).
+AUTH_EVENT_TYPES = frozenset({
+    "login_success", "login_fail", "locked", "unlocked",
+    "password_changed", "password_reset", "account_created",
+    "account_disabled", "account_enabled", "idor_attempt",
+})
+
+
+class AuthEvent(Base):
+    """Append-only record of login + account-lifecycle activity for the teacher
+    login module (migration 0067). Distinct from the business audit log: this is
+    the security/login trail (successes, failures, lockouts, IDOR attempts)."""
+
+    __tablename__ = "auth_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # Nullable: a failed login for an unknown username has no user_id.
+    user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    username_attempted: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    event: Mapped[str] = mapped_column(String(40), nullable=False)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    # The admin who performed an account action (reset/disable/…); null for
+    # self-service events like a login.
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    detail: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+class TeacherPortalConfig(Base):
+    """Key/value settings for the teacher portal, seeded with the spec defaults
+    (migration 0067) so they change without a deploy. ``value`` is JSON so each
+    key keeps its natural type (string / int / bool)."""
+
+    __tablename__ = "teacher_portal_config"
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[object] = mapped_column(JSON, nullable=False)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
