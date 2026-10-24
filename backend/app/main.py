@@ -14,10 +14,12 @@ from app.core.middleware.exception_handler import (
 )
 from app.core.middleware.metrics import MetricsMiddleware, get_metrics_text
 from app.core.middleware.request_id import RequestIDMiddleware
+from app.core.middleware.teacher_allowlist import TeacherAllowlistMiddleware
 from app.core.observability.sentry import init_sentry
 from app.modules.academic.api.routes import router as academic_router
 from app.modules.academic.api.syllabus_routes import router as syllabus_router
 from app.modules.auth.api.routes import router as auth_router
+from app.modules.teacher_portal.api.routes import me_router
 from app.modules.auth.api.access_routes import router as access_router
 from app.modules.audit.api.routes import router as audit_router
 from app.modules.monitoring.api.routes import router as monitoring_router
@@ -82,6 +84,8 @@ app.add_middleware(
 )
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(MetricsMiddleware)
+# Default-deny for teacher-only accounts: they may reach only /auth/* and /me/*.
+app.add_middleware(TeacherAllowlistMiddleware)
 
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
@@ -119,6 +123,7 @@ app.include_router(notifications_router, prefix=settings.API_V1_PREFIX)
 app.include_router(reports_router, prefix=settings.API_V1_PREFIX)
 app.include_router(plugins_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ai_router, prefix=settings.API_V1_PREFIX)
+app.include_router(me_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/health")
