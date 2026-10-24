@@ -1,0 +1,49 @@
+name: Backup / production (on-demand)
+
+# Manually-triggered production database backup. Runs the server's existing,
+# proven backup script (/root/db-backup.sh) over the same SSH secrets the
+# deploy workflow uses. Read-only: it snapshots the database, never mutates it.
+#
+# Use before a migration deploy (the rollout plan's "take a backup first" step)
+# or any time you want an on-demand snapshot. Trigger from the Actions tab or:
+#   gh workflow run backup-prod.yml
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: "Short label for this backup (e.g. pre-0067-teacher-login)"
+        required: false
+        default: "manual"
+
+concurrency:
+  group: backup-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the production backup script over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_SSH_PORT || 22 }}
+          script: |
+            set -euo pipefail
+            echo "=== On-demand backup (label: ${{ github.event.inputs.label }}) ==="
+            echo "Started: $(date -u) UTC"
+            # Run the existing, proven backup script (same one cron uses).
+            /root/db-backup.sh
+            echo "=== Verify: most recent local dumps ==="
+            # The script's own output path(s); show the freshest few with sizes
+            # so the run log proves a non-empty backup was written.
+            ls -lht /root/backups/ 2>/dev/null | head -5 || true
+            ls -lht /root/*.sql.gz 2>/dev/null | head -5 || true
+            echo "=== Verify: off-box copies (Hetzner Storage Box) ==="
+            ls -lht /var/backups/academy/ 2>/dev/null | head -5 || true
+            echo "Finished: $(date -u) UTC"
