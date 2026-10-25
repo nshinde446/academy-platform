@@ -186,14 +186,42 @@ async def delete_user(
 
 
 async def change_own_password(
-    session: AsyncSession, *, user_id: uuid.UUID, current_password: str, new_password: str
+    session: AsyncSession, *, user_id: uuid.UUID, current_password: str, new_password: str,
+    ip: str | None = None, user_agent: str | None = None,
 ) -> None:
+    """Change the signed-in user's own password. Allowed even while
+    must_change_password is true (that is the whole point of the first login).
+    Enforces the policy, clears the forced-change flag, stamps the change time,
+    and ends the user's other sessions."""
+    from datetime import datetime, timezone
+
+    from app.modules.teacher_portal.services import auth_events, config_service
+
     user = await user_repository.get_by_id(session, user_id)
     if user is None:
         raise _not_found()
     if not verify_password(current_password, user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    cfg = await config_service.get_config(session)
+    min_len = int(cfg.get("min_password_length") or 8)
+    if len(new_password) < min_len:
+        raise HTTPException(status_code=400, detail=f"Password must be at least {min_len} characters")
+    if user.username and new_password.strip().lower() == user.username.strip().lower():
+        raise HTTPException(status_code=400, detail="Password cannot equal the employee code")
+    if verify_password(new_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="New password must differ from the old password")
+
     await user_repository.set_password(session, user, hash_password(new_password))
+    user.must_change_password = False
+    user.password_changed_at = datetime.now(timezone.utc)
+    await session.flush()
+    # End other sessions: revoke all refresh tokens (the current access cookie
+    # lives out its short TTL; the client gets a fresh pair on next refresh).
+    await user_repository.revoke_all_refresh_tokens(session, user_id)
+    await auth_events.record(
+        session, event="password_changed", user_id=user_id, ip=ip, user_agent=user_agent,
+    )
 
 
 # ── guards ────────────────────────────────────────────────────────────────────

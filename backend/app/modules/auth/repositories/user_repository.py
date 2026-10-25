@@ -30,6 +30,19 @@ async def get_by_id(session: AsyncSession, user_id: uuid.UUID) -> User | None:
     return result.scalar_one_or_none()
 
 
+async def get_by_username(session: AsyncSession, username: str) -> User | None:
+    """Case-insensitive username lookup (teacher username = employee code)."""
+    from sqlalchemy import func
+
+    result = await session.execute(
+        select(User).where(
+            func.lower(User.username) == (username or "").strip().lower(),
+            User.is_deleted == False,  # noqa: E712
+        )
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_user_roles(session: AsyncSession, user_id: uuid.UUID) -> list[str]:
     result = await session.execute(
         select(Role.name)
