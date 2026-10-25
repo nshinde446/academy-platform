@@ -22,6 +22,7 @@ from app.modules.auth.models.auth_models import User
 from app.modules.auth.permissions.rbac import get_current_user
 from app.modules.teacher_portal.schemas.portal_schemas import (
     MonthSummary,
+    ProfileContactUpdate,
     TeacherProfile,
     TeacherSession,
 )
@@ -109,6 +110,30 @@ async def my_profile(
     session: AsyncSession = Depends(get_db),
 ):
     return await portal_service.profile(session, me.staff_id)
+
+
+@me_router.patch("/profile", response_model=TeacherProfile)
+async def update_my_profile(
+    body: ProfileContactUpdate,
+    request: Request,
+    me: TeacherSession = Depends(get_current_teacher),
+    session: AsyncSession = Depends(get_db),
+):
+    """Self-service contact update — phone / email only. The staff id is the
+    session's own (never from the body), so a teacher can only edit themselves.
+    ``model_fields_set`` tells us which fields were actually sent."""
+    if not body.model_fields_set:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide at least one of: phone, email.",
+        )
+    return await portal_service.update_contact(
+        session, me.staff_id, actor_user_id=me.user_id,
+        phone=body.phone, email=body.email,
+        phone_set="phone" in body.model_fields_set,
+        email_set="email" in body.model_fields_set,
+        ip=request.client.host if request.client else None,
+    )
 
 
 @me_router.get("/day")

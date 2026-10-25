@@ -1,12 +1,39 @@
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, field_validator
 
 
 class TeacherProfile(BaseModel):
     name: str
     employee_code: str
     department: str | None = None
+    # Read-only employment details (admin-managed; shown but never self-edited).
+    title: str | None = None
+    designation: str | None = None
+    shift_start: str | None = None
+    shift_end: str | None = None
+    # Self-editable contact details.
+    phone: str | None = None
+    email: str | None = None
+
+
+class ProfileContactUpdate(BaseModel):
+    """The ONLY fields a teacher may change about themselves — contact details.
+    Identity/employment (name, employee code, department, shift) stay admin-only.
+    Both optional so the client can patch one field; at least one is required."""
+
+    phone: str | None = None
+    email: EmailStr | None = None
+
+    @field_validator("phone")
+    @classmethod
+    def _phone_len(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if v and not (6 <= len(v) <= 20):
+            raise ValueError("phone must be 6–20 characters")
+        return v or None
 
 
 class DayAttendance(BaseModel):
