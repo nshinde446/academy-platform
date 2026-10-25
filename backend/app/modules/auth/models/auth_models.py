@@ -53,14 +53,11 @@ class User(BaseModel):
     # enforced by partial indexes in the migration. The existing ``status``
     # column (BaseModel) carries active/inactive — no separate is_active.
     username: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    # use_alter breaks the users<->staff<->teachers FK cycle for metadata table
-    # ordering (staff/teachers already reference users); the migration adds the
-    # real FK on Postgres.
-    staff_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid,
-        ForeignKey("staff.id", use_alter=True, name="fk_users_staff_id"),
-        nullable=True,
-    )
+    # Plain Uuid (no model-level ForeignKey): users->staff would close a FK cycle
+    # with staff->teachers->users, which SQLite can't order on teardown. The real
+    # FK (fk_users_staff_id) is created in migration 0067 for Postgres; the link
+    # is enforced there and in the app layer.
+    staff_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false", default=False
     )
