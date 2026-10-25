@@ -20,6 +20,7 @@ from app.modules.academic.api.routes import router as academic_router
 from app.modules.academic.api.syllabus_routes import router as syllabus_router
 from app.modules.auth.api.routes import router as auth_router
 from app.modules.teacher_portal.api.routes import me_router
+from app.modules.teacher_portal.api.admin_routes import admin_router as teacher_accounts_router
 from app.modules.auth.api.access_routes import router as access_router
 from app.modules.audit.api.routes import router as audit_router
 from app.modules.monitoring.api.routes import router as monitoring_router
@@ -124,6 +125,7 @@ app.include_router(reports_router, prefix=settings.API_V1_PREFIX)
 app.include_router(plugins_router, prefix=settings.API_V1_PREFIX)
 app.include_router(ai_router, prefix=settings.API_V1_PREFIX)
 app.include_router(me_router, prefix=settings.API_V1_PREFIX)
+app.include_router(teacher_accounts_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/health")
