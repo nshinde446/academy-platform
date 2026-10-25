@@ -11,6 +11,9 @@ vi.mock("next/navigation", () => ({
 const mockPost = vi.fn();
 vi.mock("@/services/api-client", () => ({
   default: { post: (...args: any[]) => mockPost(...args) },
+  // Mirror the real helper: surface the API error message, else the fallback.
+  apiErrorMessage: (e: any, fallback: string) =>
+    e?.response?.data?.error?.message || fallback,
 }));
 
 const mockSetAuthenticated = vi.fn();
@@ -19,9 +22,17 @@ vi.mock("@/store/auth-store", () => ({
 }));
 
 const mockFetchUser = vi.fn().mockResolvedValue(undefined);
-vi.mock("@/store/user-store", () => ({
-  useUserStore: (selector: any) => selector({ fetchUser: mockFetchUser }),
-}));
+vi.mock("@/store/user-store", () => {
+  const useUserStore: any = (selector: any) =>
+    selector({ fetchUser: mockFetchUser });
+  // The login success path reads the resolved user off the store directly.
+  useUserStore.getState = () => ({ user: { roles: [] } });
+  return {
+    useUserStore,
+    // Admin/staff (no portal-only role) → not a teacher-only account.
+    isTeacherOnly: () => false,
+  };
+});
 
 describe("LoginPage", () => {
   beforeEach(() => {
@@ -33,7 +44,7 @@ describe("LoginPage", () => {
 
     expect(screen.getByText("Matrix Science Academy")).toBeInTheDocument();
     expect(screen.getByText("Sign in to your account")).toBeInTheDocument();
-    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+    expect(screen.getByLabelText("Email or Employee Code")).toBeInTheDocument();
     expect(screen.getByLabelText("Password")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
   });
@@ -42,7 +53,7 @@ describe("LoginPage", () => {
     const user = userEvent.setup();
     render(<LoginPage />);
 
-    const emailInput = screen.getByLabelText("Email");
+    const emailInput = screen.getByLabelText("Email or Employee Code");
     const passwordInput = screen.getByLabelText("Password");
 
     await user.type(emailInput, "admin@test.com");
@@ -58,7 +69,7 @@ describe("LoginPage", () => {
 
     render(<LoginPage />);
 
-    await user.type(screen.getByLabelText("Email"), "admin@test.com");
+    await user.type(screen.getByLabelText("Email or Employee Code"), "admin@test.com");
     await user.type(screen.getByLabelText("Password"), "secret123");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
@@ -81,7 +92,7 @@ describe("LoginPage", () => {
 
     render(<LoginPage />);
 
-    await user.type(screen.getByLabelText("Email"), "bad@test.com");
+    await user.type(screen.getByLabelText("Email or Employee Code"), "bad@test.com");
     await user.type(screen.getByLabelText("Password"), "wrong");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
@@ -96,7 +107,7 @@ describe("LoginPage", () => {
 
     render(<LoginPage />);
 
-    await user.type(screen.getByLabelText("Email"), "bad@test.com");
+    await user.type(screen.getByLabelText("Email or Employee Code"), "bad@test.com");
     await user.type(screen.getByLabelText("Password"), "wrong");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
@@ -112,7 +123,7 @@ describe("LoginPage", () => {
 
     render(<LoginPage />);
 
-    await user.type(screen.getByLabelText("Email"), "admin@test.com");
+    await user.type(screen.getByLabelText("Email or Employee Code"), "admin@test.com");
     await user.type(screen.getByLabelText("Password"), "secret123");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
@@ -133,7 +144,7 @@ describe("LoginPage", () => {
 
     render(<LoginPage />);
 
-    await user.type(screen.getByLabelText("Email"), "admin@test.com");
+    await user.type(screen.getByLabelText("Email or Employee Code"), "admin@test.com");
     await user.type(screen.getByLabelText("Password"), "secret123");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
