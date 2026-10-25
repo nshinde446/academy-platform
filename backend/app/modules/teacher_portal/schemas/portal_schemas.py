@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from pydantic import BaseModel, EmailStr, field_validator
 
@@ -83,3 +84,17 @@ class TeacherSession(BaseModel):
     user_id: uuid.UUID
     staff_id: uuid.UUID
     branch_id: uuid.UUID | None = None
+
+
+class LeaveApply(BaseModel):
+    """A teacher's leave request. Dates inclusive; reason optional."""
+
+    start_date: date
+    end_date: date
+    reason: str | None = None
+
+
+class LeaveDecision(BaseModel):
+    """Admin approve/reject note (optional)."""
+
+    note: str | None = None
