@@ -12,8 +12,10 @@ const mockPost = vi.fn();
 vi.mock("@/services/api-client", () => ({
   default: { post: (...args: any[]) => mockPost(...args) },
   // Mirror the real helper: surface the API error message, else the fallback.
-  apiErrorMessage: (e: any, fallback: string) =>
-    e?.response?.data?.error?.message || fallback,
+  apiErrorMessage: (
+    e: { response?: { data?: { error?: { message?: string } } } } | undefined,
+    fallback: string,
+  ) => e?.response?.data?.error?.message || fallback,
 }));
 
 const mockSetAuthenticated = vi.fn();
@@ -23,10 +25,13 @@ vi.mock("@/store/auth-store", () => ({
 
 const mockFetchUser = vi.fn().mockResolvedValue(undefined);
 vi.mock("@/store/user-store", () => {
-  const useUserStore: any = (selector: any) =>
-    selector({ fetchUser: mockFetchUser });
+  const useUserStore = (
+    selector: (s: { fetchUser: typeof mockFetchUser }) => unknown,
+  ) => selector({ fetchUser: mockFetchUser });
   // The login success path reads the resolved user off the store directly.
-  useUserStore.getState = () => ({ user: { roles: [] } });
+  (useUserStore as { getState?: () => unknown }).getState = () => ({
+    user: { roles: [] as string[] },
+  });
   return {
     useUserStore,
     // Admin/staff (no portal-only role) → not a teacher-only account.
