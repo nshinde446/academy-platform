@@ -12,12 +12,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import apiClient from "@/services/api-client";
+import apiClient, { apiErrorMessage } from "@/services/api-client";
 import { useAuthStore } from "@/store/auth-store";
-import { useUserStore } from "@/store/user-store";
+import { isTeacherOnly, useUserStore } from "@/store/user-store";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -31,12 +31,23 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await apiClient.post("/api/v1/auth/login", { email, password });
+      // One field for everyone: an email (admins/staff) or an employee code
+      // (teachers). Route by shape so the server gets the right identifier.
+      const payload = identifier.includes("@")
+        ? { email: identifier, password }
+        : { username: identifier, password };
+      const res = await apiClient.post("/api/v1/auth/login", payload);
       setAuthenticated(true);
       await fetchUser();
-      router.push("/home");
-    } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Login failed");
+      // Forced password change wins; then route teachers to their portal.
+      if (res.data?.must_change_password) {
+        router.push("/change-password");
+        return;
+      }
+      const user = useUserStore.getState().user;
+      router.push(isTeacherOnly(user?.roles) ? "/my-day" : "/home");
+    } catch (err) {
+      setError(apiErrorMessage(err, "Login failed"));
     } finally {
       setLoading(false);
     }
@@ -67,13 +78,15 @@ export default function LoginPage() {
               <p className="text-sm text-destructive text-center">{error}</p>
             )}
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="identifier">Email or Employee Code</Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="identifier"
+                type="text"
+                autoCapitalize="none"
+                autoComplete="username"
+                placeholder="you@example.com or 91000"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 required
               />
             </div>

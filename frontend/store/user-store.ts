@@ -18,6 +18,25 @@ interface User {
   permissions: string[];
   branch_roles: BranchRole[];
   is_developer?: boolean;
+  must_change_password?: boolean;
+}
+
+// Roles that grant access beyond the teacher portal. Mirrors the backend's
+// TeacherAllowlistMiddleware ELEVATED_ROLES. A user whose only privileged role
+// is "teacher" is sent to the read-only teacher portal.
+const ELEVATED_ROLES = [
+  "super_admin",
+  "branch_admin",
+  "academic_head",
+  "accounts",
+  "device_operator",
+  "floor_coordinator",
+  "manager",
+];
+
+export function isTeacherOnly(roles: string[] | undefined): boolean {
+  const r = roles ?? [];
+  return r.includes("teacher") && !r.some((x) => ELEVATED_ROLES.includes(x));
 }
 
 // Whether the current user (and therefore the active branch) is known yet.
