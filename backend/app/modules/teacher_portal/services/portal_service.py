@@ -77,7 +77,47 @@ async def profile(session: AsyncSession, staff_id: uuid.UUID) -> dict:
         "name": f"{s.first_name} {s.last_name}".strip(),
         "employee_code": s.emp_code,
         "department": dept.name if dept else None,
+        "title": s.title,
+        "designation": s.designation,
+        "shift_start": s.shift_start,
+        "shift_end": s.shift_end,
+        "phone": s.phone,
+        "email": s.email,
     }
+
+
+async def update_contact(
+    session: AsyncSession,
+    staff_id: uuid.UUID,
+    *,
+    actor_user_id: uuid.UUID,
+    phone: str | None = None,
+    email: str | None = None,
+    phone_set: bool = False,
+    email_set: bool = False,
+    ip: str | None = None,
+) -> dict:
+    """Update ONLY the teacher's own contact details (phone / email), identified
+    by the session's staff id. ``*_set`` says whether the client sent the field,
+    so a one-field patch doesn't blank the other. Writes a business audit row."""
+    from app.modules.audit.services import audit_service
+
+    s = await _staff(session, staff_id)
+    changed: dict[str, object] = {}
+    if phone_set:
+        s.phone = phone
+        changed["phone"] = phone
+    if email_set:
+        s.email = email
+        changed["email"] = email
+    if changed:
+        await session.flush()
+        await audit_service.log_action(
+            session, user_id=actor_user_id, action="UPDATE", table_name="staff",
+            record_id=s.id, new_values={"self_contact_update": changed},
+            ip_address=ip, branch_id=s.branch_id,
+        )
+    return await profile(session, staff_id)
 
 
 async def _lectures_for_day(
