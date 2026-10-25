@@ -24,10 +24,13 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # approval_status, NOT status — teacher_leaves already has BaseModel's
+    # generic `status` column, so adding `status` again fails on Postgres.
     op.add_column(
         "teacher_leaves",
         sa.Column(
-            "status", sa.String(length=20), nullable=False, server_default="approved"
+            "approval_status", sa.String(length=20), nullable=False,
+            server_default="approved",
         ),
     )
     op.add_column("teacher_leaves", sa.Column("requested_by", sa.Uuid(), nullable=True))
@@ -41,14 +44,15 @@ def upgrade() -> None:
         sa.Column("decision_note", sa.String(length=255), nullable=True),
     )
     op.create_index(
-        "ix_teacher_leaves_status", "teacher_leaves", ["status"], unique=False
+        "ix_teacher_leaves_approval_status", "teacher_leaves",
+        ["approval_status"], unique=False,
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_teacher_leaves_status", table_name="teacher_leaves")
+    op.drop_index("ix_teacher_leaves_approval_status", table_name="teacher_leaves")
     op.drop_column("teacher_leaves", "decision_note")
     op.drop_column("teacher_leaves", "decided_at")
     op.drop_column("teacher_leaves", "decided_by")
     op.drop_column("teacher_leaves", "requested_by")
-    op.drop_column("teacher_leaves", "status")
+    op.drop_column("teacher_leaves", "approval_status")

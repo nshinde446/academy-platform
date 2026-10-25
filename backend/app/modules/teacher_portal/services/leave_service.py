@@ -52,7 +52,7 @@ def _row(leave: TeacherLeave) -> dict:
         "start_date": leave.start_date,
         "end_date": leave.end_date,
         "reason": leave.reason,
-        "status": leave.status,
+        "status": leave.approval_status,
         "decided_at": leave.decided_at.isoformat() if leave.decided_at else None,
         "decision_note": leave.decision_note,
     }
@@ -78,7 +78,7 @@ async def apply_leave(
     # Reject a request that overlaps an existing pending/approved leave.
     existing = await teacher_repository.list_leaves(session, t.branch_id, teacher_id=t.id)
     for e in existing:
-        if e.status != "rejected" and e.start_date <= end_date and e.end_date >= start_date:
+        if e.approval_status != "rejected" and e.start_date <= end_date and e.end_date >= start_date:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="You already have a leave request overlapping these dates.",
@@ -87,7 +87,7 @@ async def apply_leave(
     leave = await teacher_repository.create_leave(
         session, teacher_id=t.id, branch_id=t.branch_id,
         start_date=start_date, end_date=end_date, reason=reason,
-        status="pending", requested_by=user_id,
+        approval_status="pending", requested_by=user_id,
     )
     await audit_service.log_action(
         session, user_id=user_id, action="CREATE", table_name="teacher_leaves",
@@ -115,7 +115,7 @@ async def cancel_leave(
     # withdrawn (an approved/rejected decision is the admin's to change).
     if leave is None or leave.teacher_id != t.id:
         raise HTTPException(status_code=404, detail="Leave request not found")
-    if leave.status != "pending":
+    if leave.approval_status != "pending":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only a pending request can be withdrawn.",
@@ -151,19 +151,19 @@ async def decide(
     leave = await teacher_repository.get_leave_by_id(session, leave_id)
     if leave is None or leave.branch_id != branch_id:
         raise HTTPException(status_code=404, detail="Leave request not found")
-    if leave.status != "pending":
+    if leave.approval_status != "pending":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"This request is already {leave.status}.",
+            detail=f"This request is already {leave.approval_status}.",
         )
-    leave.status = "approved" if approve else "rejected"
+    leave.approval_status = "approved" if approve else "rejected"
     leave.decided_by = actor_id
     leave.decided_at = datetime.now(timezone.utc)
     leave.decision_note = note
     await session.flush()
     await audit_service.log_action(
         session, user_id=actor_id, action="UPDATE", table_name="teacher_leaves",
-        record_id=leave.id, new_values={"status": leave.status}, ip_address=ip,
+        record_id=leave.id, new_values={"approval_status": leave.approval_status}, ip_address=ip,
         branch_id=branch_id,
     )
     return _row(leave)

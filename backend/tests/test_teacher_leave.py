@@ -15,10 +15,20 @@ from app.modules.auth.models.auth_models import User
 from app.modules.auth.services.auth_service import hash_password
 from app.modules.auth.services.token_service import create_access_token
 from app.modules.staff.models.staff_models import Department, Staff
-from app.modules.teacher.models.teacher_models import Teacher
+from app.modules.teacher.models.teacher_models import Teacher, TeacherLeave
 from app.modules.teacher.repositories import teacher_repository
 
 BRANCH = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+def test_lifecycle_column_does_not_shadow_basemodel_status():
+    """Regression: the leave lifecycle column is `approval_status`, NOT `status`.
+    teacher_leaves inherits BaseModel's generic `status` column, so a migration
+    adding `status` collided on Postgres (prod) while passing under create_all.
+    Keep them distinct."""
+    cols = set(TeacherLeave.__table__.columns.keys())
+    assert "approval_status" in cols
+    assert "status" in cols  # BaseModel's generic column, left untouched
 
 
 async def _teacher(db: AsyncSession, emp: str) -> tuple[Staff, User, Teacher]:

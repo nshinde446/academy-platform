@@ -73,7 +73,10 @@ class TeacherLeave(BaseModel):
     # Approval workflow (migration 0068). Self-service requests start "pending"
     # and only block scheduling once "approved". Admin-created leaves and all
     # pre-0068 rows default to "approved" so behaviour is unchanged for them.
-    status: Mapped[str] = mapped_column(
+    # NOTE: named approval_status, NOT status — BaseModel already defines a
+    # generic `status` column (active/inactive); reusing it would both clash on
+    # the ADD COLUMN and carry the wrong default ("active").
+    approval_status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="approved",
         default="approved", index=True,
     )

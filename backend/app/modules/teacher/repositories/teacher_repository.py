@@ -75,7 +75,7 @@ async def list_leaves(
     if teacher_id is not None:
         query = query.where(TeacherLeave.teacher_id == teacher_id)
     if status is not None:
-        query = query.where(TeacherLeave.status == status)
+        query = query.where(TeacherLeave.approval_status == status)
     result = await session.execute(query.order_by(TeacherLeave.start_date))
     return list(result.scalars().all())
 
@@ -114,7 +114,7 @@ async def teacher_on_leave(
         select(TeacherLeave.id).where(
             TeacherLeave.teacher_id == teacher_id,
             TeacherLeave.is_deleted == False,
-            TeacherLeave.status == "approved",
+            TeacherLeave.approval_status == "approved",
             TeacherLeave.start_date <= on_date,
             TeacherLeave.end_date >= on_date,
         )
