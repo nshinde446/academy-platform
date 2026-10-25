@@ -1,23 +1,10 @@
 import uuid
-from datetime import date, datetime
+from datetime import date
 
-from sqlalchemy import (
-    Date,
-    DateTime,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Uuid,
-    text,
-)
+from sqlalchemy import Date, ForeignKey, Index, Integer, String, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database.base import BaseModel
-
-# Leave request lifecycle. "approved" is the default so existing admin-created
-# leaves (pre-0068) keep blocking scheduling exactly as before.
-LEAVE_STATUSES = frozenset({"pending", "approved", "rejected"})
 
 
 class Teacher(BaseModel):
@@ -69,20 +56,6 @@ class TeacherLeave(BaseModel):
     start_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     end_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    # Approval workflow (migration 0068). Self-service requests start "pending"
-    # and only block scheduling once "approved". Admin-created leaves and all
-    # pre-0068 rows default to "approved" so behaviour is unchanged for them.
-    status: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default="approved",
-        default="approved", index=True,
-    )
-    requested_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
-    decided_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
-    decided_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    decision_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class TeacherBatchMapping(BaseModel):

@@ -21,18 +21,12 @@ from app.core.database.session import get_db
 from app.modules.auth.models.auth_models import User
 from app.modules.auth.permissions.rbac import get_current_user
 from app.modules.teacher_portal.schemas.portal_schemas import (
-    LeaveApply,
     MonthSummary,
     ProfileContactUpdate,
     TeacherProfile,
     TeacherSession,
 )
-from app.modules.teacher_portal.services import (
-    auth_events,
-    config_service,
-    leave_service,
-    portal_service,
-)
+from app.modules.teacher_portal.services import auth_events, config_service, portal_service
 
 me_router = APIRouter(prefix="/me", tags=["teacher-portal"])
 
@@ -170,42 +164,3 @@ async def my_month_summary(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="month cannot be in the future")
     data = await portal_service.month_summary(session, me.staff_id, y, m)
     return MonthSummary(**data)
-
-
-# ── leave (self-service: apply / list / withdraw) ────────────────────────────
-
-
-@me_router.get("/leaves")
-async def my_leaves(
-    me: TeacherSession = Depends(get_current_teacher),
-    session: AsyncSession = Depends(get_db),
-):
-    return await leave_service.my_leaves(session, me.staff_id)
-
-
-@me_router.post("/leaves", status_code=status.HTTP_201_CREATED)
-async def apply_leave(
-    body: LeaveApply,
-    request: Request,
-    me: TeacherSession = Depends(get_current_teacher),
-    session: AsyncSession = Depends(get_db),
-):
-    return await leave_service.apply_leave(
-        session, staff_id=me.staff_id, user_id=me.user_id,
-        start_date=body.start_date, end_date=body.end_date, reason=body.reason,
-        ip=request.client.host if request.client else None,
-    )
-
-
-@me_router.delete("/leaves/{leave_id}")
-async def withdraw_leave(
-    leave_id: uuid.UUID,
-    request: Request,
-    me: TeacherSession = Depends(get_current_teacher),
-    session: AsyncSession = Depends(get_db),
-):
-    await leave_service.cancel_leave(
-        session, staff_id=me.staff_id, leave_id=leave_id, user_id=me.user_id,
-        ip=request.client.host if request.client else None,
-    )
-    return {"message": "withdrawn"}
