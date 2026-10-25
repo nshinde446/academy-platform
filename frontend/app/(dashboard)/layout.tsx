@@ -1,18 +1,35 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Toast, Toaster } from "@/components/ui/toast";
-import { useUserStore } from "@/store/user-store";
+import { isTeacherOnly, useUserStore } from "@/store/user-store";
 import type { ReactNode } from "react";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const user = useUserStore((s) => s.user);
   const fetchUser = useUserStore((s) => s.fetchUser);
+  const router = useRouter();
 
   useEffect(() => {
     if (!user) fetchUser();
   }, [user, fetchUser]);
+
+  // Teachers have no business in the admin dashboard — send them to their
+  // read-only portal (the server also default-denies every non-/me route).
+  useEffect(() => {
+    if (!user) return;
+    if (user.must_change_password) {
+      router.replace("/change-password");
+    } else if (isTeacherOnly(user.roles)) {
+      router.replace("/my-day");
+    }
+  }, [user, router]);
+
+  if (user && (user.must_change_password || isTeacherOnly(user.roles))) {
+    return null; // redirecting — don't flash the admin shell
+  }
 
   return (
     <Toast.Provider>

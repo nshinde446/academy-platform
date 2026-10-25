@@ -125,6 +125,7 @@ const ADMIN_SECTION: NavSection = {
   label: "Administration",
   items: [
     { label: "Users", href: "/users" },
+    { label: "Teacher Accounts", href: "/teacher-accounts" },
     { label: "Access Control", href: "/access-control" },
     { label: "Accounts", href: "/accounts" },
     { label: "Audit Log", href: "/audit-log" },
