@@ -18,6 +18,27 @@ interface User {
   permissions: string[];
   branch_roles: BranchRole[];
   is_developer?: boolean;
+  must_change_password?: boolean;
+}
+
+// Roles that grant access beyond the teacher portal. Mirrors the backend's
+// TeacherAllowlistMiddleware FULL_ACCESS_ROLES — note the academic "teacher"
+// role is in here: it keeps full app access. Only the dedicated read-only
+// "teacher_portal" role is routed to the portal.
+const FULL_ACCESS_ROLES = [
+  "super_admin",
+  "branch_admin",
+  "academic_head",
+  "accounts",
+  "device_operator",
+  "floor_coordinator",
+  "manager",
+  "teacher",
+];
+
+export function isTeacherOnly(roles: string[] | undefined): boolean {
+  const r = roles ?? [];
+  return r.includes("teacher_portal") && !r.some((x) => FULL_ACCESS_ROLES.includes(x));
 }
 
 // Whether the current user (and therefore the active branch) is known yet.

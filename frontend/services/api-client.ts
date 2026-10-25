@@ -82,4 +82,11 @@ apiClient.interceptors.response.use(
   },
 );
 
+/** Pull the server's `{error:{message}}` out of a caught request error without
+ * an `any` cast; falls back to the given message. */
+export function apiErrorMessage(e: unknown, fallback: string): string {
+  const err = e as { response?: { data?: { error?: { message?: string } } } };
+  return err?.response?.data?.error?.message || fallback;
+}
+
 export default apiClient;
