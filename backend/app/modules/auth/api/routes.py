@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.settings import get_settings
@@ -68,14 +68,17 @@ def _clear_auth_cookies(response: Response):
 @router.post("/login")
 async def login(
     body: LoginRequest,
+    request: Request,
     response: Response,
     session: AsyncSession = Depends(get_db),
 ):
-    access_token, refresh_token, _jti = await auth_service.login(
-        session, body.email, body.password
+    access_token, refresh_token, _jti, must_change = await auth_service.login(
+        session, body.identifier, body.password,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
     )
     _set_auth_cookies(response, access_token, refresh_token)
-    return {"message": "Login successful"}
+    return {"message": "Login successful", "must_change_password": must_change}
 
 
 @router.post("/logout")
@@ -130,15 +133,19 @@ async def get_me(
 @router.post("/change-password")
 async def change_password(
     body: ChangePasswordRequest,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ):
-    """Signed-in user changes their own password (e.g. off a temp password)."""
+    """Signed-in user changes their own password (e.g. off a temp password).
+    Allowed even while a forced change is pending."""
     await user_admin_service.change_own_password(
         session,
         user_id=current_user["user_id"],
         current_password=body.current_password,
         new_password=body.new_password,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
     )
     return {"message": "Password changed"}
 
