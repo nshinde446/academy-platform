@@ -1,11 +1,25 @@
 import uuid
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    # Accept an email (admins/staff) OR a username = employee code (teachers).
+    # ``email`` stays for backward compatibility with the existing client; a new
+    # client may send ``username`` instead. At least one is required.
+    email: EmailStr | None = None
+    username: str | None = None
     password: str
+
+    @model_validator(mode="after")
+    def _one_identifier(self) -> "LoginRequest":
+        if not (self.email or (self.username and self.username.strip())):
+            raise ValueError("email or username is required")
+        return self
+
+    @property
+    def identifier(self) -> str:
+        return (self.username or self.email or "").strip()
 
 
 # ── admin user management ────────────────────────────────────────────────────
@@ -90,3 +104,6 @@ class UserMeResponse(BaseModel):
     # True only for emails in settings.DEVELOPER_EMAILS — gates the /dev
     # monitoring dashboard (by email, independent of role).
     is_developer: bool = False
+    # Teacher accounts off a temporary password must change it first; the client
+    # routes them to the change-password screen.
+    must_change_password: bool = False

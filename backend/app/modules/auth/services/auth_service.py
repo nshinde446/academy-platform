@@ -24,31 +24,97 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
+_INVALID = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+)
+
+
 async def login(
-    session: AsyncSession, email: str, password: str
-) -> tuple[str, str, str]:
-    """Returns (access_token, refresh_token, jti)."""
-    user = await user_repository.get_by_email(session, email)
-    if not user or not verify_password(password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
+    session: AsyncSession,
+    identifier: str,
+    password: str,
+    *,
+    ip: str | None = None,
+    user_agent: str | None = None,
+) -> tuple[str, str, str, bool]:
+    """Authenticate by employee-code username OR email.
+
+    Returns (access_token, refresh_token, jti, must_change_password). Failures
+    return a generic "Invalid credentials" (no account enumeration) and record
+    an auth event. Repeated failures lock the account per the teacher-portal
+    config (default 5 fails / 15-min lock). Lockout and last-login bookkeeping
+    live on the user row (migration 0067)."""
+    from datetime import datetime, timezone
+
+    from app.modules.teacher_portal.services import auth_events, config_service
+
+    now = datetime.now(timezone.utc)
+    ident = (identifier or "").strip()
+    user = (
+        await user_repository.get_by_username(session, ident)
+        or await user_repository.get_by_email(session, ident)
+    )
+    cfg = await config_service.get_config(session)
+    max_fail = int(cfg.get("lockout_attempts") or 5)
+    lock_min = int(cfg.get("lockout_minutes") or 15)
+
+    async def _fail_and_raise(exc: HTTPException) -> None:
+        """Record the failure, then COMMIT it before raising — the request's own
+        transaction would otherwise roll these security side-effects (the event
+        and the failed-attempt / lockout counters) back on the error response."""
+        await auth_events.record(
+            session, event="login_fail", user_id=user.id if user else None,
+            username_attempted=ident[:50], ip=ip, user_agent=user_agent,
         )
+        await session.commit()
+        raise exc
+
+    # Unknown user: constant-ish path, generic error, still logged.
+    if user is None:
+        await _fail_and_raise(_INVALID)
+
+    # Locked account: reject (generic) until the lock expires.
+    locked_until = user.locked_until
+    if locked_until is not None and locked_until.tzinfo is None:
+        locked_until = locked_until.replace(tzinfo=timezone.utc)
+    if locked_until is not None and locked_until > now:
+        await _fail_and_raise(_INVALID)
+
+    if not verify_password(password, user.password_hash):
+        user.failed_attempts = (user.failed_attempts or 0) + 1
+        if user.failed_attempts >= max_fail:
+            from datetime import timedelta
+            user.locked_until = now + timedelta(minutes=lock_min)
+            user.failed_attempts = 0
+            await session.flush()
+            await auth_events.record(
+                session, event="locked", user_id=user.id,
+                username_attempted=ident[:50], ip=ip, user_agent=user_agent,
+                detail=f"locked for {lock_min} min after {max_fail} failures",
+            )
+        await _fail_and_raise(_INVALID)
+
     if user.status != "active":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Account is inactive",
+        await _fail_and_raise(
+            HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is inactive")
         )
+
+    # Success: reset counters, stamp last login, log, issue tokens.
+    user.failed_attempts = 0
+    user.locked_until = None
+    user.last_login_at = now
+    await session.flush()
+    await auth_events.record(
+        session, event="login_success", user_id=user.id,
+        username_attempted=ident[:50], ip=ip, user_agent=user_agent,
+    )
 
     roles = await user_repository.get_user_roles(session, user.id)
     access_token = create_access_token(user.id, roles, user.primary_branch_id)
     refresh_token, jti = create_refresh_token(user.id)
+    await user_repository.save_refresh_token(session, user.id, jti, get_refresh_expiry())
 
-    await user_repository.save_refresh_token(
-        session, user.id, jti, get_refresh_expiry()
-    )
-
-    return access_token, refresh_token, jti
+    return access_token, refresh_token, jti, bool(user.must_change_password)
 
 
 async def logout(session: AsyncSession, jti: str) -> None:
@@ -137,4 +203,5 @@ async def get_me(session: AsyncSession, user_id: uuid.UUID) -> UserMeResponse:
         permissions=permissions,
         branch_roles=branch_roles,
         is_developer=(user.email or "").lower() in dev_emails,
+        must_change_password=bool(user.must_change_password),
     )
