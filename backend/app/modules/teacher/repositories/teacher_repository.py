@@ -63,7 +63,10 @@ async def get_by_id(session: AsyncSession, teacher_id: uuid.UUID) -> Teacher | N
 # --- Teacher leave (S5) -----------------------------------------------------
 
 async def list_leaves(
-    session: AsyncSession, branch_id: uuid.UUID, teacher_id: uuid.UUID | None = None
+    session: AsyncSession,
+    branch_id: uuid.UUID,
+    teacher_id: uuid.UUID | None = None,
+    status: str | None = None,
 ) -> list[TeacherLeave]:
     query = select(TeacherLeave).where(
         TeacherLeave.branch_id == branch_id,
@@ -71,6 +74,8 @@ async def list_leaves(
     )
     if teacher_id is not None:
         query = query.where(TeacherLeave.teacher_id == teacher_id)
+    if status is not None:
+        query = query.where(TeacherLeave.approval_status == status)
     result = await session.execute(query.order_by(TeacherLeave.start_date))
     return list(result.scalars().all())
 
@@ -101,11 +106,15 @@ async def soft_delete_leave(session: AsyncSession, leave: TeacherLeave) -> None:
 async def teacher_on_leave(
     session: AsyncSession, teacher_id: uuid.UUID, on_date
 ) -> bool:
-    """Whether the teacher has an active leave covering ``on_date`` (inclusive)."""
+    """Whether the teacher has an APPROVED leave covering ``on_date`` (inclusive).
+
+    Only approved leaves block scheduling / substitution — a pending request
+    does not take effect until an admin approves it (migration 0068)."""
     result = await session.execute(
         select(TeacherLeave.id).where(
             TeacherLeave.teacher_id == teacher_id,
             TeacherLeave.is_deleted == False,
+            TeacherLeave.approval_status == "approved",
             TeacherLeave.start_date <= on_date,
             TeacherLeave.end_date >= on_date,
         )
