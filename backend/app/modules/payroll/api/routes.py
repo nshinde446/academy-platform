@@ -17,17 +17,22 @@ from app.modules.audit.services import audit_service
 from app.modules.auth.permissions.rbac import get_current_user, require_roles
 from app.modules.payroll.schemas.config_schemas import PayrollConfigUpdate
 from app.modules.payroll.schemas.payroll_schemas import (
+    ExtraDayRequestCreate,
+    ExtraDayRequestResponse,
     HolidayCreate,
     LedgerResponse,
     LifecycleAction,
     MonthSettingsResponse,
     MonthSettingsUpsert,
+    RequestDecision,
+    RequestHistoryRow,
     ReportResponse,
 )
 from app.modules.payroll.services import (
     config_service,
     month_service,
     report_service,
+    request_service,
 )
 
 router = APIRouter(prefix="/payroll", tags=["payroll"])
@@ -214,3 +219,85 @@ async def staff_ledger(
     return await report_service.staff_ledger(
         session, branch_id=branch_id, staff_id=staff_id
     )
+
+
+# ── Extra-day requests (§5) ──────────────────────────────────────────────────
+# Role checks are config-driven (payroll_config), so these use get_current_user
+# and the service verifies the raiser/approver roles against settings.
+
+@router.get("/requests", response_model=list[ExtraDayRequestResponse])
+async def list_requests(
+    branch_id: uuid.UUID = Query(...),
+    status: str | None = Query(default=None),
+    staff_id: uuid.UUID | None = Query(default=None),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    return await request_service.list_requests(
+        session, branch_id=branch_id, status=status, staff_id=staff_id
+    )
+
+
+@router.post("/requests", response_model=ExtraDayRequestResponse)
+async def raise_request(
+    body: ExtraDayRequestCreate,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    out = await request_service.raise_request(
+        session, branch_id=branch_id, staff_id=body.staff_id,
+        source_year=body.source_year, source_month=body.source_month,
+        shortfall_days=body.shortfall_days, note=body.note,
+        roles=current_user.get("roles", []), user_id=current_user["user_id"],
+        ip=_ip(request),
+    )
+    await session.commit()
+    return out
+
+
+@router.get("/requests/{request_id}/history", response_model=list[RequestHistoryRow])
+async def request_history(
+    request_id: uuid.UUID,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    return await request_service.history(
+        session, branch_id=branch_id, request_id=request_id
+    )
+
+
+@router.post("/requests/{request_id}/{verb}", response_model=ExtraDayRequestResponse)
+async def decide_request(
+    request_id: uuid.UUID,
+    verb: str,
+    body: RequestDecision,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Approve, reject or cancel a request (§5). Approve/reject are gated by the
+    configured approver role (Super Admin by default); cancel is the raiser's."""
+    from fastapi import HTTPException
+
+    common = dict(
+        branch_id=branch_id, request_id=request_id,
+        roles=current_user.get("roles", []), user_id=current_user["user_id"],
+        note=body.note, ip=_ip(request),
+    )
+    if verb == "approve":
+        out = await request_service.approve(session, **common)
+    elif verb == "reject":
+        out = await request_service.reject(session, **common)
+    elif verb == "cancel":
+        out = await request_service.cancel(
+            session, branch_id=branch_id, request_id=request_id,
+            user_id=current_user["user_id"], note=body.note, ip=_ip(request),
+        )
+    else:
+        raise HTTPException(status_code=404, detail="Unknown request action")
+    await session.commit()
+    return out

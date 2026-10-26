@@ -21,7 +21,34 @@ from app.modules.payroll.models.payroll_models import (
     PayrollMonthHoliday,
     PayrollMonthSettings,
 )
-from app.modules.payroll.services import payroll_service
+from app.modules.payroll.services import payroll_service, request_service
+
+
+async def _recompute_and_expire(
+    session: AsyncSession,
+    *,
+    branch_id: uuid.UUID,
+    year: int,
+    month: int,
+    user_id: uuid.UUID,
+) -> None:
+    """Recompute this month and every later CLOSED/LOCKED month, then auto-expire
+    any active request whose shortfall the balance now covers (§5/§12)."""
+    await payroll_service.recompute_from(
+        session, branch_id=branch_id, year=year, month=month, user_id=user_id
+    )
+    rows = (await session.execute(
+        select(PayrollMonthSettings).where(
+            PayrollMonthSettings.branch_id == branch_id,
+            PayrollMonthSettings.is_deleted == False,  # noqa: E712
+            PayrollMonthSettings.lifecycle.in_(("CLOSED", "LOCKED")),
+        )
+    )).scalars().all()
+    for s in rows:
+        if (s.year, s.month) >= (year, month):
+            await request_service.expire_covered(
+                session, branch_id=branch_id, year=s.year, month=s.month, user_id=user_id
+            )
 
 
 async def _get(
@@ -135,7 +162,7 @@ async def upsert_month(
 
     recomputed = False
     if s.lifecycle in ("CLOSED", "LOCKED"):
-        await payroll_service.recompute_from(
+        await _recompute_and_expire(
             session, branch_id=branch_id, year=year, month=month, user_id=user_id
         )
         recomputed = True
@@ -186,7 +213,7 @@ async def add_holiday(
     # A closed month that gains a holiday must be recomputed.
     s = await _get(session, branch_id, year, month)
     if s and s.lifecycle in ("CLOSED", "LOCKED"):
-        await payroll_service.recompute_from(
+        await _recompute_and_expire(
             session, branch_id=branch_id, year=year, month=month, user_id=user_id
         )
     return await get_month(session, branch_id, year, month)
@@ -219,7 +246,7 @@ async def remove_holiday(
     )
     s = await _get(session, branch_id, h.year, h.month)
     if s and s.lifecycle in ("CLOSED", "LOCKED"):
-        await payroll_service.recompute_from(
+        await _recompute_and_expire(
             session, branch_id=branch_id, year=h.year, month=h.month, user_id=user_id
         )
     return await get_month(session, branch_id, h.year, h.month)
@@ -263,13 +290,17 @@ async def change_lifecycle(
         await payroll_service.close_month(
             session, branch_id=branch_id, year=year, month=month, user_id=user_id
         )
+        # A freshly closed month may already be covered by the balance.
+        await request_service.expire_covered(
+            session, branch_id=branch_id, year=year, month=month, user_id=user_id
+        )
     else:
         s.lifecycle = target
         s.updated_by = user_id
         await session.flush()
         if verb == "reopen":
             # Recompute later months now that this one is editable again (§6).
-            await payroll_service.recompute_from(
+            await _recompute_and_expire(
                 session, branch_id=branch_id, year=year, month=month, user_id=user_id
             )
 

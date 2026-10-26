@@ -3,6 +3,7 @@ ledger (§7/§11)."""
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, datetime
 
 from pydantic import BaseModel, Field
@@ -103,3 +104,41 @@ class LedgerResponse(BaseModel):
     name: str
     current_balance: float
     rows: list[LedgerRow]
+
+
+# ── extra-day requests (§5) ──────────────────────────────────────────────────
+
+class ExtraDayRequestCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    staff_id: uuid.UUID
+    source_year: int
+    source_month: int = Field(ge=1, le=12)
+    shortfall_days: float = Field(gt=0, le=31)
+    note: str | None = None
+
+
+class RequestDecision(BaseModel):
+    model_config = {"extra": "forbid"}
+    note: str | None = None
+
+
+class ExtraDayRequestResponse(BaseModel):
+    id: str
+    staff_id: str
+    source_year: int
+    source_month: int
+    target_year: int
+    target_month: int
+    shortfall_days: float
+    request_status: str
+    requested_by: str
+    decided_by: str | None = None
+    note: str | None = None
+
+
+class RequestHistoryRow(BaseModel):
+    from_status: str | None = None
+    to_status: str
+    changed_by: str | None = None
+    note: str | None = None
+    changed_at: datetime | None = None
