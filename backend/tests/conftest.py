@@ -71,6 +71,10 @@ from app.modules.plugins.models.plugin_models import (  # noqa: F401
 from app.modules.ai.models.ai_models import (  # noqa: F401
     AIRequest, AIServiceConfig,
 )
+from app.modules.payroll.models.payroll_models import (  # noqa: F401
+    CarryForwardLedger, ExtraDayRequest, ExtraDayRequestHistory, PayrollConfig,
+    PayrollMonthHoliday, PayrollMonthSettings, PayrollStaffMonth,
+)
 from app.modules.auth.services.auth_service import hash_password
 
 # Default to fast in-process SQLite for local runs; CI sets TEST_DATABASE_URL to

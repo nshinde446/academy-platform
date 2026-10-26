@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { KeyRound, LogIn, LogOut } from "lucide-react";
 import { useUserStore } from "@/store/user-store";
 import { useAuthStore } from "@/store/auth-store";
+import { usePayrollEnabled } from "@/hooks/use-payroll";
 import { ChangePasswordDialog } from "@/components/layout/change-password-dialog";
 
 interface NavItem {
@@ -141,6 +142,18 @@ const DEV_SECTION: NavSection = {
   items: [{ label: "Monitoring", href: "/dev" }],
 };
 
+// Payroll — admin-only and dormant until the payroll_enabled switch is flipped
+// (§14 rollout). Hidden entirely while disabled.
+const PAYROLL_SECTION: NavSection = {
+  label: "Payroll",
+  items: [
+    { label: "Report", href: "/payroll" },
+    { label: "Month Setup", href: "/payroll/setup" },
+    { label: "Requests", href: "/payroll/requests" },
+    { label: "Settings", href: "/payroll/settings" },
+  ],
+};
+
 export function Sidebar() {
   const pathname = usePathname() ?? "";
   const user = useUserStore((s) => s.user);
@@ -149,10 +162,17 @@ export function Sidebar() {
 
   const roles = user?.roles ?? [];
   const isAdmin = roles.some((r) => ADMIN_ROLES.includes(r));
+  // Payroll is admin-only and dormant until switched on — only then fetch the
+  // flag and show the section.
+  const payrollEnabled = usePayrollEnabled(isAdmin);
   // Managers get everything; the two restricted roles get a curated nav; all
   // other existing roles keep the default sections unchanged.
   const baseSections = isAdmin
-    ? [...SECTIONS, ADMIN_SECTION]
+    ? [
+        ...SECTIONS,
+        ...(payrollEnabled ? [PAYROLL_SECTION] : []),
+        ADMIN_SECTION,
+      ]
     : roles.includes("floor_coordinator")
       ? COORDINATOR_SECTIONS
       : roles.includes("accounts")
