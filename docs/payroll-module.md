@@ -84,7 +84,7 @@ staff actually worked ("counted once", §12).
 | 4 | extra-day request flow (§5) | ✅ done |
 | 5 | PDF/Excel exports + comparison tests | ✅ done |
 | 6 | frontend: Month Setup + Monthly Report | ✅ done |
-| 7 | frontend: Staff Ledger + Requests + Settings | ⬜ |
+| 7 | frontend: Staff Ledger + Requests + Settings | ✅ done |
 | 8 | rollout: flag flip, staging parallel month, backup/restore drill | ⬜ |
 
 ## Roles (§9) — enforced server-side in Slice 3+

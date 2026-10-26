@@ -149,6 +149,8 @@ const PAYROLL_SECTION: NavSection = {
   items: [
     { label: "Report", href: "/payroll" },
     { label: "Month Setup", href: "/payroll/setup" },
+    { label: "Requests", href: "/payroll/requests" },
+    { label: "Settings", href: "/payroll/settings" },
   ],
 };
 

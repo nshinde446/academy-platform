@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useBranchId, useRoles } from "@/store/user-store";
 import { PageHeader } from "@/components/layout/page-header";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/lib/api-error";
 import {
@@ -45,6 +46,7 @@ export default function PayrollSetupPage() {
 
   const monthQuery = useMonth(branchId, year, month);
   const data = monthQuery.data;
+  const notSet = !data || data.lifecycle === "NOT_SET";
   const locked = data?.lifecycle === "LOCKED";
   const closed = data?.lifecycle === "CLOSED" || locked;
 
@@ -53,46 +55,50 @@ export default function PayrollSetupPage() {
   const addHoliday = useAddHoliday(branchId);
   const removeHoliday = useRemoveHoliday(branchId);
 
-  const [required, setRequired] = useState("26");
-  const [notes, setNotes] = useState("");
-  useEffect(() => {
-    if (data && data.lifecycle !== "NOT_SET") {
-      setRequired(String(data.required_days));
-      setNotes(data.notes ?? "");
-    } else {
-      setRequired("26");
-      setNotes("");
-    }
-  }, [data]);
+  // Draft overlays over server data — editable without a sync effect. Cleared
+  // when the selected month changes or after a successful save.
+  const [draft, setDraft] = useState<{ required: string; notes: string } | null>(null);
+  const baseRequired = notSet ? "26" : String(data!.required_days);
+  const baseNotes = data?.notes ?? "";
+  const required = draft?.required ?? baseRequired;
+  const notes = draft?.notes ?? baseNotes;
+  function edit(part: Partial<{ required: string; notes: string }>) {
+    setDraft({ required, notes, ...part });
+  }
 
-  // Holiday form.
-  const [hDate, setHDate] = useState(`${year}-${pad(month)}-01`);
+  const defaultHDate = `${year}-${pad(month)}-01`;
+  const [hDateDraft, setHDateDraft] = useState<string | null>(null);
+  const hDate = hDateDraft ?? defaultHDate;
   const [hTitle, setHTitle] = useState("");
   const [hKind, setHKind] = useState("HOLIDAY");
-  useEffect(() => setHDate(`${year}-${pad(month)}-01`), [year, month]);
 
   const [removeTarget, setRemoveTarget] = useState<Holiday | null>(null);
+  // One prompt dialog, shared by the two reason-gated actions.
+  const [reasonFor, setReasonFor] = useState<"save" | "reopen" | null>(null);
 
-  async function saveMonth() {
-    let reason: string | null = null;
-    if (closed) {
-      reason = window.prompt("This month is closed. Enter a reason for the change:") || null;
-      if (!reason) return;
-    }
+  function pickMonth(nextMonth: number, nextYear: number) {
+    setMonth(nextMonth);
+    setYear(nextYear);
+    setDraft(null);
+    setHDateDraft(null);
+  }
+
+  async function saveMonth(reason: string | null) {
     try {
       await upsert.mutateAsync({ year, month, required_days: Number(required), notes, reason });
+      setDraft(null);
       toast.success("Saved", closed ? "Month recomputed." : "Required days updated.");
     } catch (e) {
       toast.error("Could not save", apiErrorMessage(e, "Please try again."));
     }
   }
 
-  async function doLifecycle(verb: "close" | "lock" | "reopen") {
-    let reason: string | null = null;
-    if (verb === "reopen") {
-      reason = window.prompt("Reason for reopening this month:") || null;
-      if (!reason) return;
-    }
+  async function onSaveClick() {
+    if (closed) setReasonFor("save");
+    else await saveMonth(null);
+  }
+
+  async function doLifecycle(verb: "close" | "lock" | "reopen", reason: string | null) {
     try {
       await lifecycle.mutateAsync({ year, month, verb, reason });
       toast.success(`Month ${verb === "reopen" ? "reopened" : verb + "d"}`);
@@ -108,6 +114,7 @@ export default function PayrollSetupPage() {
         year, month, holiday_date: hDate, title: hTitle.trim(), kind: hKind, credit_days: 1,
       });
       setHTitle("");
+      setHDateDraft(null);
       toast.success("Holiday added");
     } catch (e) {
       toast.error("Could not add holiday", apiErrorMessage(e, "Please try again."));
@@ -131,14 +138,14 @@ export default function PayrollSetupPage() {
           <select
             className="h-9 rounded-md border bg-background px-2 text-sm"
             value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
+            onChange={(e) => pickMonth(Number(e.target.value), year)}
           >
             {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
           </select>
           <select
             className="h-9 rounded-md border bg-background px-2 text-sm"
             value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
+            onChange={(e) => pickMonth(month, Number(e.target.value))}
           >
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
@@ -171,7 +178,7 @@ export default function PayrollSetupPage() {
               max="31"
               value={required}
               disabled={!canEdit || locked}
-              onChange={(e) => setRequired(e.target.value)}
+              onChange={(e) => edit({ required: e.target.value })}
               className="w-28"
             />
           </div>
@@ -181,12 +188,12 @@ export default function PayrollSetupPage() {
               id="notes"
               value={notes}
               disabled={!canEdit || locked}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(e) => edit({ notes: e.target.value })}
             />
           </div>
           {canEdit && !locked && (
-            <Button onClick={saveMonth} disabled={upsert.isPending}>
-              {data?.lifecycle === "NOT_SET" ? "Create month" : "Save"}
+            <Button onClick={onSaveClick} disabled={upsert.isPending}>
+              {notSet ? "Create month" : "Save"}
             </Button>
           )}
         </div>
@@ -198,17 +205,17 @@ export default function PayrollSetupPage() {
         {canEdit && data && data.lifecycle !== "NOT_SET" && (
           <div className="flex flex-wrap gap-2 border-t pt-3">
             {data.lifecycle === "OPEN" && (
-              <Button variant="outline" onClick={() => doLifecycle("close")} disabled={lifecycle.isPending}>
+              <Button variant="outline" onClick={() => doLifecycle("close", null)} disabled={lifecycle.isPending}>
                 Close month
               </Button>
             )}
             {data.lifecycle === "CLOSED" && (
-              <Button variant="outline" onClick={() => doLifecycle("lock")} disabled={lifecycle.isPending}>
+              <Button variant="outline" onClick={() => doLifecycle("lock", null)} disabled={lifecycle.isPending}>
                 Lock
               </Button>
             )}
             {closed && (
-              <Button variant="outline" onClick={() => doLifecycle("reopen")} disabled={lifecycle.isPending}>
+              <Button variant="outline" onClick={() => setReasonFor("reopen")} disabled={lifecycle.isPending}>
                 Reopen…
               </Button>
             )}
@@ -241,11 +248,11 @@ export default function PayrollSetupPage() {
           <p className="text-sm text-muted-foreground">No paid holidays declared for this month.</p>
         )}
 
-        {canEdit && !locked && (
+        {canEdit && !locked && !notSet && (
           <div className="flex flex-wrap items-end gap-2 border-t pt-3">
             <div className="flex flex-col gap-1">
               <Label htmlFor="hdate">Date</Label>
-              <Input id="hdate" type="date" value={hDate} onChange={(e) => setHDate(e.target.value)} className="w-40" />
+              <Input id="hdate" type="date" value={hDate} onChange={(e) => setHDateDraft(e.target.value)} className="w-40" />
             </div>
             <div className="flex min-w-[180px] flex-1 flex-col gap-1">
               <Label htmlFor="htitle">Title</Label>
@@ -268,6 +275,9 @@ export default function PayrollSetupPage() {
             </Button>
           </div>
         )}
+        {notSet && (
+          <p className="text-xs text-muted-foreground">Create the month first to add holidays.</p>
+        )}
       </section>
 
       <ConfirmDialog
@@ -287,6 +297,25 @@ export default function PayrollSetupPage() {
           } finally {
             setRemoveTarget(null);
           }
+        }}
+      />
+
+      <PromptDialog
+        open={reasonFor !== null}
+        onOpenChange={(o) => !o && setReasonFor(null)}
+        title={reasonFor === "reopen" ? "Reopen month" : "Change a closed month"}
+        description={
+          reasonFor === "reopen"
+            ? "Reopening recomputes later months. Enter a reason (recorded in the audit log)."
+            : "This month is closed. Enter a reason for the change (audited; the month is recomputed)."
+        }
+        label="Reason"
+        required
+        confirmLabel={reasonFor === "reopen" ? "Reopen" : "Save"}
+        onConfirm={async (reason) => {
+          if (reasonFor === "reopen") await doLifecycle("reopen", reason);
+          else await saveMonth(reason);
+          setReasonFor(null);
         }}
       />
     </div>

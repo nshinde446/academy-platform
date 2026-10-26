@@ -137,6 +137,25 @@ export interface DepartmentLite {
   name: string;
 }
 
+export interface StaffLite {
+  id: string;
+  emp_code: string;
+  first_name: string;
+  last_name: string;
+}
+
+/** Staff list for the request raiser's staff picker (reuses the staff endpoint). */
+export function usePayrollStaff(branchId: string | undefined) {
+  return useQuery<StaffLite[]>({
+    queryKey: [...payrollKeys.all, "staff", branchId ?? ""],
+    queryFn: async () =>
+      (await apiClient.get<StaffLite[]>("/api/v1/staff", {
+        params: { branch_id: branchId },
+      })).data,
+    enabled: !!branchId,
+  });
+}
+
 /** Departments for the report filter (reuses the staff module's endpoint). */
 export function usePayrollDepartments(branchId: string | undefined) {
   return useQuery<DepartmentLite[]>({
@@ -257,6 +276,60 @@ export function useLedger(branchId: string | undefined, staffId: string | undefi
         params: { branch_id: branchId },
       })).data,
     enabled: !!branchId && !!staffId,
+  });
+}
+
+// ── extra-day requests ─────────────────────────────────────────────────────
+
+export interface RequestHistoryRow {
+  from_status: string | null;
+  to_status: string;
+  changed_by: string | null;
+  note: string | null;
+  changed_at: string | null;
+}
+
+export function useRequests(branchId: string | undefined, status?: string) {
+  return useQuery<ExtraDayRequestDto[]>({
+    queryKey: payrollKeys.requests(branchId!, status),
+    queryFn: async () =>
+      (await apiClient.get<ExtraDayRequestDto[]>("/api/v1/payroll/requests", {
+        params: { branch_id: branchId, status: status || undefined },
+      })).data,
+    enabled: !!branchId,
+  });
+}
+
+export function useRaiseRequest(branchId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: { staff_id: string; source_year: number; source_month: number; shortfall_days: number; note?: string }) =>
+      (await apiClient.post<ExtraDayRequestDto>("/api/v1/payroll/requests", v, {
+        params: { branch_id: branchId },
+      })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: payrollKeys.all }),
+  });
+}
+
+export function useDecideRequest(branchId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: { id: string; verb: "approve" | "reject" | "cancel"; note?: string }) =>
+      (await apiClient.post<ExtraDayRequestDto>(`/api/v1/payroll/requests/${v.id}/${v.verb}`, {
+        note: v.note ?? null,
+      }, { params: { branch_id: branchId } })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: payrollKeys.all }),
+  });
+}
+
+export function useRequestHistory(branchId: string | undefined, requestId: string | undefined) {
+  return useQuery<RequestHistoryRow[]>({
+    queryKey: [...payrollKeys.all, "history", branchId ?? "", requestId ?? ""],
+    queryFn: async () =>
+      (await apiClient.get<RequestHistoryRow[]>(`/api/v1/payroll/requests/${requestId}/history`, {
+        params: { branch_id: branchId },
+      })).data,
+    enabled: !!branchId && !!requestId,
   });
 }
 
