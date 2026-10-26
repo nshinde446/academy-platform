@@ -32,6 +32,7 @@ from app.modules.teacher_portal.services import (
     config_service,
     leave_service,
     portal_service,
+    productivity_service,
 )
 
 me_router = APIRouter(prefix="/me", tags=["teacher-portal"])
@@ -173,6 +174,17 @@ async def my_month_summary(
 
 
 # ── leave (self-service: apply / list / withdraw) ────────────────────────────
+
+
+@me_router.get("/productivity")
+async def my_productivity(
+    range: str = Query(default="month"),
+    me: TeacherSession = Depends(get_current_teacher),
+    session: AsyncSession = Depends(get_db),
+):
+    """Factual productivity metrics for the signed-in teacher, bucketed for a
+    chart (week / month / quarter / year)."""
+    return await productivity_service.productivity(session, me.staff_id, range)
 
 
 @me_router.get("/leaves")
