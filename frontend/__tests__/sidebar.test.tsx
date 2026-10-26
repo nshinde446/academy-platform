@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { Sidebar } from "@/components/layout/sidebar";
+
+// The sidebar reads the payroll_enabled flag via react-query, so renders need a
+// QueryClient. The flag never fetches here (no admin user), so the section stays
+// hidden and the default layout assertions hold.
+function withQuery(ui: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
+}
 
 let currentPathname = "/home";
 
@@ -31,19 +41,19 @@ describe("Sidebar (MSA_Design section layout)", () => {
   });
 
   it("renders the brand mark + product name", () => {
-    render(<Sidebar />);
+    render(withQuery(<Sidebar />));
     // MSA wordmark + the gold exam-stream tagline beneath it.
     expect(screen.getByText("Matrix Science Academy")).toBeInTheDocument();
     expect(screen.getByText("JEE · NEET · MHT-CET")).toBeInTheDocument();
   });
 
   it("renders the user footer placeholder when not signed in", () => {
-    render(<Sidebar />);
+    render(withQuery(<Sidebar />));
     expect(screen.getByText("Not signed in")).toBeInTheDocument();
   });
 
   it("renders the top (unlabeled) primary surfaces", () => {
-    render(<Sidebar />);
+    render(withQuery(<Sidebar />));
     for (const label of [
       "Home",
       "Today",
@@ -58,7 +68,7 @@ describe("Sidebar (MSA_Design section layout)", () => {
   });
 
   it("renders Content section with Materials + Question Bank + Papers", () => {
-    render(<Sidebar />);
+    render(withQuery(<Sidebar />));
     expect(screen.getByText("Content")).toBeInTheDocument();
 
     // Papers is the newest addition (M4) — flagged NEW.
@@ -78,7 +88,7 @@ describe("Sidebar (MSA_Design section layout)", () => {
   });
 
   it("renders Academics section with every config surface", () => {
-    render(<Sidebar />);
+    render(withQuery(<Sidebar />));
     expect(screen.getByText("Academics")).toBeInTheDocument();
     for (const [label, href] of [
       ["Courses", "/courses"],
@@ -96,7 +106,7 @@ describe("Sidebar (MSA_Design section layout)", () => {
 
   it("highlights the active route", () => {
     currentPathname = "/students";
-    render(<Sidebar />);
+    render(withQuery(<Sidebar />));
     expect(screen.getByRole("link", { name: "Students" }).className).toContain(
       "font-medium",
     );
@@ -107,7 +117,7 @@ describe("Sidebar (MSA_Design section layout)", () => {
 
   it("treats child paths as active for the parent route", () => {
     currentPathname = "/students/abc-123";
-    render(<Sidebar />);
+    render(withQuery(<Sidebar />));
     expect(screen.getByRole("link", { name: "Students" }).className).toContain(
       "font-medium",
     );
