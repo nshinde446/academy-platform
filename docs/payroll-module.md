@@ -80,7 +80,7 @@ staff actually worked ("counted once", §12).
 |---|---|---|
 | 1 | module + migration 0069 + `payroll_config` + settings endpoint | ✅ done |
 | 2 | calc engine + ledger + recompute; all §3 examples as tests | ✅ done |
-| 3 | month setup + monthly report API + RBAC (§7/§9) | ⬜ |
+| 3 | month setup + monthly report API + RBAC (§7/§9) | ✅ done |
 | 4 | extra-day request flow (§5) | ⬜ |
 | 5 | PDF/Excel exports + comparison tests | ⬜ |
 | 6 | frontend: Month Setup + Monthly Report | ⬜ |
