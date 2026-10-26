@@ -33,8 +33,13 @@ def _next_month(year: int, month: int) -> tuple[int, int]:
     return (year + 1, 1) if month == 12 else (year, month + 1)
 
 
+# The dedicated payroll role is a super-admin-equivalent within payroll (0070):
+# it may always raise and approve.
+_PAYROLL_ADMIN = {"super_admin", "payroll_admin"}
+
+
 async def _roles_can_raise(session: AsyncSession, roles: list[str]) -> bool:
-    if "super_admin" in roles:
+    if _PAYROLL_ADMIN & set(roles):
         return True
     allowed = set(await config_service.get_value(session, "request_raiser_roles") or [])
     if await config_service.get_value(session, "allow_manager_approver"):
@@ -43,7 +48,7 @@ async def _roles_can_raise(session: AsyncSession, roles: list[str]) -> bool:
 
 
 async def _roles_can_approve(session: AsyncSession, roles: list[str]) -> bool:
-    if "super_admin" in roles:
+    if _PAYROLL_ADMIN & set(roles):
         return True
     if await config_service.get_value(session, "allow_manager_approver") and "manager" in roles:
         return True

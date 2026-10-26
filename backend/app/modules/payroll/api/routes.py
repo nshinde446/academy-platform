@@ -39,8 +39,12 @@ from app.modules.payroll.services import (
 router = APIRouter(prefix="/payroll", tags=["payroll"])
 
 # §9 role gates. super_admin is always allowed by require_roles.
-_REPORT_ROLES = ["super_admin", "accounts", "branch_admin", "manager"]
-_LEDGER_ROLES = ["super_admin", "accounts"]
+# `payroll_admin` is the dedicated role that owns payroll (migration 0070) — the
+# super-admin-equivalent *within* this module, allowed on every payroll action.
+_ADMIN_ROLES = ["super_admin", "payroll_admin"]
+_REPORT_ROLES = ["super_admin", "payroll_admin", "accounts", "branch_admin", "manager"]
+# §9 "View staff ledger": Super Admin + Accounts/Branch Admin (not Manager/Teacher).
+_LEDGER_ROLES = ["super_admin", "payroll_admin", "accounts", "branch_admin"]
 
 
 def _ip(request: Request) -> str | None:
@@ -80,7 +84,7 @@ async def get_payroll_config(
 async def update_payroll_config(
     body: PayrollConfigUpdate,
     request: Request,
-    current_user: dict = Depends(require_roles(["super_admin"])),
+    current_user: dict = Depends(require_roles(_ADMIN_ROLES)),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, object]:
     """Change payroll settings (Super Admin only, §9). The before/after is written
@@ -137,7 +141,7 @@ async def upsert_month(
     body: MonthSettingsUpsert,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(["super_admin"])),
+    current_user: dict = Depends(require_roles(_ADMIN_ROLES)),
     session: AsyncSession = Depends(get_db),
 ):
     out = await month_service.upsert_month(
@@ -156,7 +160,7 @@ async def add_holiday(
     body: HolidayCreate,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(["super_admin"])),
+    current_user: dict = Depends(require_roles(_ADMIN_ROLES)),
     session: AsyncSession = Depends(get_db),
 ):
     out = await month_service.add_holiday(
@@ -175,7 +179,7 @@ async def remove_holiday(
     holiday_id: uuid.UUID,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(["super_admin"])),
+    current_user: dict = Depends(require_roles(_ADMIN_ROLES)),
     session: AsyncSession = Depends(get_db),
 ):
     out = await month_service.remove_holiday(
@@ -194,7 +198,7 @@ async def change_lifecycle(
     body: LifecycleAction,
     request: Request,
     branch_id: uuid.UUID = Query(...),
-    current_user: dict = Depends(require_roles(["super_admin"])),
+    current_user: dict = Depends(require_roles(_ADMIN_ROLES)),
     session: AsyncSession = Depends(get_db),
 ):
     """Close, lock or reopen a month (§6). Super Admin only; reopen needs a

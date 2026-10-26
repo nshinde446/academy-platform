@@ -162,22 +162,27 @@ export function Sidebar() {
 
   const roles = user?.roles ?? [];
   const isAdmin = roles.some((r) => ADMIN_ROLES.includes(r));
-  // Payroll is admin-only and dormant until switched on — only then fetch the
-  // flag and show the section.
-  const payrollEnabled = usePayrollEnabled(isAdmin);
+  // Payroll shows for admins and the dedicated payroll_admin role, and only once
+  // the payroll_enabled switch is flipped (dormant until then).
+  const canPayroll =
+    isAdmin || roles.includes("payroll_admin") || roles.includes("accounts");
+  const payrollEnabled = usePayrollEnabled(canPayroll);
+  const showPayroll = canPayroll && payrollEnabled;
   // Managers get everything; the two restricted roles get a curated nav; all
   // other existing roles keep the default sections unchanged.
   const baseSections = isAdmin
     ? [
         ...SECTIONS,
-        ...(payrollEnabled ? [PAYROLL_SECTION] : []),
+        ...(showPayroll ? [PAYROLL_SECTION] : []),
         ADMIN_SECTION,
       ]
     : roles.includes("floor_coordinator")
       ? COORDINATOR_SECTIONS
       : roles.includes("accounts")
-        ? ACCOUNTS_SECTIONS
-        : SECTIONS;
+        ? [...ACCOUNTS_SECTIONS, ...(showPayroll ? [PAYROLL_SECTION] : [])]
+        : roles.includes("payroll_admin")
+          ? [...SECTIONS, ...(showPayroll ? [PAYROLL_SECTION] : [])]
+          : SECTIONS;
   // Append the developer section only for the developer (email-gated on the
   // server; this just shows/hides the nav entry).
   const sections = user?.is_developer

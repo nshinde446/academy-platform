@@ -87,6 +87,16 @@ staff actually worked ("counted once", §12).
 | 7 | frontend: Staff Ledger + Requests + Settings | ✅ done |
 | 8 | rollout: flag flip, staging parallel month, backup/restore drill | ✅ runbook (`docs/payroll-rollout.md`) |
 
+## `payroll_admin` role (migration 0070)
+
+A dedicated **`payroll_admin`** role owns the module — the super-admin-equivalent
+*within payroll*. It may do everything the §9 table grants Super Admin (set up
+months, close/lock/reopen, change settings, raise/approve requests, view
+everything) **without** broader super_admin powers. Mirrors the dedicated
+`teacher_portal` role. Assign it to whoever runs payroll (in addition to their
+normal role); the module's write gates allow `super_admin` **or** `payroll_admin`.
+Branch Admin remains view-only for setup (§9).
+
 ## Roles (§9) — enforced server-side in Slice 3+
 
 | Action | super_admin | accounts / branch_admin | manager | teacher |
