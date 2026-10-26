@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
@@ -30,6 +30,7 @@ from app.modules.payroll.schemas.payroll_schemas import (
 )
 from app.modules.payroll.services import (
     config_service,
+    export_service,
     month_service,
     report_service,
     request_service,
@@ -44,6 +45,25 @@ _LEDGER_ROLES = ["super_admin", "accounts"]
 
 def _ip(request: Request) -> str | None:
     return request.client.host if request.client else None
+
+
+def _download(filename: str, data: bytes, media_type: str) -> Response:
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+async def _log_export(session, current_user, request, what: str, detail: dict) -> None:
+    branch_raw = current_user.get("branch_id")
+    await audit_service.log_action(
+        session, user_id=current_user["user_id"], action=f"Export {what}",
+        table_name="payroll", record_id=current_user["user_id"],
+        new_values=detail, ip_address=_ip(request),
+        branch_id=uuid.UUID(branch_raw) if branch_raw else None,
+    )
+    await session.commit()
 
 
 @router.get("/config")
@@ -209,6 +229,30 @@ async def monthly_report(
     )
 
 
+@router.get("/report/export")
+async def export_report(
+    request: Request,
+    year: int = Query(...),
+    month: int = Query(..., ge=1, le=12),
+    branch_id: uuid.UUID = Query(...),
+    fmt: str = Query("pdf"),
+    department_id: uuid.UUID | None = Query(default=None),
+    staff_id: uuid.UUID | None = Query(default=None),
+    current_user: dict = Depends(require_roles(_REPORT_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Monthly report as PDF or Excel (§7). Access-checked and logged."""
+    name, data, media = await export_service.report(
+        session, branch_id=branch_id, year=year, month=month, fmt=fmt,
+        department_id=department_id, staff_id=staff_id,
+    )
+    await _log_export(
+        session, current_user, request, "Payroll Report",
+        {"year": year, "month": month, "fmt": fmt},
+    )
+    return _download(name, data, media)
+
+
 @router.get("/staff/{staff_id}/ledger", response_model=LedgerResponse)
 async def staff_ledger(
     staff_id: uuid.UUID,
@@ -219,6 +263,26 @@ async def staff_ledger(
     return await report_service.staff_ledger(
         session, branch_id=branch_id, staff_id=staff_id
     )
+
+
+@router.get("/staff/{staff_id}/ledger/export")
+async def export_ledger(
+    staff_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    fmt: str = Query("pdf"),
+    current_user: dict = Depends(require_roles(_LEDGER_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Staff carry-forward ledger as PDF or Excel (§4). Access-checked and logged."""
+    name, data, media = await export_service.ledger(
+        session, branch_id=branch_id, staff_id=staff_id, fmt=fmt
+    )
+    await _log_export(
+        session, current_user, request, "Payroll Ledger",
+        {"staff_id": str(staff_id), "fmt": fmt},
+    )
+    return _download(name, data, media)
 
 
 # ── Extra-day requests (§5) ──────────────────────────────────────────────────

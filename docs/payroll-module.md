@@ -82,7 +82,7 @@ staff actually worked ("counted once", §12).
 | 2 | calc engine + ledger + recompute; all §3 examples as tests | ✅ done |
 | 3 | month setup + monthly report API + RBAC (§7/§9) | ✅ done |
 | 4 | extra-day request flow (§5) | ✅ done |
-| 5 | PDF/Excel exports + comparison tests | ⬜ |
+| 5 | PDF/Excel exports + comparison tests | ✅ done |
 | 6 | frontend: Month Setup + Monthly Report | ⬜ |
 | 7 | frontend: Staff Ledger + Requests + Settings | ⬜ |
 | 8 | rollout: flag flip, staging parallel month, backup/restore drill | ⬜ |
