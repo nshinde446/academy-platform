@@ -19,21 +19,30 @@ from app.modules.staff.models.staff_models import Department, Staff
 BRANCH = "00000000-0000-0000-0000-000000000001"
 
 
-async def _branch_admin_token(client, db: AsyncSession) -> str:
-    """Create a branch_admin user + role and return its access token."""
-    role = Role(name="branch_admin", display_name="Branch Admin", status="active", is_deleted=False)
-    db.add(role)
-    await db.flush()
+async def _user_with_role(client, db: AsyncSession, role_name: str, email: str) -> str:
+    """Create a user with ``role_name`` (seeding the role if needed) and return
+    its access token."""
+    from sqlalchemy import select as _select
+
+    role = (await db.execute(_select(Role).where(Role.name == role_name))).scalar_one_or_none()
+    if role is None:
+        role = Role(name=role_name, display_name=role_name.title(), status="active", is_deleted=False)
+        db.add(role)
+        await db.flush()
     u = User(
-        email="ba@test.com", password_hash=hash_password("Branch123!"),
-        first_name="Bran", last_name="Admin", status="active", is_deleted=False,
+        email=email, password_hash=hash_password("Pass123!"),
+        first_name="Test", last_name="User", status="active", is_deleted=False,
     )
     db.add(u)
     await db.flush()
     db.add(UserRole(user_id=u.id, role_id=role.id, status="active", is_deleted=False))
     await db.commit()
-    r = await client.post("/api/v1/auth/login", json={"email": "ba@test.com", "password": "Branch123!"})
+    r = await client.post("/api/v1/auth/login", json={"email": email, "password": "Pass123!"})
     return r.cookies["access_token"]
+
+
+async def _branch_admin_token(client, db: AsyncSession) -> str:
+    return await _user_with_role(client, db, "branch_admin", "ba@test.com")
 
 
 async def _seed_staff(db: AsyncSession, *, full: int, year: int, month: int) -> Staff:
@@ -212,6 +221,39 @@ async def test_ledger_requires_role(client, db_session, seed_data):
     r = await client.get(
         f"/api/v1/payroll/staff/{s.id}/ledger?branch_id={BRANCH}",
         cookies={"access_token": tok},
+    )
+    assert r.status_code == 403
+
+
+async def test_payroll_admin_can_set_up_and_close(client, db_session, seed_data):
+    """The dedicated payroll_admin role (0070) can set up and close a month —
+    the super-admin-equivalent within payroll (not branch_admin, which only
+    views)."""
+    await _seed_staff(db_session, full=27, year=2026, month=3)
+    tok = await _user_with_role(client, db_session, "payroll_admin", "pa@test.com")
+
+    r = await client.put(
+        f"/api/v1/payroll/months/2026/3?branch_id={BRANCH}",
+        json={"required_days": 26}, cookies={"access_token": tok},
+    )
+    assert r.status_code == 200
+    assert r.json()["lifecycle"] == "OPEN"
+
+    c = await client.post(
+        f"/api/v1/payroll/months/2026/3/close?branch_id={BRANCH}",
+        json={}, cookies={"access_token": tok},
+    )
+    assert c.status_code == 200
+    assert c.json()["lifecycle"] == "CLOSED"
+
+
+async def test_branch_admin_cannot_set_up(client, db_session, seed_data):
+    """Branch Admin may view but not set up a month (§9) — setup is super_admin /
+    payroll_admin only."""
+    tok = await _branch_admin_token(client, db_session)
+    r = await client.put(
+        f"/api/v1/payroll/months/2026/3?branch_id={BRANCH}",
+        json={"required_days": 26}, cookies={"access_token": tok},
     )
     assert r.status_code == 403
 
