@@ -85,7 +85,7 @@ staff actually worked ("counted once", §12).
 | 5 | PDF/Excel exports + comparison tests | ✅ done |
 | 6 | frontend: Month Setup + Monthly Report | ✅ done |
 | 7 | frontend: Staff Ledger + Requests + Settings | ✅ done |
-| 8 | rollout: flag flip, staging parallel month, backup/restore drill | ⬜ |
+| 8 | rollout: flag flip, staging parallel month, backup/restore drill | ✅ runbook (`docs/payroll-rollout.md`) |
 
 ## Roles (§9) — enforced server-side in Slice 3+
 
