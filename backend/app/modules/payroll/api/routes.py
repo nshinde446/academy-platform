@@ -40,7 +40,8 @@ router = APIRouter(prefix="/payroll", tags=["payroll"])
 
 # §9 role gates. super_admin is always allowed by require_roles.
 _REPORT_ROLES = ["super_admin", "accounts", "branch_admin", "manager"]
-_LEDGER_ROLES = ["super_admin", "accounts"]
+# §9 "View staff ledger": Super Admin + Accounts/Branch Admin (not Manager/Teacher).
+_LEDGER_ROLES = ["super_admin", "accounts", "branch_admin"]
 
 
 def _ip(request: Request) -> str | None:

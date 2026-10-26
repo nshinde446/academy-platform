@@ -12,9 +12,28 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.attendance.models.attendance_models import StaffDailyAttendance
+from app.modules.auth.models.auth_models import Role, User, UserRole
+from app.modules.auth.services.auth_service import hash_password
 from app.modules.staff.models.staff_models import Department, Staff
 
 BRANCH = "00000000-0000-0000-0000-000000000001"
+
+
+async def _branch_admin_token(client, db: AsyncSession) -> str:
+    """Create a branch_admin user + role and return its access token."""
+    role = Role(name="branch_admin", display_name="Branch Admin", status="active", is_deleted=False)
+    db.add(role)
+    await db.flush()
+    u = User(
+        email="ba@test.com", password_hash=hash_password("Branch123!"),
+        first_name="Bran", last_name="Admin", status="active", is_deleted=False,
+    )
+    db.add(u)
+    await db.flush()
+    db.add(UserRole(user_id=u.id, role_id=role.id, status="active", is_deleted=False))
+    await db.commit()
+    r = await client.post("/api/v1/auth/login", json={"email": "ba@test.com", "password": "Branch123!"})
+    return r.cookies["access_token"]
 
 
 async def _seed_staff(db: AsyncSession, *, full: int, year: int, month: int) -> Staff:
@@ -195,6 +214,19 @@ async def test_ledger_requires_role(client, db_session, seed_data):
         cookies={"access_token": tok},
     )
     assert r.status_code == 403
+
+
+async def test_ledger_allows_branch_admin(client, db_session, seed_data):
+    """§9: Branch Admin may view the staff ledger (regression — branch_admin was
+    once missing from the ledger role gate)."""
+    s = await _seed_staff(db_session, full=26, year=2026, month=3)
+    tok = await _branch_admin_token(client, db_session)
+    r = await client.get(
+        f"/api/v1/payroll/staff/{s.id}/ledger?branch_id={BRANCH}",
+        cookies={"access_token": tok},
+    )
+    assert r.status_code == 200
+    assert r.json()["emp_code"] == "91000"
 
 
 async def test_reopen_requires_reason(client, db_session, seed_data):
