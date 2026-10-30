@@ -91,6 +91,8 @@ class LeaveApply(BaseModel):
 
     start_date: date
     end_date: date
+    leave_type: str = "casual"
+    half_day: bool = False
     reason: str | None = None
 
 

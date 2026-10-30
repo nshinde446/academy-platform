@@ -20,6 +20,12 @@ DEFAULTS: dict[str, object] = {
     "lockout_minutes": 15,
     "min_password_length": 8,
     "teacher_login_enabled": False,
+    # Leave (Teacher Portal Changes §2/§3): how far back leave can be applied,
+    # whether half-day leave is allowed, and the payroll present-days threshold
+    # that the WOF balance accrues above.
+    "leave_backdate_days": 7,
+    "leave_half_day_allowed": True,
+    "wof_required_days": 24,
 }
 
 

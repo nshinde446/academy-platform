@@ -33,6 +33,7 @@ from app.modules.teacher_portal.services import (
     leave_service,
     portal_service,
     productivity_service,
+    wof_service,
 )
 
 me_router = APIRouter(prefix="/me", tags=["teacher-portal"])
@@ -217,9 +218,39 @@ async def my_productivity(
 @me_router.get("/leaves")
 async def my_leaves(
     me: TeacherSession = Depends(get_current_teacher),
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
+    leave_status: str | None = Query(default=None, alias="status"),
     session: AsyncSession = Depends(get_db),
 ):
-    return await leave_service.my_leaves(session, me.staff_id)
+    return await leave_service.my_leaves(
+        session, me.staff_id, year=year, month=month, status_filter=leave_status,
+    )
+
+
+@me_router.get("/leave-balance")
+async def my_leave_balance(
+    me: TeacherSession = Depends(get_current_teacher),
+    year: int | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    import datetime as _dt
+    return await leave_service.balance(session, me.staff_id, year or _dt.date.today().year)
+
+
+@me_router.get("/wof")
+async def my_wof(
+    me: TeacherSession = Depends(get_current_teacher),
+    session: AsyncSession = Depends(get_db),
+):
+    """The teacher's Weekly-Off / banked-leave balance (None if not seeded)."""
+    from app.modules.staff.models.staff_models import Staff as _Staff
+    s = (await session.execute(
+        select(_Staff).where(_Staff.id == me.staff_id)
+    )).scalar_one_or_none()
+    if s is None:
+        raise HTTPException(status_code=404, detail="Staff not found")
+    return await wof_service.balance(session, s)
 
 
 @me_router.post("/leaves", status_code=status.HTTP_201_CREATED)
@@ -231,7 +262,8 @@ async def apply_leave(
 ):
     return await leave_service.apply_leave(
         session, staff_id=me.staff_id, user_id=me.user_id,
-        start_date=body.start_date, end_date=body.end_date, reason=body.reason,
+        leave_type=body.leave_type, start_date=body.start_date, end_date=body.end_date,
+        half_day=body.half_day, reason=body.reason,
         ip=request.client.host if request.client else None,
     )
 

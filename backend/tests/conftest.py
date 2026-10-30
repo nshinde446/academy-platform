@@ -35,7 +35,8 @@ from app.modules.student.models.student_models import (  # noqa: F401
     Parent, Student, StudentBatchMapping, StudentIdentity,
 )
 from app.modules.teacher.models.teacher_models import (  # noqa: F401
-    Teacher, TeacherBatchMapping, TeacherLeave, TeacherSubjectMapping,
+    LeaveTypeQuota, Teacher, TeacherBatchMapping, TeacherLeave,
+    TeacherSubjectMapping, TeacherWofOpening,
 )
 from app.modules.staff.models.staff_models import (  # noqa: F401
     Department, Staff,
