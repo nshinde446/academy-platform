@@ -71,6 +71,7 @@ export default function PortalAttendancePage() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [view, setView] = useState<"table" | "grid">("table");
   const [data, setData] = useState<AttendanceData | null>(null);
+  const [wof, setWof] = useState<{ balance: number; opening: number; accrued: number; opening_as_of: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -90,6 +91,13 @@ export default function PortalAttendancePage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    apiClient
+      .get<typeof wof>("/api/v1/me/wof")
+      .then((r) => setWof(r.data))
+      .catch(() => setWof(null));
+  }, []);
 
   function shift(delta: number) {
     const m0 = month - 1 + delta;
@@ -134,6 +142,16 @@ export default function PortalAttendancePage() {
           <Button variant="outline" size="sm" onClick={() => shift(1)} disabled={isThisMonth} aria-label="Next month">›</Button>
         </div>
       </div>
+
+      {/* Weekly-off / banked-leave balance (accrues when present > required/month) */}
+      {wof && (
+        <div className="rounded-md border bg-primary/5 px-4 py-3">
+          <div className="text-sm font-semibold">Weekly Offs / Leave balance: {wof.balance}</div>
+          <div className="text-xs text-muted-foreground">
+            Opening {wof.opening} (as of {ddmmyyyy(wof.opening_as_of)}) + {wof.accrued} earned since.
+          </div>
+        </div>
+      )}
 
       {/* Summary chips */}
       <div className="flex flex-wrap gap-2">
