@@ -173,6 +173,33 @@ async def my_month_summary(
     return MonthSummary(**data)
 
 
+@me_router.get("/attendance")
+async def my_attendance(
+    me: TeacherSession = Depends(get_current_teacher),
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
+    from_: date | None = Query(default=None, alias="from"),
+    to: date | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    """Per-day attendance for the signed-in teacher (Change 1). Either a month
+    (year+month, default current month) or an explicit from/to range."""
+    import calendar as _cal
+    import datetime as _dt
+
+    today = _dt.date.today()
+    if from_ is not None or to is not None:
+        start = from_ or to
+        end = to or from_
+    else:
+        y, m = year or today.year, month or today.month
+        if not (1 <= m <= 12):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="month must be 1-12")
+        start = date(y, m, 1)
+        end = date(y, m, _cal.monthrange(y, m)[1])
+    return await portal_service.attendance(session, me.staff_id, start, end)
+
+
 # ── leave (self-service: apply / list / withdraw) ────────────────────────────
 
 
