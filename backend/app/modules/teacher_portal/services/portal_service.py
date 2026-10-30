@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import calendar
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -230,6 +230,157 @@ async def day(session: AsyncSession, staff_id: uuid.UUID, day_: date) -> dict:
             "visible": fine_visible,
         },
         "lectures": lectures,
+    }
+
+
+def _out_local(row: StaffDailyAttendance | None, tz) -> datetime | None:
+    if row is None or row.last_out is None:
+        return None
+    out = row.last_out
+    if out.tzinfo is None:
+        out = out.replace(tzinfo=timezone.utc)
+    return out.astimezone(tz)
+
+
+def _hours(minutes: int | None) -> str | None:
+    if not minutes or minutes <= 0:
+        return None
+    return f"{minutes // 60}h {minutes % 60:02d}m"
+
+
+def _weekly_off_set(staff: Staff) -> set[int]:
+    from app.core.config.settings import get_settings
+    raw = staff.weekly_off_days if staff.weekly_off_days is not None else get_settings().STAFF_WEEKLY_OFF_DAYS
+    return {int(p) for p in (raw or "").split(",") if p.strip().isdigit()}
+
+
+# day_status -> single-letter portal code (spec §2 Figure 2).
+_STATUS_CODE = {
+    "PRESENT": "P", "LATE": "L", "HALF_DAY": "HD",
+    "ABSENT": "A", "WO": "WO", "HOLIDAY": "HL",
+}
+
+ATTENDANCE_MAX_RANGE_DAYS = 92
+
+
+async def attendance(
+    session: AsyncSession, staff_id: uuid.UUID, start: date, end: date,
+) -> dict:
+    """The teacher Attendance screen (Change 1): one row per calendar day in
+    [start, end] with IN/OUT, hours, late minutes, fine, and a status code
+    (P/A/L/HD/WO/HL) — all read from the existing staff attendance + late-fine
+    logic so the numbers match the staff reports. Future days are blank; today
+    is flagged ``closed = false`` until the day-close time."""
+    from app.modules.lectures.models.lecture_models import Holiday
+
+    if end < start:
+        raise HTTPException(status_code=422, detail="To date must not be before From date.")
+    if (end - start).days + 1 > ATTENDANCE_MAX_RANGE_DAYS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Range too long (max {ATTENDANCE_MAX_RANGE_DAYS} days).",
+        )
+
+    s = await _staff(session, staff_id)
+    tz_name = await daily_service.branch_timezone(session, s.branch_id)
+    tz = get_tz(tz_name)
+    cfg = await config_service.get_config(session)
+    now_local = datetime.now(timezone.utc).astimezone(tz)
+    today = now_local.date()
+
+    rows = {
+        r.attendance_date: r for r in (await session.execute(
+            select(StaffDailyAttendance).where(
+                StaffDailyAttendance.staff_id == staff_id,
+                StaffDailyAttendance.branch_id == s.branch_id,
+                StaffDailyAttendance.attendance_date >= start,
+                StaffDailyAttendance.attendance_date <= end,
+                StaffDailyAttendance.is_deleted == False,  # noqa: E712
+            )
+        )).scalars()
+    }
+    holidays = {
+        h for (h,) in (await session.execute(
+            select(Holiday.holiday_date).where(
+                Holiday.branch_id == s.branch_id,
+                Holiday.holiday_date >= start,
+                Holiday.holiday_date <= end,
+                Holiday.is_deleted == False,  # noqa: E712
+            )
+        )).all()
+    }
+    weekly_off = _weekly_off_set(s)
+    slabs = await lf._load_slabs(session)
+
+    out_rows: list[dict] = []
+    summary = {"present": 0, "absent": 0, "half": 0, "late": 0,
+               "weekly_off": 0, "holiday": 0, "total_fine": 0.0}
+
+    d = start
+    while d <= end:
+        if d > today:
+            out_rows.append({
+                "date": d.isoformat(), "in": None, "out": None, "hours": None,
+                "late_minutes": None, "fine": None, "status": None,
+                "closed": False, "future": True,
+            })
+            d += timedelta(days=1)
+            continue
+
+        r = rows.get(d)
+        if r is not None:
+            status_raw = r.day_status
+        elif d in holidays:
+            status_raw = "HOLIDAY"
+        elif d.weekday() in weekly_off:
+            status_raw = "WO"
+        else:
+            status_raw = "ABSENT"
+        code = _STATUS_CODE.get(status_raw, "A")
+
+        in_local = _in_local(r, tz)
+        out_local = _out_local(r, tz)
+        closed = d < today or _fine_visible(cfg, d, now_local)
+
+        late_min = lf.late_minutes(lf.start_for_day(d, s), in_local) if in_local else None
+        fine = None
+        if late_min and closed:
+            fine, _ = lf.fine_for(late_min, slabs)
+
+        out_rows.append({
+            "date": d.isoformat(),
+            "in": _fmt(in_local),
+            "out": _fmt(out_local) if out_local else ("Missing" if (r and in_local) else None),
+            "hours": _hours(r.work_minutes if r else None) or ("Missing" if (r and in_local and not out_local) else None),
+            "late_minutes": late_min,
+            "fine": fine,
+            "status": code,
+            "closed": closed,
+            "future": False,
+        })
+
+        # Summary counts (present includes late; totals of the day-kinds sum to
+        # elapsed days, late is a subset).
+        if code in ("P", "L"):
+            summary["present"] += 1
+            if code == "L":
+                summary["late"] += 1
+        elif code == "HD":
+            summary["half"] += 1
+        elif code == "A":
+            summary["absent"] += 1
+        elif code == "WO":
+            summary["weekly_off"] += 1
+        elif code == "HL":
+            summary["holiday"] += 1
+        if fine:
+            summary["total_fine"] += fine
+        d += timedelta(days=1)
+
+    summary["total_fine"] = round(summary["total_fine"], 2)
+    return {
+        "start": start.isoformat(), "end": end.isoformat(),
+        "rows": out_rows, "summary": summary,
     }
 
 

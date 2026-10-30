@@ -158,11 +158,13 @@ async def test_overlap_rejected(db_session, seed_data, client):
     assert r2.status_code == 409
 
 
-async def test_past_start_rejected(db_session, seed_data, client):
+async def test_old_backdated_start_rejected(db_session, seed_data, client):
+    # Back-dated leave is allowed up to 7 days (Teacher Portal Changes §2); a
+    # start more than that in the past is still rejected.
     _, u, _ = await _teacher(db_session, "98006")
-    past = (date.today() - timedelta(days=1)).isoformat()
+    too_old = (date.today() - timedelta(days=30)).isoformat()
     r = await client.post(
-        "/api/v1/me/leaves", json={"start_date": past, "end_date": past},
+        "/api/v1/me/leaves", json={"start_date": too_old, "end_date": too_old},
         cookies=_cookie(u, ["teacher_portal"]),
     )
     assert r.status_code == 422
