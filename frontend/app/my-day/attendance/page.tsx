@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -74,23 +74,25 @@ export default function PortalAttendancePage() {
   const [wof, setWof] = useState<{ balance: number; opening: number; accrued: number; opening_as_of: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const r = await apiClient.get<AttendanceData>("/api/v1/me/attendance", {
-        params: { year, month },
-      });
-      setData(r.data);
-    } catch (e) {
-      if (apiErrorMessage(e, "") === "PASSWORD_CHANGE_REQUIRED") router.push("/change-password");
-    } finally {
-      setLoading(false);
-    }
-  }, [year, month, router]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    let on = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await apiClient.get<AttendanceData>("/api/v1/me/attendance", {
+          params: { year, month },
+        });
+        if (on) setData(r.data);
+      } catch (e) {
+        if (apiErrorMessage(e, "") === "PASSWORD_CHANGE_REQUIRED") router.push("/change-password");
+      } finally {
+        if (on) setLoading(false);
+      }
+    })();
+    return () => {
+      on = false;
+    };
+  }, [year, month, router]);
 
   useEffect(() => {
     apiClient
@@ -109,21 +111,17 @@ export default function PortalAttendancePage() {
   const today = todayISO();
 
   const summary = data?.summary;
-  const chips = useMemo(
-    () =>
-      summary
-        ? [
-            { label: "Present", value: summary.present },
-            { label: "Absent", value: summary.absent },
-            { label: "Half days", value: summary.half },
-            { label: "Late", value: summary.late },
-            { label: "Weekly offs", value: summary.weekly_off },
-            { label: "Holidays", value: summary.holiday },
-            { label: "Total fine", value: `₹${summary.total_fine}` },
-          ]
-        : [],
-    [summary],
-  );
+  const chips: { label: string; value: string | number }[] = summary
+    ? [
+        { label: "Present", value: summary.present },
+        { label: "Absent", value: summary.absent },
+        { label: "Half days", value: summary.half },
+        { label: "Late", value: summary.late },
+        { label: "Weekly offs", value: summary.weekly_off },
+        { label: "Holidays", value: summary.holiday },
+        { label: "Total fine", value: `₹${summary.total_fine}` },
+      ]
+    : [];
 
   return (
     <div className="flex flex-col gap-5">

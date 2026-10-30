@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -83,27 +83,32 @@ export default function PortalLeavePage() {
   const [fStatus, setFStatus] = useState("");
 
   const [toCancel, setToCancel] = useState<Leave | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const [bal, list] = await Promise.all([
-        apiClient.get<{ types: TypeBalance[] }>("/api/v1/me/leave-balance", { params: { year: fYear } }),
-        apiClient.get<Leave[]>("/api/v1/me/leaves", {
-          params: { year: fYear, status: fStatus || undefined },
-        }),
-      ]);
-      setBalance(bal.data.types);
-      setLeaves(list.data);
-    } catch (e) {
-      if (apiErrorMessage(e, "") === "PASSWORD_CHANGE_REQUIRED") router.push("/change-password");
-    } finally {
-      setLoading(false);
-    }
-  }, [fYear, fStatus, router]);
+  const [tick, setTick] = useState(0); // bump to refetch after a mutation
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let on = true;
+    (async () => {
+      try {
+        const [bal, list] = await Promise.all([
+          apiClient.get<{ types: TypeBalance[] }>("/api/v1/me/leave-balance", { params: { year: fYear } }),
+          apiClient.get<Leave[]>("/api/v1/me/leaves", {
+            params: { year: fYear, status: fStatus || undefined },
+          }),
+        ]);
+        if (on) {
+          setBalance(bal.data.types);
+          setLeaves(list.data);
+        }
+      } catch (e) {
+        if (apiErrorMessage(e, "") === "PASSWORD_CHANGE_REQUIRED") router.push("/change-password");
+      } finally {
+        if (on) setLoading(false);
+      }
+    })();
+    return () => {
+      on = false;
+    };
+  }, [fYear, fStatus, tick, router]);
 
   async function onApply(e: React.FormEvent) {
     e.preventDefault();
@@ -119,7 +124,7 @@ export default function PortalLeavePage() {
       });
       toast.success("Leave request submitted", "Your academic head will review it.");
       setStart(""); setEnd(""); setReason(""); setHalfDay(false);
-      await load();
+      setTick((t) => t + 1);
     } catch (err) {
       toast.error("Could not submit", apiErrorMessage(err, "Check the dates and try again."));
     } finally {
@@ -132,7 +137,7 @@ export default function PortalLeavePage() {
     try {
       await apiClient.delete(`/api/v1/me/leaves/${toCancel.id}`);
       toast.success("Request cancelled");
-      await load();
+      setTick((t) => t + 1);
     } catch (err) {
       toast.error("Could not cancel", apiErrorMessage(err, "Try again."));
     } finally {
@@ -140,10 +145,7 @@ export default function PortalLeavePage() {
     }
   }
 
-  const years = useMemo(
-    () => Array.from({ length: 4 }, (_, i) => now.getFullYear() - i),
-    [now],
-  );
+  const years = Array.from({ length: 4 }, (_, i) => now.getFullYear() - i);
 
   return (
     <div className="flex flex-col gap-6">

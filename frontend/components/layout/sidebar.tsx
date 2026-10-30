@@ -128,6 +128,7 @@ const ADMIN_SECTION: NavSection = {
     { label: "Users", href: "/users" },
     { label: "Teacher Accounts", href: "/teacher-accounts" },
     { label: "Leave Requests", href: "/leave-requests" },
+    { label: "Leave Settings", href: "/leave-settings" },
     { label: "Access Control", href: "/access-control" },
     { label: "Accounts", href: "/accounts" },
     { label: "Audit Log", href: "/audit-log" },

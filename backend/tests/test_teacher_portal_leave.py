@@ -173,3 +173,30 @@ async def test_wof_balance_accrues_extra_days(db_session: AsyncSession, seed_dat
 async def test_wof_none_when_not_seeded(db_session: AsyncSession, seed_data):
     s = await _teacher_staff(db_session)
     assert await wof_service.balance(db_session, s) is None
+
+
+# ── admin leave settings ─────────────────────────────────────────────────────
+
+async def test_admin_set_and_get_quotas(db_session: AsyncSession, seed_data):
+    from app.modules.teacher_portal.services import leave_settings_service
+    yr = date.today().year
+    out = await leave_settings_service.set_quotas(
+        db_session, branch_id=BRANCH, year=yr,
+        quotas={"casual": 12, "sick": 8, "paid": 15}, user_id=USER,
+    )
+    assert out["quotas"]["casual"] == 12 and out["quotas"]["paid"] == 15
+    got = await leave_settings_service.get_quotas(db_session, BRANCH, yr)
+    assert got["quotas"]["sick"] == 8
+
+
+async def test_admin_set_wof_opening_and_list(db_session: AsyncSession, seed_data):
+    from app.modules.teacher_portal.services import leave_settings_service
+    s = await _teacher_staff(db_session)
+    await leave_settings_service.set_wof_opening(
+        db_session, branch_id=BRANCH, teacher_id=s.linked_teacher_id,
+        opening_balance=9, as_of_date=date(2026, 8, 26), user_id=USER,
+    )
+    rows = await leave_settings_service.list_wof(db_session, BRANCH)
+    mine = next(r for r in rows if r["emp_code"] == "91000")
+    assert mine["opening_balance"] == 9
+    assert mine["current_balance"] == 9  # no post-opening attendance → balance == opening
