@@ -19,6 +19,7 @@ interface WofRow {
   name: string;
   opening_balance: number | null;
   as_of_date: string | null;
+  accrued: number | null;
   current_balance: number | null;
 }
 
@@ -103,6 +104,28 @@ export default function LeaveSettingsPage() {
     }
   }
 
+  async function exportWof(fmt: "xlsx" | "pdf") {
+    if (!branchId) return;
+    try {
+      const res = await apiClient.get(
+        `/api/v1/admin/leave-settings/wof/export?branch_id=${branchId}&fmt=${fmt}`,
+        { responseType: "blob" },
+      );
+      const disp = res.headers["content-disposition"] as string | undefined;
+      const fname = disp?.match(/filename="?([^"]+)"?/)?.[1] ?? `WOF_Balance.${fmt}`;
+      const url = window.URL.createObjectURL(res.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error("Could not export", apiErrorMessage(e, "Try again."));
+    }
+  }
+
   const years = Array.from({ length: 4 }, (_, i) => now.getFullYear() - i);
 
   return (
@@ -149,11 +172,15 @@ export default function LeaveSettingsPage() {
       <Card>
         <CardContent className="flex flex-col gap-3 pt-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <h2 className="text-sm font-semibold">Weekly-Off opening balances</h2>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor="asof" className="text-xs">Opening as of</Label>
-              <Input id="asof" type="date" className="w-40" value={asOf}
-                disabled={!canEdit} onChange={(e) => setAsOf(e.target.value)} />
+            <h2 className="text-sm font-semibold">Weekly-Off balances</h2>
+            <div className="flex items-end gap-2">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="asof" className="text-xs">Opening as of</Label>
+                <Input id="asof" type="date" className="w-40" value={asOf}
+                  disabled={!canEdit} onChange={(e) => setAsOf(e.target.value)} />
+              </div>
+              <Button variant="outline" size="sm" onClick={() => exportWof("xlsx")}>Excel</Button>
+              <Button variant="outline" size="sm" onClick={() => exportWof("pdf")}>PDF</Button>
             </div>
           </div>
           {loading ? (
@@ -167,6 +194,7 @@ export default function LeaveSettingsPage() {
                   <TableHead>Teacher</TableHead>
                   <TableHead>Code</TableHead>
                   <TableHead>Opening</TableHead>
+                  <TableHead className="text-right">Earned</TableHead>
                   <TableHead className="text-right">Current balance</TableHead>
                   <TableHead />
                 </TableRow>
@@ -181,7 +209,8 @@ export default function LeaveSettingsPage() {
                         value={openings[r.teacher_id] ?? ""}
                         onChange={(e) => setOpenings((o) => ({ ...o, [r.teacher_id]: e.target.value }))} />
                     </TableCell>
-                    <TableCell className="text-right">{r.current_balance ?? "—"}</TableCell>
+                    <TableCell className="text-right">{r.accrued ?? "—"}</TableCell>
+                    <TableCell className="text-right font-medium">{r.current_balance ?? "—"}</TableCell>
                     <TableCell className="text-right">
                       {canEdit && (
                         <Button size="sm" variant="outline" onClick={() => saveWof(r)}>Save</Button>
