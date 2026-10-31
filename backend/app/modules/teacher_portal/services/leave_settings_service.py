@@ -99,6 +99,7 @@ async def list_wof(session: AsyncSession, branch_id: uuid.UUID) -> list[dict]:
             "name": f"{t.first_name} {t.last_name}".strip(),
             "opening_balance": float(o.opening_balance) if o else None,
             "as_of_date": o.as_of_date.isoformat() if o else None,
+            "accrued": bal["accrued"] if bal else None,
             "current_balance": bal["balance"] if bal else None,
         })
     out.sort(key=lambda r: r["name"])
@@ -133,3 +134,74 @@ async def set_wof_opening(
     await session.flush()
     return {"teacher_id": str(teacher_id), "opening_balance": opening_balance,
             "as_of_date": as_of_date.isoformat()}
+
+
+# ── WOF roster report (PDF / Excel) ──────────────────────────────────────────
+
+_WOF_HEADERS = ["Sr No", "Teacher", "Code", "Opening", "Earned", "WOF Balance", "As of"]
+
+
+async def wof_report(
+    session: AsyncSession, *, branch_id: uuid.UUID, fmt: str
+) -> tuple[str, bytes, str]:
+    """A roster of every teacher's Weekly-Off balance — opening + earned +
+    current — as PDF or Excel (the system-generated equivalent of the client's
+    'WOF Till …' sheet)."""
+    from app.core.config.settings import get_settings
+    from app.modules.attendance.services import staff_export_service as ex
+    from app.modules.attendance.services.daily_service import branch_timezone
+
+    if fmt not in ("pdf", "xlsx"):
+        raise HTTPException(status_code=422, detail="fmt must be pdf or xlsx")
+
+    rows = await list_wof(session, branch_id)
+    # Only teachers with a seeded opening have a balance to report.
+    rows = [r for r in rows if r["current_balance"] is not None]
+    brand = get_settings().ACADEMY_BRAND_NAME
+    gen = ex.generated_stamp(await branch_timezone(session, branch_id))
+
+    def cells(i: int, r: dict) -> list[str]:
+        opening = r["opening_balance"] or 0
+        earned = r["accrued"] or 0
+        return [
+            str(i), r["name"], r["emp_code"] or "—",
+            f"{opening:g}", f"{earned:g}", f"{r['current_balance']:g}",
+            r["as_of_date"] or "—",
+        ]
+
+    base = "WOF_Balance_Report"
+    if fmt == "xlsx":
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+        from openpyxl.utils import get_column_letter
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "WOF Balance"
+        ws["A1"] = brand
+        ws["A1"].font = Font(bold=True, size=14)
+        ws["A2"] = "Weekly-Off / Leave Balance — Teachers"
+        ws["A2"].font = Font(bold=True, size=12)
+        head = 4
+        for c, h in enumerate(_WOF_HEADERS, start=1):
+            ws.cell(row=head, column=c, value=h).font = Font(bold=True)
+        for i, r in enumerate(rows, start=1):
+            for c, val in enumerate(cells(i, r), start=1):
+                ws.cell(row=head + i, column=c, value=val)
+        for c, w in enumerate((6, 26, 10, 9, 9, 12, 12), start=1):
+            ws.column_dimensions[get_column_letter(c)].width = w
+        return f"{base}.xlsx", ex._xlsx_bytes(wb), \
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    ths = "".join(f"<th>{ex._esc(h)}</th>" for h in _WOF_HEADERS)
+    body = "".join(
+        "<tr>" + "".join(f"<td class='c'>{ex._esc(v)}</td>" for v in cells(i, r)) + "</tr>"
+        for i, r in enumerate(rows, start=1)
+    )
+    empty = "" if rows else "<p class='sub'>No teacher WOF balances seeded yet.</p>"
+    doc = (
+        f"<h1>{ex._esc(brand)} — Weekly-Off / Leave Balance</h1>"
+        f"<p class='sub'>Teachers · {len(rows)} shown</p>"
+        f"<table><tr>{ths}</tr>{body}</table>{empty}"
+    )
+    return f"{base}.pdf", await ex.render_html_to_pdf(ex._doc(doc, gen)), "application/pdf"

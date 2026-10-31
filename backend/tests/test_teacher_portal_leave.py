@@ -200,3 +200,25 @@ async def test_admin_set_wof_opening_and_list(db_session: AsyncSession, seed_dat
     mine = next(r for r in rows if r["emp_code"] == "91000")
     assert mine["opening_balance"] == 9
     assert mine["current_balance"] == 9  # no post-opening attendance → balance == opening
+
+
+async def test_wof_report_xlsx(db_session: AsyncSession, seed_data):
+    """The WOF roster report lists seeded teachers with opening + current."""
+    import io
+    from openpyxl import load_workbook
+    from app.modules.teacher_portal.services import leave_settings_service
+
+    s = await _teacher_staff(db_session)
+    await leave_settings_service.set_wof_opening(
+        db_session, branch_id=BRANCH, teacher_id=s.linked_teacher_id,
+        opening_balance=9, as_of_date=date(2026, 8, 26), user_id=USER,
+    )
+    name, data, mime = await leave_settings_service.wof_report(
+        db_session, branch_id=BRANCH, fmt="xlsx",
+    )
+    assert name.endswith(".xlsx")
+    ws = load_workbook(io.BytesIO(data)).active
+    # Header row at 4, first data row at 5.
+    assert ws.cell(row=4, column=1).value == "Sr No"
+    assert ws.cell(row=5, column=2).value == "Asha Rao"
+    assert ws.cell(row=5, column=6).value == "9"  # WOF balance

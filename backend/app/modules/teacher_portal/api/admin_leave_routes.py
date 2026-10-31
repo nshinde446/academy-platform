@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -135,3 +135,19 @@ async def set_wof(
     )
     await session.commit()
     return out
+
+
+@leave_settings_router.get("/wof/export")
+async def export_wof(
+    branch_id: uuid.UUID = Query(...),
+    fmt: str = Query("xlsx"),
+    current_user: dict = Depends(require_roles(_SETTINGS_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    name, data, media = await leave_settings_service.wof_report(
+        session, branch_id=branch_id, fmt=fmt
+    )
+    return Response(
+        content=data, media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
