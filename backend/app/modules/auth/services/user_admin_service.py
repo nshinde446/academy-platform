@@ -31,6 +31,8 @@ from app.modules.auth.schemas.auth_schemas import (
 from app.modules.auth.services.auth_service import hash_password, verify_password
 
 SUPER_ADMIN = "super_admin"
+# Roles permitted to grant the super_admin role to a user.
+_SUPER_ADMIN_GRANTORS = {"super_admin", "branch_admin"}
 
 
 def _conflict(detail: str) -> HTTPException:
@@ -52,8 +54,12 @@ async def _resolve_role(session: AsyncSession, role_name: str, actor_roles: list
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unknown role '{role_name}'",
         )
-    if role.name == SUPER_ADMIN and SUPER_ADMIN not in actor_roles:
-        raise _forbidden("Only a super admin can grant the super_admin role")
+    # Who may grant the super_admin role. By deliberate choice (single-tenant
+    # academy where Branch Admin is the top operational role), a Branch Admin may
+    # also grant it — not only an existing super_admin. This is a privilege-
+    # escalation path by design; keep the "last super_admin" guards intact.
+    if role.name == SUPER_ADMIN and not (set(actor_roles) & _SUPER_ADMIN_GRANTORS):
+        raise _forbidden("You are not allowed to grant the super_admin role")
     return role
 
 

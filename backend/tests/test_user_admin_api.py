@@ -149,3 +149,20 @@ class TestUserAdmin:
         assert resp.status_code == 200
         names = {r["name"] for r in resp.json()}
         assert {"super_admin", "teacher"} <= names
+
+
+async def test_branch_admin_can_grant_super_admin(db_session, seed_data):
+    """Branch Admin may now grant the super_admin role (deliberate escalation
+    path for this single-tenant academy)."""
+    from app.modules.auth.services.user_admin_service import _resolve_role
+    role = await _resolve_role(db_session, "super_admin", ["branch_admin"])
+    assert role.name == "super_admin"
+
+
+async def test_plain_role_cannot_grant_super_admin(db_session, seed_data):
+    import pytest
+    from fastapi import HTTPException
+    from app.modules.auth.services.user_admin_service import _resolve_role
+    with pytest.raises(HTTPException) as e:
+        await _resolve_role(db_session, "super_admin", ["teacher"])
+    assert e.value.status_code == 403
