@@ -73,6 +73,34 @@ async def test_performance_grid_xlsx(db_session: AsyncSession, seed_data):
     assert any("Bhagvat" in c and "1 ·" in c for c in col_a)
 
 
+async def test_performance_grid_declared_holiday_counts_as_holiday(
+    db_session: AsyncSession, seed_data
+):
+    """A declared paid holiday (Payroll Month Setup) reclassifies an absent day
+    as Holiday in the performance grid; present days are untouched."""
+    from app.modules.payroll.models.payroll_models import PayrollMonthHoliday
+
+    await _seed(db_session)
+    # Aug 4 is the ABSENT day in the seed — declare it a holiday.
+    db_session.add(PayrollMonthHoliday(
+        branch_id=BRANCH_A, year=2026, month=8,
+        holiday_date=date(2026, 8, 4), title="Festival", kind="HOLIDAY",
+    ))
+    await db_session.flush()
+
+    _, data, _ = await rpt.generate(
+        db_session, branch_id=BRANCH_A, kind="performance", frequency="monthly",
+        department_ids=None, staff_ids=None,
+        start=date(2026, 8, 3), end=date(2026, 8, 5), fmt="xlsx",
+    )
+    col_a = await _xlsx_first_col(data)
+    header = next(c for c in col_a if "Bhagvat" in c)
+    # LATE + PRESENT = 2 present; the absent day flips to Holiday 1, Absent 0.
+    assert "Present 2" in header
+    assert "Absent 0" in header
+    assert "Holiday 1" in header
+
+
 async def test_late_in_list_only_late_rows(db_session: AsyncSession, seed_data):
     await _seed(db_session)
     fn, data, _ = await rpt.generate(
