@@ -190,10 +190,39 @@ _DATEWISE_STATUS_CODE = {
 DATEWISE_MAX_DAYS = 62
 
 
-def _datewise_code(row: StaffDailyAttendance | None, staff: Staff, day: date) -> str:
+def _datewise_code(
+    row: StaffDailyAttendance | None, staff: Staff, day: date,
+    holidays: frozenset[date] = frozenset(),
+) -> str:
+    # A declared paid holiday (Payroll Month Setup, e.g. Dusshera) overrides the
+    # default Absent/Weekly-Off: the day reads as HL for everyone, except anyone
+    # who was actually present keeps their real code (P / L / HD).
+    if day in holidays:
+        if row is not None and row.day_status in PRESENT_STATUSES:
+            return _DATEWISE_STATUS_CODE.get(row.day_status, "P")
+        return "HL"
     if row is None:
         return "WO" if day.weekday() in _weekly_off(staff) else "A"
     return _DATEWISE_STATUS_CODE.get(row.day_status, "A")
+
+
+async def _declared_holidays(
+    session: AsyncSession, branch_id: uuid.UUID, start: date, end: date
+) -> frozenset[date]:
+    """Dates the Super Admin declared as paid holidays/leaves for this branch in
+    the window (Payroll Month Setup → "Paid holidays & leaves"). Read-only; works
+    whether or not the payroll switch is on."""
+    from app.modules.payroll.models.payroll_models import PayrollMonthHoliday
+
+    rows = (await session.execute(
+        select(PayrollMonthHoliday.holiday_date).where(
+            PayrollMonthHoliday.branch_id == branch_id,
+            PayrollMonthHoliday.holiday_date >= start,
+            PayrollMonthHoliday.holiday_date <= end,
+            PayrollMonthHoliday.is_deleted == False,  # noqa: E712
+        )
+    )).scalars().all()
+    return frozenset(rows)
 
 
 def _weekly_off(staff: Staff) -> set[int]:
@@ -374,13 +403,14 @@ async def generate_datewise(
     staff, _ = await _resolve_staff(session, branch_id, department_ids, staff_ids)
     rows_by_key = await _daily_rows(session, branch_id, [s.id for s in staff], start, end)
     dates = _dates_in_range(start, end)
+    holidays = await _declared_holidays(session, branch_id, start, end)
 
     out_rows: list[dict] = []
     for s in staff:
         cells: list[str] = []
         totals: dict[str, int] = {c: 0 for c in ex.DATEWISE_TOTAL_CODES}
         for d in dates:
-            code = _datewise_code(rows_by_key.get((s.id, d)), s, d)
+            code = _datewise_code(rows_by_key.get((s.id, d)), s, d, holidays)
             cells.append(code)
             totals[code] = totals.get(code, 0) + 1
         out_rows.append({
