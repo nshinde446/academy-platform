@@ -108,6 +108,47 @@ async def test_datewise_codes_and_totals_reconcile(db_session: AsyncSession, see
     assert sum(totals.values()) == 31
 
 
+async def test_datewise_declared_holiday_shows_hl_except_present(
+    db_session: AsyncSession, seed_data
+):
+    """A paid holiday declared in Payroll Month Setup (e.g. Dusshera) reads as HL
+    for everyone absent that day, but anyone actually present keeps their P."""
+    from app.modules.payroll.models.payroll_models import PayrollMonthHoliday
+
+    staff = await _seed(db_session)
+    # Dusshera on Oct 20 — a day E001 has no row, so it would otherwise read A.
+    db_session.add(PayrollMonthHoliday(
+        branch_id=BRANCH_A, year=2026, month=10,
+        holiday_date=date(2026, 10, 20), title="Dusshera", kind="HOLIDAY",
+    ))
+    # A second staff member who did come in on the holiday.
+    present = Staff(
+        branch_id=BRANCH_A, emp_code="E002", first_name="Staff", last_name="B",
+        department_id=staff.department_id, shift_start="10:00", shift_end="20:00",
+        weekly_off_days="6",
+    )
+    db_session.add(present)
+    await db_session.flush()
+    db_session.add(StaffDailyAttendance(
+        staff_id=present.id, branch_id=BRANCH_A, attendance_date=date(2026, 10, 20),
+        first_in=_utc(date(2026, 10, 20), 4, 30), last_out=None,
+        day_status="PRESENT", signoff="COMPLETE", source="BIOMETRIC",
+        work_minutes=0, ot_minutes=0,
+    ))
+    await db_session.flush()
+
+    _, data, _ = await rpt.generate_datewise(
+        db_session, branch_id=BRANCH_A, department_ids=None, staff_ids=None,
+        start=date(2026, 10, 1), end=date(2026, 10, 31), fmt="xlsx",
+    )
+    rows = list(_ws(data).iter_rows(values_only=True))
+    e1 = next(r for r in rows if r[0] == "E001")
+    e2 = next(r for r in rows if r[0] == "E002")
+    # Day cells start at column index 2 (day 1); Oct 20 is index 2 + 19 = 21.
+    assert e1[21] == "HL"   # absent on a declared holiday -> HL, not A
+    assert e2[21] == "P"    # present on the holiday keeps P
+
+
 async def test_datewise_late_cell_is_red_filled(db_session: AsyncSession, seed_data):
     await _seed(db_session)
     _, data, _ = await rpt.generate_datewise(
