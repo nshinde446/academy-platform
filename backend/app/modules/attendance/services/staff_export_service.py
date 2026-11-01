@@ -199,7 +199,7 @@ def grid_html(
             f"<div class='staff-hd'>{_esc(b['emp_code'])} · {_esc(b['name'])} · "
             f"{_esc(b['department'])}"
             f" — Present {b['present']} · Absent {b['absent']} · WO {b['wo']} · "
-            f"Work+OT {b['work_ot']}</div>"
+            f"Holiday {b.get('holiday', 0)} · Work+OT {b['work_ot']}</div>"
             f"<table><tr><th>Field</th>{day_ths}</tr>"
             f"<tr><th>In</th>{_row('in')}</tr>"
             f"<tr><th>Out</th>{_row('out')}</tr>"
@@ -237,7 +237,7 @@ def grid_xlsx(
             value=(
                 f"{b['emp_code']} · {b['name']} · {b['department']} — "
                 f"Present {b['present']} · Absent {b['absent']} · WO {b['wo']} · "
-                f"Work+OT {b['work_ot']}"
+                f"Holiday {b.get('holiday', 0)} · Work+OT {b['work_ot']}"
             ),
         ).font = _BOLD
         row += 1

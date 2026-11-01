@@ -262,12 +262,26 @@ async def generate(
     dates = _dates_in_range(start, end)
 
     if kind == "performance":
+        holidays = await _declared_holidays(session, branch_id, start, end)
         blocks = []
         for s in staff:
             cells = []
-            present = absent = wo = work_ot = 0
+            present = absent = wo = holiday = work_ot = 0
             for d in dates:
                 r = rows.get((s.id, d))
+                present_row = r is not None and r.day_status in PRESENT_STATUSES
+                # A declared paid holiday overrides Absent / Weekly-Off for anyone
+                # not actually present; present staff keep their real status.
+                if d in holidays and not present_row:
+                    holiday += 1
+                    cells.append({
+                        "in": _fmt_t(r.first_in, tz) if r else "",
+                        "out": _fmt_t(r.last_out, tz) if r else "",
+                        "work": ex.fmt_minutes(r.work_minutes) if r else "",
+                        "ot": ex.fmt_minutes(r.ot_minutes) if r else "",
+                        "status": "HOLIDAY",
+                    })
+                    continue
                 if r is None:
                     st = "WO" if d.weekday() in _weekly_off(s) else "ABSENT"
                     cells.append({"in": "", "out": "", "work": "", "ot": "", "status": st})
@@ -282,6 +296,8 @@ async def generate(
                     wo += 1
                 elif r.day_status == "ABSENT":
                     absent += 1
+                elif r.day_status == "HOLIDAY":
+                    holiday += 1
                 work_ot += (r.work_minutes or 0) + (r.ot_minutes or 0)
                 cells.append({
                     "in": _fmt_t(r.first_in, tz), "out": _fmt_t(r.last_out, tz),
@@ -292,7 +308,7 @@ async def generate(
                 "emp_code": s.emp_code,
                 "name": f"{s.first_name} {s.last_name}".strip(),
                 "department": dept_names.get(s.department_id, ""),
-                "present": present, "absent": absent, "wo": wo,
+                "present": present, "absent": absent, "wo": wo, "holiday": holiday,
                 "work_ot": ex.fmt_minutes(work_ot), "cells": cells,
             })
         title = f"{freq_label} Performance Report"
