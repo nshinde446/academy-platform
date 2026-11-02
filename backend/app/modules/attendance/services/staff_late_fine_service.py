@@ -153,9 +153,11 @@ async def generate(
     base = f"LateFine_{staff.emp_code}_{start.isoformat()}_to_{end.isoformat()}"
     brand = get_settings().ACADEMY_BRAND_NAME
     gen = ex.generated_stamp(tz_name)
+    note_heading, note_lines = _fine_note(slabs)
     report = {
         "brand": brand, "emp_code": staff.emp_code, "name": name,
         "period": period, "rows": rows, "total": total,
+        "note_heading": note_heading, "note_lines": note_lines,
     }
 
     if fmt == "xlsx":
@@ -167,6 +169,38 @@ async def generate(
 
 _HEADERS = ["Date", "First Lecture Start Time", "IN Time", "Late IN",
             "Late Minutes", "Fine Amount"]
+
+# The fine-slab note printed below the table (like the Faculty Report policy
+# note). Built from the live slabs so it always matches what is actually charged.
+_FINE_NOTE_HEADING = "NOTES:"
+
+
+def _fine_note(slabs: list[LateFineSlab]) -> tuple[str, list[str]]:
+    """Heading + one line per fine slab, in minutes-late order, e.g.
+    ``1 to 5 min = Rs 200`` / ``11 min & above = Rs 1000``."""
+    if not slabs:
+        return _FINE_NOTE_HEADING, []
+    lines = [
+        "Late fine is based on the minutes late "
+        "(IN Time − First Lecture Start Time):"
+    ]
+    for s in slabs:
+        rng = (
+            f"{s.min_minutes} min & above" if s.max_minutes is None
+            else f"{s.min_minutes} to {s.max_minutes} min"
+        )
+        lines.append(f"{rng} = Rs {s.fine_amount:g}")
+    return _FINE_NOTE_HEADING, lines
+
+
+def _note_html(r: dict) -> str:
+    if not r.get("note_lines"):
+        return ""
+    lines = "".join(f"<div>{ex._esc(ln)}</div>" for ln in r["note_lines"])
+    return (
+        "<div class='sub' style='margin-top:14px'>"
+        f"<b>{ex._esc(r['note_heading'])}</b>{lines}</div>"
+    )
 
 
 def _html(r: dict, gen: str) -> str:
@@ -193,7 +227,7 @@ def _html(r: dict, gen: str) -> str:
     doc = (
         f"<h1>{ex._esc(r['brand'])} — Staff Late Fine Report</h1>"
         f"<p class='sub'>Empcode: {ex._esc(r['emp_code'])} · {ex._esc(r['name'])} · {ex._esc(r['period'])}</p>"
-        f"<table><tr>{ths}</tr>{body}{total_row}</table>{empty}"
+        f"<table><tr>{ths}</tr>{body}{total_row}</table>{empty}{_note_html(r)}"
     )
     return ex._doc(doc, gen)
 
@@ -229,8 +263,17 @@ def _xlsx(r: dict) -> bytes:
         tr = head + 1 + len(r["rows"])
         ws.cell(row=tr, column=4, value="Total Fine").font = Font(bold=True)
         ws.cell(row=tr, column=6, value=int(r["total"])).font = Font(bold=True)
+        last = tr
     else:
         ws.cell(row=head + 1, column=1, value="No attendance data for this selection.")
+        last = head + 1
+
+    # Fine-slab note below the table (mirrors the PDF).
+    if r.get("note_lines"):
+        nr = last + 2
+        ws.cell(row=nr, column=1, value=r["note_heading"]).font = Font(bold=True)
+        for i, ln in enumerate(r["note_lines"], start=1):
+            ws.cell(row=nr + i, column=1, value=ln)
 
     for c, w in enumerate((12, 22, 10, 10, 14, 14), start=1):
         from openpyxl.utils import get_column_letter
