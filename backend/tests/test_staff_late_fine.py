@@ -223,6 +223,44 @@ async def test_late_fine_uses_weekday_and_saturday_starts(
     assert total_row[3] == "Total Fine" and total_row[5] == 2400
 
 
+def test_fine_note_lines_from_slabs():
+    slabs = [_slab(1, 5, 200, "#BDD7EE", "a"), _slab(6, 10, 500, "#FFEB84", "b"),
+             _slab(11, None, 1000, "#FF6B6B", "c")]
+    heading, lines = lf._fine_note(slabs)
+    assert heading == "NOTES:"
+    # Intro line + one line per slab, open-ended band phrased "& above".
+    assert "1 to 5 min = Rs 200" in lines
+    assert "6 to 10 min = Rs 500" in lines
+    assert "11 min & above = Rs 1000" in lines
+    assert lf._fine_note([]) == ("NOTES:", [])
+
+
+async def test_late_fine_report_prints_slab_note(db_session: AsyncSession, seed_data):
+    """The fine-slab note prints below the table in both the PDF (HTML) and Excel."""
+    staff = await _seed(db_session)
+    # Excel path.
+    _, data, _ = await lf.generate(
+        db_session, branch_id=BRANCH, staff_id=staff.id,
+        start=date(2026, 10, 1), end=date(2026, 10, 4), fmt="xlsx",
+    )
+    flat = [
+        str(c) for row in load_workbook(io.BytesIO(data)).active.iter_rows(values_only=True)
+        for c in row if c is not None
+    ]
+    assert "NOTES:" in flat
+    assert any("1 to 5 min = Rs 200" in c for c in flat)
+    assert any("11 min & above = Rs 1000" in c for c in flat)
+
+    # HTML (PDF source).
+    report = {
+        "brand": "Matrix", "emp_code": "12", "name": "Rahul", "period": "x",
+        "rows": [], "total": 0.0,
+        "note_heading": "NOTES:", "note_lines": ["6 to 10 min = Rs 500"],
+    }
+    html = lf._html(report, "gen")
+    assert "NOTES:" in html and "6 to 10 min = Rs 500" in html
+
+
 async def test_late_fine_rejects_from_after_to(db_session: AsyncSession, seed_data):
     staff = await _seed(db_session)
     with pytest.raises(HTTPException) as ei:
