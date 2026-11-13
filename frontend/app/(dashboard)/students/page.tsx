@@ -8,16 +8,18 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
 import { Input } from "@/components/ui/input";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import {
   useStudentsRoster,
   useCreateStudent,
   useUpdateStudent,
-  useDeleteStudent,
+  useCancelAdmission,
   useBulkUpdateStudents,
   useBulkDeleteStudents,
   useAcademicYears,
 } from "./_hooks/use-students";
+import { CancelledStudents } from "./_components/cancelled-students";
 import { useBatches } from "../batches/_hooks/use-batches";
 import type {
   StudentCreate,
@@ -73,7 +75,10 @@ export default function StudentsPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<StudentResponse | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<StudentWithStats | null>(
+  // Active roster vs the Cancelled Students tab (Point 4).
+  const [view, setView] = useState<"active" | "cancelled">("active");
+  // The student whose admission is being cancelled (opens the reason prompt).
+  const [cancelTarget, setCancelTarget] = useState<StudentWithStats | null>(
     null
   );
 
@@ -97,7 +102,7 @@ export default function StudentsPage() {
   const batchesQuery = useBatches(branchId);
   const createMutation = useCreateStudent(branchId);
   const updateMutation = useUpdateStudent(branchId);
-  const deleteMutation = useDeleteStudent(branchId);
+  const cancelMutation = useCancelAdmission(branchId);
   const bulkUpdateMutation = useBulkUpdateStudents(branchId);
   const bulkDeleteMutation = useBulkDeleteStudents(branchId);
 
@@ -137,8 +142,17 @@ export default function StudentsPage() {
     updateMutation.mutate({ studentId: student.id, data: patch });
   }
 
-  function handleDeleteClick(student: StudentWithStats) {
-    setDeleteTarget(student);
+  function handleCancelClick(student: StudentWithStats) {
+    setCancelTarget(student);
+  }
+
+  async function handleCancelConfirm(reason: string) {
+    if (!cancelTarget) return;
+    await cancelMutation.mutateAsync({
+      studentId: cancelTarget.id,
+      reason: reason || null,
+    });
+    setCancelTarget(null);
   }
 
   async function handleExport() {
@@ -209,10 +223,6 @@ export default function StudentsPage() {
     clearSelection();
   }
 
-  async function handleDeleteConfirm() {
-    if (!deleteTarget) return;
-    await deleteMutation.mutateAsync(deleteTarget.id);
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -243,6 +253,28 @@ export default function StudentsPage() {
         }
       />
 
+      {/* Active roster vs Cancelled Students tab (Point 4). */}
+      <div className="flex gap-1 rounded-lg border p-1 w-fit">
+        <Button
+          size="sm"
+          variant={view === "active" ? "default" : "ghost"}
+          onClick={() => setView("active")}
+        >
+          Active
+        </Button>
+        <Button
+          size="sm"
+          variant={view === "cancelled" ? "default" : "ghost"}
+          onClick={() => setView("cancelled")}
+        >
+          Cancelled
+        </Button>
+      </div>
+
+      {view === "cancelled" ? (
+        <CancelledStudents branchId={branchId} canRestore={isManager} />
+      ) : (
+      <>
       {/* Search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Input
@@ -298,7 +330,7 @@ export default function StudentsPage() {
           <StudentTable
             rows={rows}
             onEdit={handleEdit}
-            onDelete={isManager ? handleDeleteClick : undefined}
+            onCancel={isManager ? handleCancelClick : undefined}
             onFieldChange={handleFieldChange}
             sortBy={sortBy}
             order={order}
@@ -336,6 +368,8 @@ export default function StudentsPage() {
           </div>
         </>
       )}
+      </>
+      )}
 
       <EditStudentDialog
         student={editTarget}
@@ -345,18 +379,21 @@ export default function StudentsPage() {
         isPending={updateMutation.isPending}
       />
 
-      <ConfirmDialog
-        open={!!deleteTarget}
-        onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title="Delete student?"
+      {/* Cancel Admission (Point 4): keeps the record, captures an optional
+          reason. Today's date is recorded server-side. */}
+      <PromptDialog
+        open={!!cancelTarget}
+        onOpenChange={(o) => !o && setCancelTarget(null)}
+        title="Cancel admission?"
         description={
-          deleteTarget
-            ? `Are you sure you want to delete "${deleteTarget.first_name} ${deleteTarget.last_name}"? This cannot be undone.`
+          cancelTarget
+            ? `"${cancelTarget.first_name} ${cancelTarget.last_name}" will be removed from active lists but kept under Cancelled Students, with all past results and fees intact. You can restore them later.`
             : ""
         }
-        confirmLabel="Delete"
-        destructive
-        onConfirm={handleDeleteConfirm}
+        label="Reason (optional)"
+        placeholder="e.g. Shifted city, admission withdrawn"
+        confirmLabel="Cancel admission"
+        onConfirm={handleCancelConfirm}
       />
 
       <ConfirmDialog

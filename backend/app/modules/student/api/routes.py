@@ -28,6 +28,8 @@ from app.modules.student.schemas.student_schemas import (
     BulkDeleteSummary,
     BulkStudentDelete,
     BulkStudentUpdate,
+    CancelAdmissionRequest,
+    CancelledStudentRow,
     ImportJobResponse,
     ImportRowsValidateRequest,
     ImportPreview,
@@ -122,6 +124,17 @@ async def list_students_roster(
         fees_status=fees_status,
         batch_id=batch_id,
     )
+
+
+@router.get("/cancelled", response_model=list[CancelledStudentRow])
+async def list_cancelled_students(
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    """Students whose admission was cancelled (Point 4) — PRN, name, batch,
+    cancel date and reason. The source for the Cancelled Students tab."""
+    return await student_service.list_cancelled_students(session, branch_id)
 
 
 @router.get("/{student_id}", response_model=StudentResponse)
@@ -520,6 +533,42 @@ async def delete_student(
     session: AsyncSession = Depends(get_db),
 ):
     await student_service.delete_student(
+        session, student_id, branch_id, current_user["user_id"],
+        request.client.host if request.client else None,
+    )
+
+
+@router.post("/{student_id}/cancel-admission", response_model=StudentResponse)
+async def cancel_admission(
+    student_id: uuid.UUID,
+    body: CancelAdmissionRequest,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    # Manager-only, same as Delete; a denied attempt is audited.
+    current_user: dict = Depends(require_manager_or_audit("Cancel", "students")),
+    session: AsyncSession = Depends(get_db),
+):
+    """Cancel a student's admission: hide them from active lists but keep the
+    record (soft-delete marked 'cancelled', with date + optional reason). Old
+    test results, rank lists and fees are preserved; Restore reverses it."""
+    return await student_service.cancel_admission(
+        session, student_id, branch_id, current_user["user_id"],
+        reason=body.reason,
+        ip_address=request.client.host if request.client else None,
+    )
+
+
+@router.post("/{student_id}/restore", response_model=StudentResponse)
+async def restore_admission(
+    student_id: uuid.UUID,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(["super_admin", "branch_admin"])),
+    session: AsyncSession = Depends(get_db),
+):
+    """Restore a cancelled admission — the student becomes active again, with
+    their batch and all history intact."""
+    return await student_service.restore_admission(
         session, student_id, branch_id, current_user["user_id"],
         request.client.host if request.client else None,
     )

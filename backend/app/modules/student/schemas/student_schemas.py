@@ -154,6 +154,26 @@ class BulkStudentDelete(BaseModel):
     student_ids: list[uuid.UUID]
 
 
+class CancelAdmissionRequest(BaseModel):
+    """Cancel a student's admission (Point 4). Reason is optional; the cancel
+    date is set server-side to today."""
+
+    reason: str | None = None
+
+
+class CancelledStudentRow(BaseModel):
+    """One row of the Cancelled Students tab: who, which batch, when and why."""
+
+    id: uuid.UUID
+    first_name: str
+    last_name: str
+    enrollment_number: str | None = None
+    batch_id: uuid.UUID | None = None
+    batch_name: str | None = None
+    cancelled_at: date | None = None
+    cancellation_reason: str | None = None
+
+
 class ImportRowsValidateRequest(BaseModel):
     """Edited grid rows to re-validate (T4). Each row is keyed by canonical
     field key (name / class / target / batch / …)."""
