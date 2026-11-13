@@ -104,12 +104,43 @@ async def test_ranklist_exports_carry_subject_columns(db_session, seed_data):
     rl = await test_service.get_ranklist(db_session, test.id, seed_data["branch_a"].id)
 
     html = ranklist_export.ranklist_html(brand="Matrix Science Academy", ranklist=rl)
-    assert "<th class='c'>Physics</th>" in html
-    assert "<th class='c'>Chemistry</th>" in html
-    assert "<th>Total</th>" in html
+    # Headers carry the per-subject / overall max marks from the test setup.
+    assert "<th class='c'>Physics (80)</th>" in html
+    assert "<th class='c'>Chemistry (80)</th>" in html
+    assert "<th class='c'>Total (160)</th>" in html
+    # The % column is gone.
+    assert "<th>%</th>" not in html and "<th class='c'>%</th>" not in html
+    # Column colour scale reaches the PDF HTML: the top total (130) is painted.
+    assert "background:#" in html
 
     xlsx = ranklist_export.ranklist_xlsx(brand="Matrix Science Academy", ranklist=rl)
     assert xlsx[:2] == b"PK"  # a real .xlsx (zip) came back
+
+
+def test_colour_scale_endpoints_ties_and_flat():
+    # Highest → green, lowest → red, midpoint → white.
+    assert ranklist_export._scale_rgb(50, 10, 50) == ranklist_export._GREEN
+    assert ranklist_export._scale_rgb(10, 10, 50) == ranklist_export._RED
+    assert ranklist_export._scale_rgb(30, 10, 50) == ranklist_export._WHITE
+    # Ties resolve to the same colour.
+    assert ranklist_export._scale_rgb(42, 10, 50) == ranklist_export._scale_rgb(42, 10, 50)
+    # No spread (everyone tied / single student) → no colour at all.
+    assert ranklist_export._scale_rgb(20, 20, 20) is None
+
+
+def test_colour_scale_ignores_absentees():
+    rl = {
+        "ranked": [
+            {"marks_obtained": 90, "subject_marks": {"Physics": 45}},
+            {"marks_obtained": 30, "subject_marks": {"Physics": 15}},
+        ],
+        "absentees": [{"marks_obtained": None, "subject_marks": {}}],
+        "subjects": [{"subject_name": "Physics"}],
+    }
+    bounds = ranklist_export._column_bounds(rl)
+    # Bounds come only from the two appeared students, not the absentee's blank.
+    assert bounds["__total__"] == (30, 90)
+    assert bounds["Physics"] == (15, 45)
 
 
 @pytest.mark.usefixtures("seed_data")
