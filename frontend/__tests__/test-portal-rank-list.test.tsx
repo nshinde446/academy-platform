@@ -168,13 +168,30 @@ describe("Test Portal RankList", () => {
     expect(screen.getByRole("button", { name: /upload physics csv/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /upload chemistry csv/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /upload zipgrade csv/i })).not.toBeInTheDocument();
-    // Subject columns + a Total column in the table header.
-    expect(screen.getByRole("columnheader", { name: "Physics" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "Chemistry" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "Total" })).toBeInTheDocument();
+    // Subject + Total headers carry the max marks (from the test setup).
+    expect(screen.getByRole("columnheader", { name: "Physics (80)" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Chemistry (80)" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Total (160)" })).toBeInTheDocument();
     // Per-subject marks in the student's row.
     const row = screen.getByText("Aarav P").closest("tr")!;
     expect(within(row).getByText("70")).toBeInTheDocument();
     expect(within(row).getByText("60")).toBeInTheDocument();
+  });
+
+  it("shows the overall max marks in the Marks header and drops the % column", () => {
+    render(<RankList branchId="br1" test={TEST} />);
+    // OMR test (no subjects): single Marks header now carries the total.
+    expect(screen.getByRole("columnheader", { name: "Marks (200)" })).toBeInTheDocument();
+    // The % column is gone from the header entirely.
+    expect(screen.queryByRole("columnheader", { name: "%" })).not.toBeInTheDocument();
+  });
+
+  it("paints a column colour scale on the marks cells", () => {
+    render(<RankList branchId="br1" test={TEST} />);
+    // Top scorer (186) in a two-student spread gets a green-ish tint; the lower
+    // one (180) is tinted too. Both carry an inline background colour.
+    const top = screen.getByText("Aarohi A").closest("tr")!;
+    const cell = within(top).getByText("186 / 200").closest("td")!;
+    expect(cell.style.backgroundColor).not.toBe("");
   });
 });
