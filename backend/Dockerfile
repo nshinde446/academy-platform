@@ -33,8 +33,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     # would fail with ModuleNotFoundError.
     PYTHONUSERBASE=/home/app/.local
 
+# libatomic1 is required by the Playwright node driver itself — without it the
+# `playwright install` step below dies before it can run with
+# "libatomic.so.1: cannot open shared object file" (the slim base image stopped
+# shipping it). Installed here, before that step, so Chromium provisioning works.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq5 curl tini \
+    && apt-get install -y --no-install-recommends libpq5 curl tini libatomic1 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m -u 1000 app
 
