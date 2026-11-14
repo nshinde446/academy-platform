@@ -80,6 +80,16 @@ class Student(BaseModel):
     aspiration_target: Mapped[str | None] = mapped_column(
         String(40), nullable=True
     )
+    # Admission cancellation (client req, Point 4): a cancelled admission is a
+    # soft-delete (is_deleted=True) *marked* with status='cancelled' so it stays
+    # out of every active list yet is recoverable and listable in the Cancelled
+    # Students tab — distinct from a plain delete (is_deleted=True, status!=
+    # 'cancelled'). These two carry the when/why; child rows (marks, fees) are
+    # left untouched so old data survives. Restore clears all three.
+    cancelled_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    cancellation_reason: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )
 
 
 class StudentIdentity(BaseModel):

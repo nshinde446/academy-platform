@@ -59,7 +59,7 @@ describe("StudentTable (MSA_Design layout)", () => {
       <StudentTable
         rows={[]}
         onEdit={mockEdit}
-        onDelete={mockDelete}
+        onCancel={mockDelete}
         onFieldChange={mockField}
         sortBy="name"
         order="asc"
@@ -81,7 +81,7 @@ describe("StudentTable (MSA_Design layout)", () => {
       <StudentTable
         rows={ROWS}
         onEdit={mockEdit}
-        onDelete={mockDelete}
+        onCancel={mockDelete}
         onFieldChange={mockField}
         sortBy="name"
         order="asc"
@@ -112,7 +112,7 @@ describe("StudentTable (MSA_Design layout)", () => {
       <StudentTable
         rows={ROWS}
         onEdit={mockEdit}
-        onDelete={mockDelete}
+        onCancel={mockDelete}
         onFieldChange={mockField}
         sortBy="name"
         order="asc"
@@ -125,13 +125,13 @@ describe("StudentTable (MSA_Design layout)", () => {
     expect(mockEdit).toHaveBeenCalledWith(ROWS[0]);
   });
 
-  it("invokes onDelete with the resolved StudentResponse for the row", async () => {
+  it("invokes onCancel with the row when Cancel Admission is clicked", async () => {
     const user = userEvent.setup();
     render(
       <StudentTable
         rows={ROWS}
         onEdit={mockEdit}
-        onDelete={mockDelete}
+        onCancel={mockDelete}
         onFieldChange={mockField}
         sortBy="name"
         order="asc"
@@ -140,7 +140,7 @@ describe("StudentTable (MSA_Design layout)", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: /delete rahul sharma/i }),
+      screen.getByRole("button", { name: /cancel admission for rahul sharma/i }),
     );
     expect(mockDelete).toHaveBeenCalledWith(ROWS[0]);
   });
@@ -151,7 +151,7 @@ describe("StudentTable (MSA_Design layout)", () => {
       <StudentTable
         rows={ROWS}
         onEdit={mockEdit}
-        onDelete={mockDelete}
+        onCancel={mockDelete}
         onFieldChange={mockField}
         sortBy="name"
         order="asc"
@@ -174,7 +174,7 @@ describe("StudentTable (MSA_Design layout)", () => {
       <StudentTable
         rows={ROWS}
         onEdit={mockEdit}
-        onDelete={mockDelete}
+        onCancel={mockDelete}
         onFieldChange={mockField}
         sortBy="name"
         order="asc"
@@ -197,7 +197,7 @@ describe("StudentTable (MSA_Design layout)", () => {
       <StudentTable
         rows={ROWS}
         onEdit={mockEdit}
-        onDelete={mockDelete}
+        onCancel={mockDelete}
         onFieldChange={mockField}
         sortBy="name"
         order="asc"
@@ -218,7 +218,7 @@ describe("StudentTable (MSA_Design layout)", () => {
       <StudentTable
         rows={ROWS}
         onEdit={mockEdit}
-        onDelete={mockDelete}
+        onCancel={mockDelete}
         onFieldChange={mockField}
         sortBy="name"
         order="asc"

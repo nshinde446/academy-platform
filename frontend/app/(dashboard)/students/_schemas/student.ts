@@ -40,6 +40,18 @@ export interface StudentResponse {
   status: string;
 }
 
+// One row of the Cancelled Students tab (GET /students/cancelled, Point 4).
+export interface CancelledStudent {
+  id: string;
+  first_name: string;
+  last_name: string;
+  enrollment_number: string | null;
+  batch_id: string | null;
+  batch_name: string | null;
+  cancelled_at: string | null;
+  cancellation_reason: string | null;
+}
+
 // Coaching stream — which subjects the student sits (P/C common; M for PCM;
 // Bio for PCB). Distinct from board syllabus.
 export const STREAMS = ["PCM", "PCB", "PCMB"] as const;

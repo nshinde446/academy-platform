@@ -16,6 +16,7 @@ import type {
   StudentUpcomingTest,
   StudentAttendanceReport,
   StudentMissedTopic,
+  CancelledStudent,
   ImportJob,
   AcademicYearResponse,
 } from "../_schemas/student";
@@ -51,6 +52,8 @@ export const studentKeys = {
     [...studentKeys.all, "attendance-report", branchId, id] as const,
   topicsMissed: (branchId: string, id: string) =>
     [...studentKeys.all, "topics-missed", branchId, id] as const,
+  cancelled: (branchId: string) =>
+    [...studentKeys.all, "cancelled", branchId] as const,
 };
 
 export const academicYearKeys = {
@@ -239,6 +242,79 @@ export function useDeleteStudent(branchId: string | undefined) {
       }
     },
   });
+}
+
+// Cancel a student's admission (Point 4): keeps the record but hides it from
+// active lists. Invalidates the active rosters + the cancelled list.
+export function useCancelAdmission(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      studentId,
+      reason,
+    }: {
+      studentId: string;
+      reason: string | null;
+    }) => {
+      const res = await apiClient.post<StudentResponse>(
+        `/api/v1/students/${studentId}/cancel-admission`,
+        { reason },
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) invalidateRosters(queryClient, branchId);
+    },
+  });
+}
+
+// Restore a cancelled admission.
+export function useRestoreStudent(branchId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (studentId: string) => {
+      const res = await apiClient.post<StudentResponse>(
+        `/api/v1/students/${studentId}/restore`,
+        null,
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    onSuccess: () => {
+      if (branchId) invalidateRosters(queryClient, branchId);
+    },
+  });
+}
+
+// The Cancelled Students tab source.
+export function useCancelledStudents(
+  branchId: string | undefined,
+  enabled = true,
+) {
+  return useQuery<CancelledStudent[]>({
+    queryKey: studentKeys.cancelled(branchId!),
+    queryFn: async () => {
+      const res = await apiClient.get<CancelledStudent[]>(
+        "/api/v1/students/cancelled",
+        { params: { branch_id: branchId } },
+      );
+      return res.data;
+    },
+    enabled: !!branchId && enabled,
+  });
+}
+
+function invalidateRosters(
+  queryClient: ReturnType<typeof useQueryClient>,
+  branchId: string,
+) {
+  queryClient.invalidateQueries({ queryKey: studentKeys.list(branchId) });
+  queryClient.invalidateQueries({ queryKey: studentKeys.withStats(branchId) });
+  queryClient.invalidateQueries({ queryKey: studentKeys.roster(branchId) });
+  queryClient.invalidateQueries({ queryKey: studentKeys.cancelled(branchId) });
 }
 
 export interface BulkUpdatePayload {

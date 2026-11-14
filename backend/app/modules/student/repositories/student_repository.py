@@ -49,6 +49,81 @@ async def list_by_branch(
     return list(result.scalars().all())
 
 
+async def get_cancelled_by_id(
+    session: AsyncSession, student_id: uuid.UUID
+) -> Student | None:
+    """A cancelled student (soft-deleted + status='cancelled'), for Restore.
+    Plain ``get_by_id`` filters is_deleted and so never returns these."""
+    result = await session.execute(
+        select(Student).where(
+            Student.id == student_id,
+            Student.is_deleted == True,  # noqa: E712
+            Student.status == "cancelled",
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def list_cancelled(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> list[dict]:
+    """Cancelled-admission students for the Cancelled Students tab: PRN, name,
+    batch, cancel date and reason. Their batch mapping is left intact on cancel,
+    so the batch name is still resolvable. Most recently cancelled first."""
+    from app.modules.batch.models.batch_models import Batch
+
+    students = (
+        await session.execute(
+            select(Student).where(
+                Student.branch_id == branch_id,
+                Student.is_deleted == True,  # noqa: E712
+                Student.status == "cancelled",
+            )
+        )
+    ).scalars().all()
+    if not students:
+        return []
+
+    student_ids = [s.id for s in students]
+    batch_by_student: dict[uuid.UUID, uuid.UUID] = {
+        r.student_id: r.batch_id
+        for r in (
+            await session.execute(
+                select(StudentBatchMapping.student_id, StudentBatchMapping.batch_id)
+                .where(StudentBatchMapping.student_id.in_(student_ids))
+            )
+        ).all()
+    }
+    batch_ids = list({b for b in batch_by_student.values()})
+    batches_by_id: dict[uuid.UUID, str] = {}
+    if batch_ids:
+        batches_by_id = {
+            r.id: r.name
+            for r in (
+                await session.execute(
+                    select(Batch.id, Batch.name).where(Batch.id.in_(batch_ids))
+                )
+            ).all()
+        }
+
+    rows = [
+        {
+            "id": s.id,
+            "first_name": s.first_name,
+            "last_name": s.last_name,
+            "enrollment_number": s.enrollment_number,
+            "batch_id": batch_by_student.get(s.id),
+            "batch_name": batches_by_id.get(batch_by_student.get(s.id)),
+            "cancelled_at": s.cancelled_at,
+            "cancellation_reason": s.cancellation_reason,
+        }
+        for s in students
+    ]
+    # Most recently cancelled first; unknown dates sink to the bottom.
+    rows.sort(key=lambda r: (r["cancelled_at"] is not None, r["cancelled_at"]), reverse=True)
+    return rows
+
+
 async def update(session: AsyncSession, student: Student, **kwargs) -> Student:
     for key, value in kwargs.items():
         if value is not None:

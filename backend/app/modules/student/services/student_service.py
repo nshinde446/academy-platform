@@ -611,3 +611,90 @@ async def delete_student(
         ip_address=ip_address,
         branch_id=branch_id,
     )
+
+
+async def cancel_admission(
+    session: AsyncSession,
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    reason: str | None = None,
+    ip_address: str | None = None,
+):
+    """Cancel a student's admission (client req, Point 4). The student drops out
+    of every active list (it's a soft-delete) but the row and all its child data
+    — past test results, old rank lists, fees, accounts entries — are kept. The
+    status='cancelled' marker + cancel date + reason make it recoverable and
+    listable in the Cancelled Students tab. Batch mappings are intentionally left
+    intact so Restore is clean and the Cancelled tab can show the batch."""
+    from datetime import date
+
+    student = await student_repository.get_by_id(session, student_id)
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student not found")
+    if student.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    reason = (reason or "").strip() or None
+    student.is_deleted = True
+    student.status = "cancelled"
+    student.cancelled_at = date.today()
+    student.cancellation_reason = reason
+    await session.flush()
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="CANCEL_ADMISSION",
+        table_name="students",
+        record_id=student.id,
+        old_values={"first_name": student.first_name, "last_name": student.last_name},
+        new_values={"cancelled_at": str(student.cancelled_at), "reason": reason},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return student
+
+
+async def restore_admission(
+    session: AsyncSession,
+    student_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    current_user_id: uuid.UUID,
+    ip_address: str | None = None,
+):
+    """Undo a cancellation: the student becomes active again, exactly as before
+    (batch mappings and all child data were never touched)."""
+    student = await student_repository.get_cancelled_by_id(session, student_id)
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cancelled student not found",
+        )
+    if student.branch_id != branch_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No access to this branch")
+
+    student.is_deleted = False
+    student.status = "active"
+    student.cancelled_at = None
+    student.cancellation_reason = None
+    await session.flush()
+
+    await audit_service.log_action(
+        session,
+        user_id=current_user_id,
+        action="RESTORE_ADMISSION",
+        table_name="students",
+        record_id=student.id,
+        new_values={"first_name": student.first_name, "last_name": student.last_name},
+        ip_address=ip_address,
+        branch_id=branch_id,
+    )
+    return student
+
+
+async def list_cancelled_students(
+    session: AsyncSession, branch_id: uuid.UUID
+) -> list[dict]:
+    """Cancelled-admission students for the Cancelled Students tab."""
+    return await student_repository.list_cancelled(session, branch_id)
