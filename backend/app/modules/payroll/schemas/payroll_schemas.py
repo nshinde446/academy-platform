@@ -64,6 +64,10 @@ class ReportRow(BaseModel):
     net_days: float
     balance_in: float
     balance_out: float
+    # Extra-days (off-day balance) movement this month = balance_out − balance_in
+    # (client Point 1: Opening = balance_in, This month = balance_change,
+    # Closing = balance_out).
+    balance_change: float
     uncovered_days: float
     deferred_days: float
     late_fine_total: float
@@ -82,6 +86,49 @@ class ReportResponse(BaseModel):
     lifecycle: str  # OPEN (preview) | CLOSED | LOCKED | NOT_SET
     rows: list[ReportRow]
     totals: ReportTotals
+
+
+# ── opening balances (client Point 1) ────────────────────────────────────────
+
+class OpeningBalanceRow(BaseModel):
+    staff_id: str
+    emp_code: str
+    name: str
+    department: str
+    opening_balance: float
+
+
+class OpeningBalancesResponse(BaseModel):
+    effective_year: int
+    effective_month: int
+    # True once a month is CLOSED/LOCKED — opening balances can no longer be set.
+    locked: bool
+    rows: list[OpeningBalanceRow]
+
+
+class OpeningBalanceEntry(BaseModel):
+    model_config = {"extra": "forbid"}
+    staff_id: uuid.UUID
+    balance: float = Field(ge=-366, le=366)
+
+
+class OpeningBalancesUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+    effective_year: int = Field(ge=2000, le=2100)
+    effective_month: int = Field(ge=1, le=12)
+    entries: list[OpeningBalanceEntry]
+
+
+class OpeningBalanceImportRow(BaseModel):
+    staff_id: str
+    emp_code: str
+    name: str
+    opening_balance: float
+
+
+class OpeningBalanceImportResult(BaseModel):
+    matched: list[OpeningBalanceImportRow]
+    unmatched: list[str]
 
 
 # ── staff ledger (§4/§11) ────────────────────────────────────────────────────

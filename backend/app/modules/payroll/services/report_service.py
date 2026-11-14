@@ -133,6 +133,9 @@ async def monthly_report(
             "net_days": d.get("net_days", 0.0),
             "balance_in": d.get("balance_in", 0.0),
             "balance_out": d.get("balance_out", 0.0),
+            "balance_change": round(
+                d.get("balance_out", 0.0) - d.get("balance_in", 0.0), 1
+            ),
             "uncovered_days": d.get("uncovered_days", 0.0),
             "deferred_days": d.get("deferred_days", 0.0),
             "late_fine_total": d.get("late_fine_total", 0.0),

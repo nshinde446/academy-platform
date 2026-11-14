@@ -48,9 +48,40 @@ export interface ReportRow {
   net_days: number;
   balance_in: number;
   balance_out: number;
+  /** Extra-days movement this month = balance_out − balance_in (client Point 1). */
+  balance_change: number;
   uncovered_days: number;
   deferred_days: number;
   late_fine_total: number;
+}
+
+// ── opening balances (client Point 1) ────────────────────────────────────────
+
+export interface OpeningBalanceRow {
+  staff_id: string;
+  emp_code: string;
+  name: string;
+  department: string;
+  opening_balance: number;
+}
+
+export interface OpeningBalancesResponse {
+  effective_year: number;
+  effective_month: number;
+  locked: boolean;
+  rows: OpeningBalanceRow[];
+}
+
+export interface OpeningBalanceImportRow {
+  staff_id: string;
+  emp_code: string;
+  name: string;
+  opening_balance: number;
+}
+
+export interface OpeningBalanceImportResult {
+  matched: OpeningBalanceImportRow[];
+  unmatched: string[];
 }
 
 export interface ReportResponse {
@@ -276,6 +307,52 @@ export function useLedger(branchId: string | undefined, staffId: string | undefi
         params: { branch_id: branchId },
       })).data,
     enabled: !!branchId && !!staffId,
+  });
+}
+
+// ── opening balances ─────────────────────────────────────────────────────────
+
+export function useOpeningBalances(
+  branchId: string | undefined,
+  year: number,
+  month: number,
+) {
+  return useQuery<OpeningBalancesResponse>({
+    queryKey: [...payrollKeys.all, "opening-balances", branchId ?? "", year, month],
+    queryFn: async () =>
+      (await apiClient.get<OpeningBalancesResponse>("/api/v1/payroll/opening-balances", {
+        params: { branch_id: branchId, year, month },
+      })).data,
+    enabled: !!branchId,
+  });
+}
+
+export function useSetOpeningBalances(branchId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: {
+      effective_year: number;
+      effective_month: number;
+      entries: { staff_id: string; balance: number }[];
+    }) =>
+      (await apiClient.put<{ written: number }>("/api/v1/payroll/opening-balances", v, {
+        params: { branch_id: branchId },
+      })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: payrollKeys.all }),
+  });
+}
+
+export function useImportOpeningBalances(branchId: string | undefined) {
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return (await apiClient.post<OpeningBalanceImportResult>(
+        "/api/v1/payroll/opening-balances/import",
+        form,
+        { params: { branch_id: branchId } },
+      )).data;
+    },
   });
 }
 
