@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { type CSSProperties, useRef, useState } from "react";
 import {
   Table,
   TableHeader,
@@ -23,7 +23,14 @@ import {
   useUploadSubjectCsv,
 } from "../_hooks/use-test-portal";
 import type { ReviewRow, TestSummary } from "../_schemas/test-portal";
+import { cellColor, columnBounds } from "../_lib/color-scale";
 import { ResolveReviewDialog } from "./resolve-review-dialog";
+
+// "Physics (50)" — the max marks come straight from the test setup, so a test
+// with Physics 25 or Maths 120 shows correctly. Bare label when unknown.
+function withMax(label: string, total: number | null | undefined): string {
+  return total == null ? label : `${label} (${total})`;
+}
 
 export function RankList({
   branchId,
@@ -50,6 +57,26 @@ export function RankList({
   // has none, so it keeps the single ZipGrade upload + single Marks column.
   const subjects = rl?.subjects ?? [];
   const perSubject = subjects.length > 0;
+
+  // Per-column colour-scale bounds, computed over appeared students only (the
+  // absentees are grouped separately, so they never drag the scale). One for the
+  // Total column, one per subject column.
+  const ranked = rl?.ranked ?? [];
+  const totalBounds = columnBounds(ranked.map((r) => r.marks_obtained));
+  const subjectBounds = new Map(
+    subjects.map((s) => [
+      s.subject_name,
+      columnBounds(ranked.map((r) => r.subject_marks?.[s.subject_name])),
+    ]),
+  );
+  // Cell background for a marks column, with readable dark text on the tint.
+  function scaleStyle(
+    value: number | null | undefined,
+    bounds: { min: number; max: number } | undefined,
+  ): CSSProperties | undefined {
+    const bg = bounds ? cellColor(value, bounds.min, bounds.max) : undefined;
+    return bg ? { backgroundColor: bg, color: "#111827" } : undefined;
+  }
 
   async function onSubjectFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -268,13 +295,12 @@ export function RankList({
                 <TableHead>Student</TableHead>
                 {subjects.map((s) => (
                   <TableHead key={s.subject_id} className="text-right">
-                    {s.subject_name}
+                    {withMax(s.subject_name, s.total_marks)}
                   </TableHead>
                 ))}
                 <TableHead className="text-right">
-                  {perSubject ? "Total" : "Marks"}
+                  {withMax(perSubject ? "Total" : "Marks", rl.total_marks)}
                 </TableHead>
-                <TableHead className="text-right">%</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -290,16 +316,20 @@ export function RankList({
                   {subjects.map((s) => {
                     const v = r.subject_marks?.[s.subject_name];
                     return (
-                      <TableCell key={s.subject_id} className="text-right tabular-nums text-sm">
+                      <TableCell
+                        key={s.subject_id}
+                        className="text-right tabular-nums text-sm"
+                        style={scaleStyle(v, subjectBounds.get(s.subject_name))}
+                      >
                         {v == null ? "—" : v}
                       </TableCell>
                     );
                   })}
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell
+                    className="text-right tabular-nums"
+                    style={scaleStyle(r.marks_obtained, totalBounds)}
+                  >
                     {r.marks_obtained ?? 0} / {rl.total_marks}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {r.percentage != null ? `${r.percentage.toFixed(1)}` : "—"}
                   </TableCell>
                 </TableRow>
               ))}
@@ -318,7 +348,6 @@ export function RankList({
                   <TableCell className="text-right">
                     <Badge variant="destructive">ABSENT</Badge>
                   </TableCell>
-                  <TableCell className="text-right text-muted-foreground">—</TableCell>
                 </TableRow>
               ))}
             </TableBody>
