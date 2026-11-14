@@ -151,10 +151,11 @@ async def test_export_numbers_match_report_and_late_fine(client, db_session, see
     row = screen["rows"][0]
     assert row["late_fine_total"] == 2000.0  # two late days, 11+ band
 
-    # The Excel export carries the same late-fine number (column 12).
+    # The Excel export carries the same late-fine number (last column, 13 after
+    # the Extra Days Open/+-/Close split).
     _, data, _ = await export_service.report(db_session, branch_id=BR, year=2026, month=6, fmt="xlsx")
     ws = load_workbook(io.BytesIO(data)).active
-    assert ws.cell(row=6, column=12).value == "2000"
+    assert ws.cell(row=6, column=13).value == "2000"
 
 
 def test_report_html_builder_contains_rows():

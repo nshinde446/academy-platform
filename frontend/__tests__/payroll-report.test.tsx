@@ -20,7 +20,7 @@ function row(over: Partial<ReportRow>): ReportRow {
   return {
     staff_id: "s1", emp_code: "91000", name: "Asha Rao", department: "MSA-Teachers",
     required_days: 26, present_days: 27, half_days: 0, paid_leave_days: 0,
-    net_days: 1, balance_in: 0, balance_out: 1, uncovered_days: 0,
+    net_days: 1, balance_in: 0, balance_out: 1, balance_change: 0, uncovered_days: 0,
     deferred_days: 0, late_fine_total: 0, ...over,
   };
 }

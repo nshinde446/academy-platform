@@ -25,8 +25,11 @@ PDF_MIME = "application/pdf"
 
 _REPORT_HEADERS = [
     "Code", "Name", "Req.", "Present", "Half", "Paid L/H", "Net",
-    "CF in", "CF out", "Uncovered", "Deferred", "Late Fine",
+    # Extra Days (off-day balance): Opening / this month (+/-) / Closing.
+    "Open", "+/-", "Close", "Uncovered", "Deferred", "Late Fine",
 ]
+# Column indexes (0-based) whose value is a day-balance and shows red when < 0.
+_BALANCE_COLS = {7, 8, 9}
 _LEDGER_HEADERS = ["Month", "Entry Type", "Days", "Running Balance", "By", "When"]
 
 
@@ -70,18 +73,26 @@ async def report(
 
 
 def _report_row_cells(r: dict) -> list[str]:
+    bal_change = r.get("balance_change", r["balance_out"] - r["balance_in"])
     return [
         r["emp_code"], r["name"], _num(r["required_days"]), _num(r["present_days"]),
         str(r["half_days"]), _num(r["paid_leave_days"]), f'{r["net_days"]:+g}',
-        _num(r["balance_in"]), _num(r["balance_out"]), _num(r["uncovered_days"]),
-        _num(r["deferred_days"]), _num(r["late_fine_total"]),
+        _num(r["balance_in"]), f"{bal_change:+g}", _num(r["balance_out"]),
+        _num(r["uncovered_days"]), _num(r["deferred_days"]), _num(r["late_fine_total"]),
     ]
 
 
 def _report_html(brand: str, period: str, status: str, data: dict, gen: str) -> str:
     ths = "".join(f"<th>{ex._esc(h)}</th>" for h in _REPORT_HEADERS)
+
+    def _cell(i: int, c: str) -> str:
+        # Negative day-balances are shown in red so HR notices (client Point 1).
+        red = i in _BALANCE_COLS and c.lstrip("+").startswith("-")
+        style = " style='color:#c0392b;font-weight:bold'" if red else ""
+        return f"<td class='c'{style}>{ex._esc(c)}</td>"
+
     body = "".join(
-        "<tr>" + "".join(f"<td class='c'>{ex._esc(c)}</td>" for c in _report_row_cells(r)) + "</tr>"
+        "<tr>" + "".join(_cell(i, c) for i, c in enumerate(_report_row_cells(r))) + "</tr>"
         for r in data["rows"]
     )
     t = data["totals"]
@@ -89,7 +100,7 @@ def _report_html(brand: str, period: str, status: str, data: dict, gen: str) -> 
         "<tr>"
         "<td colspan='3' style='text-align:right;font-weight:bold'>Totals</td>"
         f"<td class='c' style='font-weight:bold'>{_num(t['present_days'])}</td>"
-        "<td colspan='5'></td>"
+        "<td colspan='6'></td>"
         f"<td class='c' style='font-weight:bold'>{_num(t['uncovered_days'])}</td>"
         "<td></td>"
         f"<td class='c' style='font-weight:bold'>{_num(t['late_fine_total'])}</td>"
@@ -120,21 +131,25 @@ def _report_xlsx(brand: str, period: str, status: str, data: dict) -> bytes:
     ws["A2"].font = Font(bold=True, size=12)
     ws["A3"] = f"{period} · Status: {status}"
 
+    red = Font(color="C0392B", bold=True)
     head = 5
     for c, h in enumerate(_REPORT_HEADERS, start=1):
         ws.cell(row=head, column=c, value=h).font = Font(bold=True)
     for i, r in enumerate(data["rows"], start=head + 1):
         for c, val in enumerate(_report_row_cells(r), start=1):
-            ws.cell(row=i, column=c, value=val)
+            cell = ws.cell(row=i, column=c, value=val)
+            # Negative day-balances in red (client Point 1).
+            if (c - 1) in _BALANCE_COLS and val.lstrip("+").startswith("-"):
+                cell.font = red
     if data["rows"]:
         t = data["totals"]
         tr = head + 1 + len(data["rows"])
         ws.cell(row=tr, column=2, value="Totals").font = Font(bold=True)
         ws.cell(row=tr, column=4, value=_num(t["present_days"])).font = Font(bold=True)
-        ws.cell(row=tr, column=12, value=_num(t["late_fine_total"])).font = Font(bold=True)
+        ws.cell(row=tr, column=13, value=_num(t["late_fine_total"])).font = Font(bold=True)
     else:
         ws.cell(row=head + 1, column=1, value="No staff for this selection.")
-    for c, w in enumerate((10, 22, 7, 9, 6, 9, 7, 7, 7, 10, 9, 10), start=1):
+    for c, w in enumerate((10, 22, 7, 9, 6, 9, 7, 7, 7, 7, 10, 9, 10), start=1):
         ws.column_dimensions[get_column_letter(c)].width = w
     return ex._xlsx_bytes(wb)
 

@@ -49,6 +49,10 @@ LEDGER_ENTRY_TYPES = (
     "makeup_credit",
     "reversal",
     "manual_adjustment",
+    # Seeds a staff member's carry-forward balance from pre-system history before
+    # the first payroll month (client Point 1 "opening balance"). Dated to the
+    # month *before* the first month so it is read as that month's balance_in.
+    "opening_balance",
 )
 HOLIDAY_KINDS = ("HOLIDAY", "LEAVE")
 

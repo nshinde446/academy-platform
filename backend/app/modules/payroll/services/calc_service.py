@@ -168,6 +168,8 @@ def _apply_balance(
     """The balance arithmetic (§2/§3). Returns the movement for the net result.
 
     - net > 0 (EXTRA): add to balance up to the cap; the remainder is trimmed.
+      A ``cap <= 0`` means *no cap* (unlimited accrual), so the whole extra is
+      added — the off-day balance model (client Point 1) runs uncapped.
     - net < 0 (SHORTFALL): the balance covers it first (down to zero, never
       below unless allow_negative); the rest is uncovered.
     - net == 0: nothing moves, no entry (§3 Example 3)."""
@@ -178,7 +180,8 @@ def _apply_balance(
     }
     if net > 0:
         out["extra"] = net
-        room = max(0.0, cap - balance_in)
+        # cap <= 0 → unlimited (no trimming); otherwise cap the running balance.
+        room = net if cap <= 0 else max(0.0, cap - balance_in)
         added = min(net, room)
         out["added"] = added
         out["trimmed"] = net - added
