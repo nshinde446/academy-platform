@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
     Uuid,
     text,
@@ -21,6 +22,9 @@ from app.core.database.base import BaseModel
 # Leave request lifecycle. "approved" is the default so existing admin-created
 # leaves (pre-0068) keep blocking scheduling exactly as before.
 LEAVE_STATUSES = frozenset({"pending", "approved", "rejected"})
+
+# Weekend-work (Point 5) approval lifecycle.
+WEEKEND_WORK_STATUSES = frozenset({"PENDING", "APPROVED", "REJECTED"})
 
 
 class Teacher(BaseModel):
@@ -191,4 +195,82 @@ class TeacherBatchSubjectMapping(BaseModel):
     )
     branch_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("branch.id"), nullable=False
+    )
+
+
+class WeekendWork(BaseModel):
+    """A pre-approved Saturday/Sunday work day for a staff member (Point 5).
+
+    Three-step flow:
+      1. Pre-approval — a senior picks the weekend date + the staff allowed to
+         come (``pre_approved_by``). Without a row, a teacher can't claim weekend
+         work.
+      2. Work content — in Teacher Login the teacher writes what they did
+         (``work_content``).
+      3. Report & approval — the approver reviews and sets the Work Approved
+         Status (``approval_status`` + ``approval_note``, e.g. "Approved by Ravi
+         Sir").
+
+    Time IN/OUT, the day status and worked minutes are read live from
+    ``StaffDailyAttendance`` (never duplicated here). An approved worked weekend
+    credits payroll naturally: a punched weekend day is PRESENT/HALF_DAY in
+    ``StaffDailyAttendance`` and ``payroll.calc_service.compute_month`` already
+    counts it as an extra day. ``credit_days`` records that intended credit
+    (1.0 full / 0.5 half) for the report and audit.
+
+    Keyed on ``staff_id`` (not teacher_id) so emp_code + biometric attendance
+    join directly, matching the staff-attendance and payroll modules.
+    """
+
+    __tablename__ = "weekend_work"
+    __table_args__ = (
+        # One live weekend-work row per staff per date.
+        Index(
+            "uq_weekend_work_active",
+            "branch_id",
+            "staff_id",
+            "work_date",
+            unique=True,
+            postgresql_where=text("is_deleted = false"),
+            sqlite_where=text("is_deleted = 0"),
+        ),
+        Index("ix_weekend_work_branch_date", "branch_id", "work_date"),
+    )
+
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
+    )
+    staff_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("staff.id"), nullable=False
+    )
+    work_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    pre_approved_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+
+    # Step 2 — what the teacher did, written in Teacher Login.
+    work_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    work_content_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Step 3 — Work Approved Status: PENDING | APPROVED | REJECTED. Named
+    # approval_status (not BaseModel.status) exactly as TeacherLeave does.
+    approval_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="PENDING", default="PENDING",
+        index=True,
+    )
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    approval_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Management override (Rule 5): force the day ABSENT regardless of punches.
+    marked_absent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+
+    # Extra days credited to payroll when approved (1.0 full / 0.5 half), derived
+    # from the day's attendance status at approval time.
+    credit_days: Mapped[float] = mapped_column(
+        Numeric(3, 1), nullable=False, server_default="0", default=0
     )

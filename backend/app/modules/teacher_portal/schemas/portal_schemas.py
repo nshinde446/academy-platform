@@ -100,3 +100,31 @@ class LeaveDecision(BaseModel):
     """Admin approve/reject note (optional)."""
 
     note: str | None = None
+
+
+# ── Weekend work (Point 5) ───────────────────────────────────────────────────
+
+
+class WeekendPreapprove(BaseModel):
+    """Step 1 — pre-approve a weekend date for a set of staff."""
+
+    work_date: date
+    staff_ids: list[uuid.UUID]
+
+
+class WeekendWorkContent(BaseModel):
+    """Step 2 — the teacher's work content for the day."""
+
+    content: str
+
+
+class WeekendDecision(BaseModel):
+    """Step 3 — approve/reject with an optional note (e.g. 'Approved by Ravi Sir')."""
+
+    note: str | None = None
+
+
+class WeekendAbsentOverride(BaseModel):
+    """Management override (Rule 5) — force the day ABSENT (or clear it)."""
+
+    absent: bool = True

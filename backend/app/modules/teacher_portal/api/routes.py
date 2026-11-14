@@ -26,6 +26,7 @@ from app.modules.teacher_portal.schemas.portal_schemas import (
     ProfileContactUpdate,
     TeacherProfile,
     TeacherSession,
+    WeekendWorkContent,
 )
 from app.modules.teacher_portal.services import (
     auth_events,
@@ -33,6 +34,7 @@ from app.modules.teacher_portal.services import (
     leave_service,
     portal_service,
     productivity_service,
+    weekend_work_service,
     wof_service,
 )
 
@@ -251,6 +253,44 @@ async def my_wof(
     if s is None:
         raise HTTPException(status_code=404, detail="Staff not found")
     return await wof_service.balance(session, s)
+
+
+@me_router.get("/weekend-work")
+async def my_weekend_work(
+    me: TeacherSession = Depends(get_current_teacher),
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    """The signed-in teacher's pre-approved weekend days (Point 5), with biometric
+    IN/OUT + the work content they've written, for a month (default current)."""
+    import calendar as _cal
+    import datetime as _dt
+
+    today = _dt.date.today()
+    y, m = year or today.year, month or today.month
+    if not (1 <= m <= 12):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="month must be 1-12")
+    start = date(y, m, 1)
+    end = date(y, m, _cal.monthrange(y, m)[1])
+    return await weekend_work_service.list_for_teacher(
+        session, staff_id=me.staff_id, start=start, end=end,
+    )
+
+
+@me_router.patch("/weekend-work/{work_id}")
+async def submit_my_weekend_work_content(
+    work_id: uuid.UUID,
+    body: WeekendWorkContent,
+    request: Request,
+    me: TeacherSession = Depends(get_current_teacher),
+    session: AsyncSession = Depends(get_db),
+):
+    """Step 2 — write/update the work content for a pre-approved weekend day."""
+    return await weekend_work_service.submit_work_content(
+        session, staff_id=me.staff_id, work_id=work_id, content=body.content,
+        user_id=me.user_id, ip=request.client.host if request.client else None,
+    )
 
 
 @me_router.post("/leaves", status_code=status.HTTP_201_CREATED)
