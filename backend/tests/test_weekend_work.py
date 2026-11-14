@@ -2,10 +2,12 @@
 approval, biometric IN/OUT, the ≥5h / missing-punch warning, the management
 ABSENT override, and the payroll-credit derivation (1.0 full / 0.5 half)."""
 
+import io
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
+from openpyxl import load_workbook
 
 from app.modules.attendance.models.attendance_models import StaffDailyAttendance
 from app.modules.staff.models.staff_models import Department, Staff
@@ -25,7 +27,7 @@ def _next_sunday() -> date:
 
 async def _staff(db, emp_code="92000") -> Staff:
     dept = Department(
-        branch_id=BRANCH, name="WW-Teachers", id_range_start=92000, id_range_end=92999
+        branch_id=BRANCH, name=f"WW-{emp_code}", id_range_start=92000, id_range_end=92999
     )
     db.add(dept)
     await db.flush()
@@ -155,3 +157,36 @@ async def test_report_filters_and_export(db_session, seed_data):
         brand="Matrix Science Academy", title="Weekend Work", rows=pend["rows"], rules=pend["rules"],
     )
     assert data[:2] == b"PK"  # a real .xlsx
+
+
+@pytest.mark.usefixtures("seed_data")
+async def test_no_attendance_is_leave_and_sheet_layout(db_session, seed_data):
+    """A pre-approved teacher who didn't work shows 'L' (Leave), and the export
+    matches the client sheet: a weekday-headed day column + the dated title."""
+    worked = await _staff(db_session, emp_code="92010")
+    noshow = await _staff(db_session, emp_code="92011")
+    sun = _next_sunday()
+    await _attendance(db_session, worked, sun, status="PRESENT", minutes=360)
+    # noshow: no StaffDailyAttendance row at all.
+    await wws.preapprove(
+        db_session, branch_id=BRANCH, staff_ids=[worked.id, noshow.id],
+        work_date=sun, user_id=USER,
+    )
+
+    rep = await wws.report(db_session, branch_id=BRANCH, start=sun, end=sun)
+    codes = {r["emp_code"]: r["day_code"] for r in rep["rows"]}
+    assert codes["92010"] == "P"
+    assert codes["92011"] == "L"   # pre-approved, didn't work → Leave
+
+    data = export.weekend_report_xlsx(
+        brand="MSA", title="Weekend Work", rows=rep["rows"], rules=rep["rules"],
+    )
+    wb = load_workbook(io.BytesIO(data))
+    ws = wb.active
+    assert "PRE APPROVED WORK STATUS" in str(ws["A1"].value)
+    # Single-date report → the day column is headed by the weekday name.
+    header_row = [ws.cell(row=2, column=c).value for c in range(1, 8)]
+    assert header_row[0] == "Empcode" and header_row[1] == "Name"
+    assert header_row[2] == "Sunday"
+    assert "Work Approved Status" in header_row
+    assert "Hours" not in header_row  # dropped to match the sheet
