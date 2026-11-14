@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database.session import get_db
@@ -24,6 +24,9 @@ from app.modules.payroll.schemas.payroll_schemas import (
     LifecycleAction,
     MonthSettingsResponse,
     MonthSettingsUpsert,
+    OpeningBalanceImportResult,
+    OpeningBalancesResponse,
+    OpeningBalancesUpdate,
     RequestDecision,
     RequestHistoryRow,
     ReportResponse,
@@ -32,6 +35,7 @@ from app.modules.payroll.services import (
     config_service,
     export_service,
     month_service,
+    opening_balance_service,
     report_service,
     request_service,
 )
@@ -287,6 +291,68 @@ async def export_ledger(
         {"staff_id": str(staff_id), "fmt": fmt},
     )
     return _download(name, data, media)
+
+
+# ── Opening balances (client Point 1) ────────────────────────────────────────
+
+@router.get("/opening-balances", response_model=OpeningBalancesResponse)
+async def list_opening_balances(
+    year: int = Query(...),
+    month: int = Query(..., ge=1, le=12),
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(_ADMIN_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Each staff member's carry-forward balance entering the chosen first month —
+    the opening balances to review and edit (Super Admin / Payroll Admin)."""
+    return await opening_balance_service.list_opening_balances(
+        session, branch_id=branch_id, effective_year=year, effective_month=month,
+    )
+
+
+@router.put("/opening-balances")
+async def set_opening_balances(
+    body: OpeningBalancesUpdate,
+    request: Request,
+    branch_id: uuid.UUID = Query(...),
+    current_user: dict = Depends(require_roles(_ADMIN_ROLES)),
+    session: AsyncSession = Depends(get_db),
+) -> dict[str, int]:
+    """Seed/adjust opening balances before the first payroll month. Writes one
+    ``opening_balance`` ledger row per changed staff; audited."""
+    written = await opening_balance_service.set_opening_balances(
+        session, branch_id=branch_id,
+        effective_year=body.effective_year, effective_month=body.effective_month,
+        entries=[(e.staff_id, e.balance) for e in body.entries],
+        user_id=current_user["user_id"],
+    )
+    await audit_service.log_action(
+        session, user_id=current_user["user_id"],
+        action="Set Payroll Opening Balances", table_name="carry_forward_ledger",
+        record_id=current_user["user_id"],
+        new_values={
+            "effective": f"{body.effective_year}-{body.effective_month:02d}",
+            "count": written,
+        },
+        ip_address=_ip(request), branch_id=branch_id,
+    )
+    await session.commit()
+    return {"written": written}
+
+
+@router.post("/opening-balances/import", response_model=OpeningBalanceImportResult)
+async def import_opening_balances(
+    branch_id: uuid.UUID = Query(...),
+    file: UploadFile = File(...),
+    current_user: dict = Depends(require_roles(_ADMIN_ROLES)),
+    session: AsyncSession = Depends(get_db),
+):
+    """Parse an uploaded .xlsx (employee code + opening balance) into reviewable
+    rows. Nothing is written — the admin reviews, then saves via PUT."""
+    data = await file.read()
+    return await opening_balance_service.parse_import(
+        session, branch_id=branch_id, file_bytes=data,
+    )
 
 
 # ── Extra-day requests (§5) ──────────────────────────────────────────────────

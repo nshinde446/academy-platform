@@ -122,7 +122,7 @@ export default function PayrollSettingsPage() {
           <Switch checked={form.allow_half_day} onCheckedChange={(v) => set("allow_half_day", v)} disabled={!canEdit} />
         </Row>
 
-        <Row label="Carry-forward cap (days)" hint="Maximum balance a staff member can carry.">
+        <Row label="Carry-forward cap (days)" hint="Maximum Extra Days balance a staff member can carry. 0 = no cap (uncapped off-day balance).">
           <Input
             type="number" min="0" className="w-24"
             value={form.carry_forward_cap} disabled={!canEdit}
@@ -138,7 +138,7 @@ export default function PayrollSettingsPage() {
           />
         </Row>
 
-        <Row label="Allow negative balance" hint="Normally a balance never goes below zero.">
+        <Row label="Allow negative balance" hint="On: taking more offs than allowed drives the Extra Days balance negative (shown in red). Off: a shortfall never goes below zero.">
           <Switch checked={form.allow_negative_balance} onCheckedChange={(v) => set("allow_negative_balance", v)} disabled={!canEdit} />
         </Row>
 

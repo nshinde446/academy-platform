@@ -113,8 +113,12 @@ async def apply_computation(
 
     - net > 0: ``extra_added`` (+added) brings the balance up toward the cap;
       if some was trimmed, a ``cap_trim`` row records it (no balance change).
-    - net < 0: ``compensation_used`` (−balance_used) consumes the balance; the
-      uncovered remainder gets no ledger row (it is handled by the request flow).
+    - net < 0: ``compensation_used`` consumes the balance down to ``balance_out``.
+      That consumption is ``balance_in − balance_out``, which equals the covered
+      portion normally and the *full* shortfall when negative balances are
+      allowed (so the balance actually lands negative and carries forward); the
+      uncovered remainder, when negatives are off, gets no ledger row (it is
+      handled by the request flow).
     - net == 0: nothing (§3 Example 3)."""
     created: list[CarryForwardLedger] = []
     bal = comp.balance_in
@@ -133,15 +137,45 @@ async def apply_computation(
             days=comp.trimmed, running_balance=bal,
             note=f"cap trimmed {comp.trimmed:g} day(s) over cap", user_id=user_id,
         ))
-    if comp.balance_used > 0:
-        bal -= comp.balance_used
+    # Consumption = how far the balance actually fell this month. With negatives
+    # allowed this exceeds balance_used (the part the old balance could cover),
+    # so the ledger lands on balance_out and the negative carries forward.
+    consumed = comp.balance_in - comp.balance_out
+    if comp.shortfall_days > 0 and consumed > 0:
+        bal = comp.balance_out
         created.append(await _append(
             session, staff_id=comp.staff_id, branch_id=branch_id,
             year=comp.year, month=comp.month, entry_type="compensation_used",
-            days=-comp.balance_used, running_balance=bal,
+            days=-consumed, running_balance=bal,
             note=None, user_id=user_id,
         ))
     return created
+
+
+async def append_opening_balance(
+    session: AsyncSession,
+    *,
+    staff_id: uuid.UUID,
+    branch_id: uuid.UUID,
+    year: int,
+    month: int,
+    target_balance: float,
+    user_id: uuid.UUID | None,
+) -> CarryForwardLedger | None:
+    """Seed/adjust a staff member's carry-forward balance to ``target_balance`` as
+    of the end of (year, month) — the month *before* the first payroll month
+    (client Point 1 "opening balance"). Append-only: writes a single
+    ``opening_balance`` row whose signed ``days`` moves the current balance to the
+    target. Returns None when the balance is already there (no-op)."""
+    cur = await current_balance(session, staff_id)
+    delta = target_balance - cur
+    if delta == 0:
+        return None
+    return await _append(
+        session, staff_id=staff_id, branch_id=branch_id, year=year, month=month,
+        entry_type="opening_balance", days=delta, running_balance=target_balance,
+        note=f"opening balance set to {target_balance:g}", user_id=user_id,
+    )
 
 
 async def reverse_to(

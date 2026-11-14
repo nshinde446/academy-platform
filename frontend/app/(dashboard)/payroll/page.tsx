@@ -29,6 +29,16 @@ function signed(v: number): string {
   return `${v > 0 ? "+" : ""}${num(v)}`;
 }
 
+/** A day-balance cell: shown in red when negative (client Point 1). */
+function balance(v: number, { sign = false }: { sign?: boolean } = {}) {
+  const text = sign ? signed(v) : num(v);
+  return v < 0 ? (
+    <span className="font-semibold text-destructive">{text}</span>
+  ) : (
+    text
+  );
+}
+
 const LIFECYCLE_TONE: Record<string, "default" | "secondary" | "outline"> = {
   OPEN: "secondary",
   CLOSED: "default",
@@ -70,11 +80,14 @@ export default function PayrollReportPage() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Payroll Report"
-        description="Per-staff days for the month: required, present, carry-forward in/out, uncovered shortfall and late fine. A live preview while the month is open; the final figures once it is closed."
+        description="Per-staff days for the month: required, present, the Extra Days off-day balance (Opening, this month ±, Closing), uncovered shortfall and late fine. A negative balance shows in red. A live preview while the month is open; the final figures once it is closed."
         actions={
           <>
             <Button variant="outline" render={<Link href="/payroll/setup" />}>
               Month Setup
+            </Button>
+            <Button variant="outline" render={<Link href="/payroll/opening-balances" />}>
+              Opening Balances
             </Button>
             <Button variant="outline" disabled={busy || !data?.rows.length} onClick={() => exportAs("xlsx")}>
               Excel
@@ -147,8 +160,9 @@ export default function PayrollReportPage() {
               <TableHead className="text-right">Present</TableHead>
               <TableHead className="text-right">Paid L/H</TableHead>
               <TableHead className="text-right">Net</TableHead>
-              <TableHead className="text-right">CF in</TableHead>
-              <TableHead className="text-right">CF out</TableHead>
+              <TableHead className="text-right">Opening</TableHead>
+              <TableHead className="text-right">This month</TableHead>
+              <TableHead className="text-right">Closing</TableHead>
               <TableHead className="text-right">Uncovered</TableHead>
               <TableHead className="text-right">Late fine</TableHead>
             </TableRow>
@@ -175,8 +189,9 @@ export default function PayrollReportPage() {
                 </TableCell>
                 <TableCell className="text-right">{num(r.paid_leave_days)}</TableCell>
                 <TableCell className="text-right">{signed(r.net_days)}</TableCell>
-                <TableCell className="text-right">{num(r.balance_in)}</TableCell>
-                <TableCell className="text-right">{num(r.balance_out)}</TableCell>
+                <TableCell className="text-right">{balance(r.balance_in)}</TableCell>
+                <TableCell className="text-right">{balance(r.balance_change, { sign: true })}</TableCell>
+                <TableCell className="text-right">{balance(r.balance_out)}</TableCell>
                 <TableCell className="text-right">
                   {r.uncovered_days > 0 ? (
                     <span className="font-medium text-destructive">{num(r.uncovered_days)}</span>
@@ -195,7 +210,7 @@ export default function PayrollReportPage() {
             <TableRow className="border-t-2 font-medium">
               <TableCell colSpan={4}>Totals · {data.totals.staff_count} staff</TableCell>
               <TableCell className="text-right">{num(data.totals.present_days)}</TableCell>
-              <TableCell colSpan={4} />
+              <TableCell colSpan={5} />
               <TableCell className="text-right">{num(data.totals.uncovered_days)}</TableCell>
               <TableCell className="text-right">₹{num(data.totals.late_fine_total)}</TableCell>
             </TableRow>
