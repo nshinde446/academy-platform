@@ -129,6 +129,7 @@ const ADMIN_SECTION: NavSection = {
     { label: "Teacher Accounts", href: "/teacher-accounts" },
     { label: "Leave Requests", href: "/leave-requests" },
     { label: "Leave Settings", href: "/leave-settings" },
+    { label: "Weekend Work", href: "/weekend-work", isNew: true },
     { label: "Access Control", href: "/access-control" },
     { label: "Accounts", href: "/accounts" },
     { label: "Audit Log", href: "/audit-log" },

@@ -6,6 +6,7 @@ import {
   BarChart3,
   CalendarDays,
   CalendarOff,
+  CalendarClock,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -29,6 +30,7 @@ const NAV: PortalNavItem[] = [
   { label: "Attendance", href: "/my-day/attendance", icon: CalendarDays },
   { label: "Productivity", href: "/my-day/productivity", icon: BarChart3 },
   { label: "Leave", href: "/my-day/leave", icon: CalendarOff },
+  { label: "Weekend Work", href: "/my-day/weekend-work", icon: CalendarClock },
   { label: "Profile", href: "/my-day/profile", icon: UserRound },
 ];
 
