@@ -62,15 +62,17 @@ def _credit_for(day_status: str | None, marked_absent: bool) -> float:
 
 
 def _day_code(day_status: str | None, marked_absent: bool) -> str:
-    """Short status code for the report (Point 5): P = Present, HD = Half Day,
-    A = Absent. (Leave 'L' is derivable from declared leave; not shown here.)"""
+    """Short status code for the report (Point 5), matching the client sheet:
+    P = Present, HD = Half Day, L = Leave (pre-approved but didn't work — the
+    common case), A = Absent (a management override under Rule 5)."""
     if marked_absent:
         return "A"
     if day_status in _FULL_DAY:
         return "P"
     if day_status in _HALF_DAY:
         return "HD"
-    return "A"
+    # Pre-approved but no worked punch → Leave. Management may override to ABSENT.
+    return "L"
 
 
 async def _staff_in_branch(
