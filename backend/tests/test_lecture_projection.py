@@ -139,6 +139,50 @@ async def test_manual_record_not_overwritten(db_session, seed_data):
 
 
 @pytest.mark.usefixtures("seed_data")
+async def test_recompute_range_reprojects_lecture_roster(db_session, seed_data):
+    """Regression: a bulk daily recompute must also refresh Layer 2, so an
+    on-campus student left ABSENT on a lecture (stale, written before their punch
+    landed) is corrected to PRESENT — not just fixed at the daily level."""
+    s1 = seed_data["student"]
+    lecture = await _setup_lecture_and_batch(db_session, seed_data, [s1])
+    day = date(2026, 6, 22)
+
+    # The student WAS on campus on time (punch at 09:29 IST / 03:59 UTC).
+    db_session.add(RawPunchLog(
+        device_id="dev1", student_id=s1.id,
+        punch_timestamp=datetime(2026, 6, 22, 3, 59, tzinfo=timezone.utc),
+        branch_id=seed_data["branch_a"].id,
+    ))
+    # Daily row already rebuilt to PRESENT (as a prior recompute would leave it).
+    db_session.add(DailyAttendance(
+        student_id=s1.id, branch_id=seed_data["branch_a"].id, attendance_date=day,
+        first_in=datetime(2026, 6, 22, 3, 59, tzinfo=timezone.utc), last_out=None,
+        day_status="PRESENT", signoff="MISSING", source="BIOMETRIC",
+    ))
+    # STALE per-lecture record: ABSENT, written earlier before the punch existed.
+    db_session.add(AttendanceRecord(
+        student_id=s1.id, lecture_id=lecture.id, attendance_status="ABSENT",
+        marked_at=datetime.now(timezone.utc), marked_by=None,
+        source="SYSTEM", branch_id=seed_data["branch_a"].id,
+    ))
+    await db_session.flush()
+
+    await daily_service.recompute_range(
+        db_session, branch_id=seed_data["branch_a"].id, start=day, end=day,
+    )
+
+    rec = (await db_session.execute(
+        select(AttendanceRecord).where(
+            AttendanceRecord.student_id == s1.id,
+            AttendanceRecord.lecture_id == lecture.id,
+            AttendanceRecord.is_deleted == False,  # noqa: E712
+        )
+    )).scalar_one()
+    # Healed: the recompute re-projected Layer 2 from the PRESENT day row.
+    assert rec.attendance_status == "PRESENT"
+
+
+@pytest.mark.usefixtures("seed_data")
 async def test_process_raw_punches_delegates_to_day_layer(db_session, seed_data):
     s1 = seed_data["student"]
     lecture = await _setup_lecture_and_batch(db_session, seed_data, [s1])
