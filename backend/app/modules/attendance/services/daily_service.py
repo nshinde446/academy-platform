@@ -1382,6 +1382,19 @@ async def recompute_range(
             r.is_deleted = False
 
     await session.flush()
+
+    # Keep Layer 2 (per-lecture rosters) in sync with the daily rows we just
+    # rebuilt. Without this, a bulk recompute fixes the DAY but leaves the
+    # per-lecture records stale — e.g. a student who was projected ABSENT before
+    # their punch landed stays ABSENT on every lecture even after the daily row
+    # becomes PRESENT. The live ingest path already does this via
+    # ``rebuild_after_ingest``; the bulk path must too. ``project_after_ingest``
+    # re-projects every lecture of the affected batches on the affected day and
+    # overwrites non-manual records (manual marks are still preserved).
+    cells = {(r.student_id, r.attendance_date) for r in rows}
+    await project_after_ingest(
+        session, branch_id=branch_id, cells=cells, tz_name=tz_name
+    )
     return len(rows)
 
 
