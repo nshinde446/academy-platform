@@ -83,15 +83,20 @@ teacher-plan flow.
 
 ## Slice plan (one PR each, off fresh master)
 
-| Slice | Scope | SRD IDs |
-|---|---|---|
-| **1. Foundations** (this PR) | All models + migration `0075` + seed default Star categories/items/options + this doc | §8 tables, BR-05/06 fields |
-| **2. Weekend Plan — teacher** | Draft/items/total-hours/submit/withdraw/resubmit, approver mapping resolve, day-type validation, ApproverLog + notify | WP01–10, BR-02/04/05 |
-| **3. Approver inbox + decisions** | Inbox (plans + assessments), approve/reject/mark-absent, mandatory comment ≥10, log, notify, own-submission guard, final/reject-only-resubmit | AP01–09, BR-01/07 |
-| **4. Star System — teacher** | Form definition, save draft, one-per-date, final-total calc, submit, status+comment, admin config of items | SA-01–08, BR-03 |
-| **5. Frontend — teacher portal** | `/my-day/weekend-plan`, `/my-day/self-assessment` (wireframe §7), status cards, badges, edit/resubmit | §7.1/7.2/7.4 |
-| **6. Frontend — approver** | Approvals inbox, read-only view, action panel (§7.3), history tab, approver-mapping admin | §7.3 |
-| **7. Notifications + audit + tests** | In-app bell (teacher+approver), retention, acceptance tests AC-01–08 incl. IDOR, branch-isolation | §10, §11 |
+| Slice | Scope | SRD IDs | PR |
+|---|---|---|---|
+| **1. Foundations** ✅ | All models + migration `0075` + seed default Star categories/items/options + this doc | §8 tables, BR-05/06 fields | #198 |
+| **2. Weekend Plan — teacher** ✅ | Draft/items/total-hours/submit/withdraw/resubmit, approver mapping resolve, day-type validation, ApproverLog + notify | WP01–10, BR-02/04/05 | #199 |
+| **3. Approver inbox + decisions** ✅ | Inbox (plans + assessments), approve/reject/mark-absent, mandatory comment ≥10, log, notify, own-submission guard, final/reject-only-resubmit | AP01–09, BR-01/07 | #200 |
+| **4. Star System — teacher** ✅ | Form definition, save draft, one-per-date, final-total calc, submit, status+comment, admin config of items | SA-01–08, BR-03 | #201 |
+| **5. Frontend — teacher portal** ✅ | `/my-day/weekend-plan`, `/my-day/self-assessment` (wireframe §7), status cards, badges, edit/resubmit | §7.1/7.2/7.4 | #202 |
+| **6. Frontend — approver** ✅ | Approvals inbox, read-only view, action panel (§7.3), history tab | §7.3 | #203 |
+| **7. Notifications + acceptance tests** ✅ | In-app bell (teacher+approver), `/me/notifications`, acceptance tests AC-01–08 incl. IDOR | §10, §11 | — |
+
+**Deferred (post-v1, flagged):** approver-mapping admin UI (mappings work via SQL
+today; unassigned plans fall back to any approver in the inbox — open-Q 1
+default); deadline reminders (open-Q 7); payroll link (open-Q 4/5); deduction
+penalty weights (open-Q 3, default 0).
 
 ## Acceptance criteria → verified in Slice 7
 AC-01 draft+submit→Pending · AC-02 all categories/items, Misc only text · AC-03
