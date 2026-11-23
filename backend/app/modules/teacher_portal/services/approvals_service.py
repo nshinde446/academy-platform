@@ -26,6 +26,8 @@ from app.modules.auth.models.auth_models import User
 from app.modules.staff.models.staff_models import Staff
 from app.modules.teacher.models.teacher_models import WeekendPlanItem, WeekendWork
 from app.modules.teacher_portal.models.workflow_models import (
+    AssessmentCategory,
+    AssessmentItemMaster,
     SelfAssessment,
     SelfAssessmentItem,
     SelfAssessmentStar,
@@ -152,6 +154,14 @@ async def _weekend_plan_detail(
             WeekendPlanItem.is_deleted == False,  # noqa: E712
         ).order_by(WeekendPlanItem.sort_order.asc())
     )).scalars().all())
+    from app.modules.batch.models.batch_models import Batch
+    batch_ids = [it.batch_id for it in items if it.batch_id]
+    batch_names = {
+        b.id: b.name
+        for b in (await session.execute(
+            select(Batch).where(Batch.id.in_(batch_ids))
+        )).scalars().all()
+    } if batch_ids else {}
     info = (await _teacher_display(session, [plan.staff_id])).get(plan.staff_id, {})
     return {
         "record_type": wf.RECORD_WEEKEND_PLAN,
@@ -170,6 +180,7 @@ async def _weekend_plan_detail(
         "items": [
             {
                 "work_type": it.work_type, "batch_id": it.batch_id,
+                "batch_name": batch_names.get(it.batch_id),
                 "task_description": it.task_description,
                 "start_time": it.start_time, "end_time": it.end_time,
             }
@@ -204,6 +215,19 @@ async def _self_assessment_detail(
             SelfAssessmentStar.is_deleted == False,  # noqa: E712
         )
     )).scalars().all())
+    # Resolve item + category names so the approver sees a readable form.
+    item_names = {
+        it.id: (it.item_name, it.category_id)
+        for it in (await session.execute(
+            select(AssessmentItemMaster).where(AssessmentItemMaster.branch_id == branch_id)
+        )).scalars().all()
+    }
+    cat_names = {
+        c.id: c.name
+        for c in (await session.execute(
+            select(AssessmentCategory).where(AssessmentCategory.branch_id == branch_id)
+        )).scalars().all()
+    }
     info = (await _teacher_display(session, [a.staff_id])).get(a.staff_id, {})
     return {
         "record_type": wf.RECORD_SELF_ASSESSMENT,
@@ -218,10 +242,19 @@ async def _self_assessment_detail(
         "submitted_at": a.submitted_at,
         "latest_approver_comment": a.latest_approver_comment,
         "items": [
-            {"item_master_id": i.item_master_id, "selected_value": i.selected_value}
+            {
+                "item_master_id": i.item_master_id,
+                "item_name": item_names.get(i.item_master_id, ("?", None))[0],
+                "category_name": cat_names.get(item_names.get(i.item_master_id, ("?", None))[1]),
+                "selected_value": i.selected_value,
+            }
             for i in items
         ],
-        "stars": [{"category_id": s.category_id, "stars": s.stars} for s in stars],
+        "stars": [
+            {"category_id": s.category_id, "category_name": cat_names.get(s.category_id),
+             "stars": s.stars}
+            for s in stars
+        ],
         "history": await wf.history_for(
             session, record_type=wf.RECORD_SELF_ASSESSMENT, record_id=a.id),
     }
