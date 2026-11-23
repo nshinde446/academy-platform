@@ -23,8 +23,19 @@ from app.core.database.base import BaseModel
 # leaves (pre-0068) keep blocking scheduling exactly as before.
 LEAVE_STATUSES = frozenset({"pending", "approved", "rejected"})
 
-# Weekend-work (Point 5) approval lifecycle.
-WEEKEND_WORK_STATUSES = frozenset({"PENDING", "APPROVED", "REJECTED"})
+# Weekend-work approval lifecycle. The senior-initiated flow (Point 5) only ever
+# uses PENDING/APPROVED/REJECTED; the reconciled teacher-initiated Weekend Plan
+# (Weekend & Star-System SRD) adds DRAFT (not yet submitted) and ABSENT (approver
+# marked the day absent). See docs/weekend-and-star-system-roadmap.md.
+WEEKEND_WORK_STATUSES = frozenset(
+    {"DRAFT", "PENDING", "APPROVED", "REJECTED", "ABSENT"}
+)
+
+# How a weekend_work row was created.
+WEEKEND_WORK_ORIGINS = frozenset({"SENIOR_PREAPPROVED", "TEACHER_PLAN"})
+
+# Day types a weekend plan can target (SRD WP02/BR-02).
+WEEKEND_DAY_TYPES = frozenset({"SATURDAY", "SUNDAY", "HOLIDAY"})
 
 
 class Teacher(BaseModel):
@@ -273,4 +284,59 @@ class WeekendWork(BaseModel):
     # from the day's attendance status at approval time.
     credit_days: Mapped[float] = mapped_column(
         Numeric(3, 1), nullable=False, server_default="0", default=0
+    )
+
+    # ── Reconciled Weekend Plan fields (Weekend & Star-System SRD) ──────────────
+    # How the row was created. Existing rows backfill to SENIOR_PREAPPROVED so the
+    # Point-5 flow is unchanged; teacher-initiated plans are TEACHER_PLAN.
+    origin: Mapped[str] = mapped_column(
+        String(20), nullable=False,
+        server_default="SENIOR_PREAPPROVED", default="SENIOR_PREAPPROVED",
+        index=True,
+    )
+    # SATURDAY | SUNDAY | HOLIDAY (SRD supports holidays, not only weekends).
+    day_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    holiday_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # The assigned approver (mapped Senior or teacher-chosen), distinct from
+    # ``approved_by`` which records who actually decided.
+    approver_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    # Auto sum of plan-item durations in minutes (WP04).
+    total_planned_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
+    remarks: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # When the teacher submitted for approval (DRAFT -> PENDING).
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class WeekendPlanItem(BaseModel):
+    """One work-breakdown line of a teacher-initiated Weekend Plan (SRD WP03).
+
+    Senior-preapproved rows keep using the free-text ``WeekendWork.work_content``
+    and have no items; teacher plans carry one or more structured lines here.
+    """
+
+    __tablename__ = "weekend_plan_items"
+    __table_args__ = (
+        Index("ix_weekend_plan_items_work", "weekend_work_id"),
+    )
+
+    weekend_work_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("weekend_work.id"), nullable=False
+    )
+    # Lecture | Test Checking | Doubt Solving | Paper Setting | Counselling | Other
+    work_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("batches.id"), nullable=True
+    )
+    task_description: Mapped[str] = mapped_column(String(500), nullable=False)
+    start_time: Mapped[str] = mapped_column(String(5), nullable=False)  # "HH:MM"
+    end_time: Mapped[str] = mapped_column(String(5), nullable=False)
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("branch.id"), nullable=False
     )
