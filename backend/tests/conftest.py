@@ -36,7 +36,11 @@ from app.modules.student.models.student_models import (  # noqa: F401
 )
 from app.modules.teacher.models.teacher_models import (  # noqa: F401
     LeaveTypeQuota, Teacher, TeacherBatchMapping, TeacherLeave,
-    TeacherSubjectMapping, TeacherWofOpening,
+    TeacherSubjectMapping, TeacherWofOpening, WeekendPlanItem, WeekendWork,
+)
+from app.modules.teacher_portal.models.workflow_models import (  # noqa: F401
+    ApproverLog, ApproverMapping, AssessmentCategory, AssessmentItemMaster,
+    PortalNotification, SelfAssessment, SelfAssessmentItem, SelfAssessmentStar,
 )
 from app.modules.staff.models.staff_models import (  # noqa: F401
     Department, Staff,
