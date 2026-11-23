@@ -26,6 +26,7 @@ from app.modules.teacher_portal.schemas.portal_schemas import (
     ProfileContactUpdate,
     TeacherProfile,
     TeacherSession,
+    WeekendPlanWrite,
     WeekendWorkContent,
 )
 from app.modules.teacher_portal.services import (
@@ -34,6 +35,7 @@ from app.modules.teacher_portal.services import (
     leave_service,
     portal_service,
     productivity_service,
+    weekend_plan_service,
     weekend_work_service,
     wof_service,
 )
@@ -291,6 +293,116 @@ async def submit_my_weekend_work_content(
         session, staff_id=me.staff_id, work_id=work_id, content=body.content,
         user_id=me.user_id, ip=request.client.host if request.client else None,
     )
+
+
+# ── Weekend Plan (teacher-initiated work plan + approval, SRD §5.1) ───────────
+
+
+def _month_range(year: int | None, month: int | None) -> tuple[date, date]:
+    import calendar as _cal
+    import datetime as _dt
+    today = _dt.date.today()
+    y, m = year or today.year, month or today.month
+    if not (1 <= m <= 12):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="month must be 1-12")
+    return date(y, m, 1), date(y, m, _cal.monthrange(y, m)[1])
+
+
+@me_router.get("/weekend-plan-meta")
+async def my_weekend_plan_meta(
+    me: TeacherSession = Depends(get_current_teacher),
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    """Date-picker + dropdown data for the plan form (holidays, work types,
+    default approver) for a month (default current)."""
+    start, end = _month_range(year, month)
+    return await weekend_plan_service.plan_meta(
+        session, staff_id=me.staff_id, start=start, end=end)
+
+
+@me_router.get("/weekend-plans")
+async def my_weekend_plans(
+    me: TeacherSession = Depends(get_current_teacher),
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    start, end = _month_range(year, month)
+    return await weekend_plan_service.list_plans(
+        session, staff_id=me.staff_id, start=start, end=end)
+
+
+@me_router.post("/weekend-plans", status_code=status.HTTP_201_CREATED)
+async def create_weekend_plan(
+    body: WeekendPlanWrite,
+    request: Request,
+    submit: bool = Query(default=False),
+    me: TeacherSession = Depends(get_current_teacher),
+    session: AsyncSession = Depends(get_db),
+):
+    """Create a plan as Draft, or submit it straight away with ``?submit=true``."""
+    return await weekend_plan_service.create_plan(
+        session, staff_id=me.staff_id, user_id=me.user_id, data=body,
+        submit=submit, ip=request.client.host if request.client else None)
+
+
+@me_router.get("/weekend-plans/{plan_id}")
+async def get_weekend_plan(
+    plan_id: uuid.UUID,
+    me: TeacherSession = Depends(get_current_teacher),
+    session: AsyncSession = Depends(get_db),
+):
+    return await weekend_plan_service.get_plan(
+        session, staff_id=me.staff_id, plan_id=plan_id)
+
+
+@me_router.put("/weekend-plans/{plan_id}")
+async def update_weekend_plan(
+    plan_id: uuid.UUID,
+    body: WeekendPlanWrite,
+    submit: bool = Query(default=False),
+    me: TeacherSession = Depends(get_current_teacher),
+    session: AsyncSession = Depends(get_db),
+):
+    """Edit a Draft/Rejected plan (WP09); optionally resubmit with ``?submit=true``."""
+    return await weekend_plan_service.update_plan(
+        session, staff_id=me.staff_id, plan_id=plan_id, user_id=me.user_id,
+        data=body, submit=submit)
+
+
+@me_router.post("/weekend-plans/{plan_id}/submit")
+async def submit_weekend_plan(
+    plan_id: uuid.UUID,
+    me: TeacherSession = Depends(get_current_teacher),
+    approver_id: uuid.UUID | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    return await weekend_plan_service.submit_plan(
+        session, staff_id=me.staff_id, plan_id=plan_id, user_id=me.user_id,
+        approver_id=approver_id)
+
+
+@me_router.post("/weekend-plans/{plan_id}/withdraw")
+async def withdraw_weekend_plan(
+    plan_id: uuid.UUID,
+    me: TeacherSession = Depends(get_current_teacher),
+    session: AsyncSession = Depends(get_db),
+):
+    return await weekend_plan_service.withdraw_plan(
+        session, staff_id=me.staff_id, plan_id=plan_id, user_id=me.user_id)
+
+
+@me_router.delete("/weekend-plans/{plan_id}")
+async def delete_weekend_plan(
+    plan_id: uuid.UUID,
+    me: TeacherSession = Depends(get_current_teacher),
+    session: AsyncSession = Depends(get_db),
+):
+    await weekend_plan_service.delete_plan(
+        session, staff_id=me.staff_id, plan_id=plan_id, user_id=me.user_id)
+    return {"message": "deleted"}
 
 
 @me_router.post("/leaves", status_code=status.HTTP_201_CREATED)
