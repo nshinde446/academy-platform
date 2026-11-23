@@ -24,6 +24,7 @@ from app.modules.teacher_portal.schemas.portal_schemas import (
     LeaveApply,
     MonthSummary,
     ProfileContactUpdate,
+    SelfAssessmentWrite,
     TeacherProfile,
     TeacherSession,
     WeekendPlanWrite,
@@ -35,6 +36,7 @@ from app.modules.teacher_portal.services import (
     leave_service,
     portal_service,
     productivity_service,
+    self_assessment_service,
     weekend_plan_service,
     weekend_work_service,
     wof_service,
@@ -403,6 +405,75 @@ async def delete_weekend_plan(
     await weekend_plan_service.delete_plan(
         session, staff_id=me.staff_id, plan_id=plan_id, user_id=me.user_id)
     return {"message": "deleted"}
+
+
+# ── Teacher Star System: daily self-assessment (SRD §5.2) ────────────────────
+
+
+@me_router.get("/self-assessment-form")
+async def my_self_assessment_form(
+    me: TeacherSession = Depends(get_current_teacher),
+    session: AsyncSession = Depends(get_db),
+):
+    """The form definition: categories, items + dropdown options, rated flags."""
+    return await self_assessment_service.form_definition(session, staff_id=me.staff_id)
+
+
+@me_router.get("/self-assessments")
+async def my_self_assessments(
+    me: TeacherSession = Depends(get_current_teacher),
+    year: int | None = Query(default=None),
+    month: int | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    start, end = _month_range(year, month)
+    return await self_assessment_service.list_assessments(
+        session, staff_id=me.staff_id, start=start, end=end)
+
+
+@me_router.get("/self-assessments/by-date")
+async def my_self_assessment_for_date(
+    me: TeacherSession = Depends(get_current_teacher),
+    date_: date | None = Query(default=None, alias="date"),
+    session: AsyncSession = Depends(get_db),
+):
+    import datetime as _dt
+    day_ = date_ or _dt.date.today()
+    return await self_assessment_service.get_for_date(session, staff_id=me.staff_id, on=day_)
+
+
+@me_router.put("/self-assessments")
+async def save_self_assessment(
+    body: SelfAssessmentWrite,
+    submit: bool = Query(default=False),
+    me: TeacherSession = Depends(get_current_teacher),
+    session: AsyncSession = Depends(get_db),
+):
+    """Upsert the assessment for its date; ``?submit=true`` sends it for approval."""
+    return await self_assessment_service.save(
+        session, staff_id=me.staff_id, user_id=me.user_id, data=body, submit=submit)
+
+
+@me_router.post("/self-assessments/{assessment_id}/submit")
+async def submit_self_assessment(
+    assessment_id: uuid.UUID,
+    me: TeacherSession = Depends(get_current_teacher),
+    approver_id: uuid.UUID | None = Query(default=None),
+    session: AsyncSession = Depends(get_db),
+):
+    return await self_assessment_service.submit_existing(
+        session, staff_id=me.staff_id, assessment_id=assessment_id,
+        user_id=me.user_id, approver_id=approver_id)
+
+
+@me_router.post("/self-assessments/{assessment_id}/withdraw")
+async def withdraw_self_assessment(
+    assessment_id: uuid.UUID,
+    me: TeacherSession = Depends(get_current_teacher),
+    session: AsyncSession = Depends(get_db),
+):
+    return await self_assessment_service.withdraw(
+        session, staff_id=me.staff_id, assessment_id=assessment_id, user_id=me.user_id)
 
 
 @me_router.post("/leaves", status_code=status.HTTP_201_CREATED)

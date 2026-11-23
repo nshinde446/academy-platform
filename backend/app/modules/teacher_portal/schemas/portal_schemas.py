@@ -193,3 +193,39 @@ class ApprovalDecision(BaseModel):
 
     action: str  # APPROVE | REJECT | MARK_ABSENT
     comment: str
+
+
+# ── Teacher Star System: daily self-assessment (SRD §5.2) ────────────────────
+
+
+class SelfAssessmentItemIn(BaseModel):
+    """The option selected for one assessment item."""
+
+    item_master_id: uuid.UUID
+    selected_value: str
+
+
+class SelfAssessmentStarIn(BaseModel):
+    """A 1–5 star rating for one of the four main categories."""
+
+    category_id: uuid.UUID
+    stars: int
+
+
+class SelfAssessmentWrite(BaseModel):
+    """Save (draft) or submit a daily self-assessment. ``items`` are dropdown
+    selections; ``stars`` are the per-category ratings; Miscellaneous is the only
+    free text (SA-02). The Final Total Star is computed server-side (SA-05)."""
+
+    assess_date: date
+    approver_id: uuid.UUID | None = None
+    miscellaneous_text: str | None = None
+    items: list[SelfAssessmentItemIn] = []
+    stars: list[SelfAssessmentStarIn] = []
+
+    @field_validator("miscellaneous_text")
+    @classmethod
+    def _misc_len(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 300:
+            raise ValueError("Miscellaneous must be at most 300 characters.")
+        return v
