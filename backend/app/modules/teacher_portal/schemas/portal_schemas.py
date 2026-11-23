@@ -128,3 +128,55 @@ class WeekendAbsentOverride(BaseModel):
     """Management override (Rule 5) — force the day ABSENT (or clear it)."""
 
     absent: bool = True
+
+
+# ── Weekend Plan (teacher-initiated, Weekend & Star-System SRD §5.1) ──────────
+
+# SRD WP03 work types.
+WEEKEND_WORK_TYPES = frozenset(
+    {"Lecture", "Test Checking", "Doubt Solving", "Paper Setting", "Counselling", "Other"}
+)
+
+
+class WeekendPlanItemIn(BaseModel):
+    """One work-breakdown line (WP03). Times are 15-minute-step dropdown values."""
+
+    work_type: str
+    batch_id: uuid.UUID | None = None
+    task_description: str
+    start_time: str
+    end_time: str
+
+    @field_validator("work_type")
+    @classmethod
+    def _work_type_known(cls, v: str) -> str:
+        if v not in WEEKEND_WORK_TYPES:
+            raise ValueError(f"work_type must be one of {sorted(WEEKEND_WORK_TYPES)}")
+        return v
+
+    @field_validator("task_description")
+    @classmethod
+    def _task_nonempty(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("task_description is required")
+        return v
+
+
+class WeekendPlanWrite(BaseModel):
+    """Create or fully replace a teacher's Weekend Plan (draft or resubmit body).
+
+    ``plan_date`` must be a Saturday, Sunday or academy holiday (BR-02, validated
+    server-side). ``approver_id`` is optional — the system auto-assigns from the
+    approver mapping when omitted (WP05)."""
+
+    plan_date: date
+    approver_id: uuid.UUID | None = None
+    remarks: str | None = None
+    items: list[WeekendPlanItemIn] = []
+
+    @field_validator("items")
+    @classmethod
+    def _at_least_one_item_to_submit(cls, v: list[WeekendPlanItemIn]) -> list[WeekendPlanItemIn]:
+        # A draft may have zero items; the submit path enforces >= 1 separately.
+        return v
