@@ -180,3 +180,16 @@ class WeekendPlanWrite(BaseModel):
     def _at_least_one_item_to_submit(cls, v: list[WeekendPlanItemIn]) -> list[WeekendPlanItemIn]:
         # A draft may have zero items; the submit path enforces >= 1 separately.
         return v
+
+
+# ── Approver decisions (SRD §5.3) ────────────────────────────────────────────
+
+
+class ApprovalDecision(BaseModel):
+    """Approve / Reject / Mark ABSENT with a mandatory comment (AP03/AP04).
+
+    The 10-char minimum is enforced server-side in the service so the rule holds
+    for the API, not just the UI (the confirm button is also disabled client-side)."""
+
+    action: str  # APPROVE | REJECT | MARK_ABSENT
+    comment: str
