@@ -34,6 +34,7 @@ from app.modules.teacher_portal.services import (
     auth_events,
     config_service,
     leave_service,
+    notification_inbox_service,
     portal_service,
     productivity_service,
     self_assessment_service,
@@ -474,6 +475,51 @@ async def withdraw_self_assessment(
 ):
     return await self_assessment_service.withdraw(
         session, staff_id=me.staff_id, assessment_id=assessment_id, user_id=me.user_id)
+
+
+# ── In-app notifications (any logged-in user: teacher or approver) ────────────
+# These use the raw session user (not get_current_teacher) so approver accounts,
+# which have no staff link, can read their own notifications too.
+
+
+@me_router.get("/notifications")
+async def my_notifications(
+    current_user: dict = Depends(get_current_user),
+    only_unread: bool = Query(default=False),
+    session: AsyncSession = Depends(get_db),
+):
+    return await notification_inbox_service.list_notifications(
+        session, user_id=current_user["user_id"], only_unread=only_unread)
+
+
+@me_router.get("/notifications/unread-count")
+async def my_unread_count(
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    return {"count": await notification_inbox_service.unread_count(
+        session, user_id=current_user["user_id"])}
+
+
+@me_router.post("/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: uuid.UUID,
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    await notification_inbox_service.mark_read(
+        session, user_id=current_user["user_id"], notification_id=notification_id)
+    return {"message": "read"}
+
+
+@me_router.post("/notifications/read-all")
+async def mark_all_notifications_read(
+    current_user: dict = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+):
+    n = await notification_inbox_service.mark_all_read(
+        session, user_id=current_user["user_id"])
+    return {"marked": n}
 
 
 @me_router.post("/leaves", status_code=status.HTTP_201_CREATED)

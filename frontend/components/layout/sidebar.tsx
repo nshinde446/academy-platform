@@ -8,6 +8,7 @@ import { useUserStore } from "@/store/user-store";
 import { useAuthStore } from "@/store/auth-store";
 import { usePayrollEnabled } from "@/hooks/use-payroll";
 import { ChangePasswordDialog } from "@/components/layout/change-password-dialog";
+import { NotificationBell } from "@/components/layout/notification-bell";
 
 interface NavItem {
   label: string;
@@ -253,6 +254,7 @@ export function Sidebar() {
               {roleLabel}
             </span>
           </div>
+          <NotificationBell />
         </div>
         {user ? (
           <div className="flex gap-1.5">

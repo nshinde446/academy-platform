@@ -17,6 +17,7 @@ import {
 import type { ComponentType } from "react";
 import { useUserStore } from "@/store/user-store";
 import { useAuthStore } from "@/store/auth-store";
+import { NotificationBell } from "@/components/layout/notification-bell";
 
 interface PortalNavItem {
   label: string;
@@ -113,6 +114,7 @@ export function PortalSidebar({ onNavigate }: { onNavigate?: () => void }) {
               {user?.roles?.includes("teacher_portal") ? "Teacher" : "Signed in"}
             </span>
           </div>
+          <NotificationBell />
         </div>
         <div className="flex gap-1.5">
           <Link
