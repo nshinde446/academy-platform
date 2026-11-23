@@ -7,9 +7,11 @@ import {
   CalendarDays,
   CalendarOff,
   CalendarClock,
+  CalendarPlus,
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Star,
   UserRound,
 } from "lucide-react";
 import type { ComponentType } from "react";
@@ -31,6 +33,8 @@ const NAV: PortalNavItem[] = [
   { label: "Productivity", href: "/my-day/productivity", icon: BarChart3 },
   { label: "Leave", href: "/my-day/leave", icon: CalendarOff },
   { label: "Weekend Work", href: "/my-day/weekend-work", icon: CalendarClock },
+  { label: "Weekend Plan", href: "/my-day/weekend-plan", icon: CalendarPlus },
+  { label: "Self-Assessment", href: "/my-day/self-assessment", icon: Star },
   { label: "Profile", href: "/my-day/profile", icon: UserRound },
 ];
 

@@ -379,6 +379,7 @@ async def plan_meta(
     holidays in the window, the allowed work types, and the teacher's mapped
     default approver (if any). Weekends are computed client-side."""
     from app.modules.auth.models.auth_models import User
+    from app.modules.batch.models.batch_models import Batch
     from app.modules.lectures.models.lecture_models import Holiday
     from app.modules.teacher_portal.models.workflow_models import ApproverMapping
     from app.modules.teacher_portal.schemas.portal_schemas import WEEKEND_WORK_TYPES
@@ -391,6 +392,13 @@ async def plan_meta(
             Holiday.holiday_date <= end,
             Holiday.is_deleted == False,  # noqa: E712
         ).order_by(Holiday.holiday_date.asc())
+    )).scalars().all())
+
+    batches = list((await session.execute(
+        select(Batch).where(
+            Batch.branch_id == branch_id,
+            Batch.is_deleted == False,  # noqa: E712
+        ).order_by(Batch.name.asc())
     )).scalars().all())
 
     mapping = (await session.execute(
@@ -411,6 +419,7 @@ async def plan_meta(
 
     return {
         "holidays": [{"date": h.holiday_date, "name": h.name} for h in holidays],
+        "batches": [{"id": b.id, "name": b.name} for b in batches],
         "work_types": sorted(WEEKEND_WORK_TYPES),
         "default_approver": default_approver,
     }
